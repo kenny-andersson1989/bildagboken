@@ -1,5 +1,5 @@
 // Service worker: gör att appen startar även utan nät och kan visa notiser.
-const CACHE = "bildagboken-v9";
+const CACHE = "bildagboken-v10";
 const SHELL = [
   "./",
   "./index.html",
@@ -7,7 +7,8 @@ const SHELL = [
   "./app.js",
   "./firebase-config.js",
   "./manifest.webmanifest",
-  "./icons/icon-192.png"
+  "./icons/icon-192.png",
+  "./icons/logo.png"
 ];
 
 self.addEventListener("install", (event) => {

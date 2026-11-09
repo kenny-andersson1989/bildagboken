@@ -336,6 +336,7 @@ details.more > .form { margin-top: 12px; }
 /* login */
 .login { min-height: 80vh; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
 .login h1 { font-family: var(--f-display); font-size: 40px; line-height: 1.05; margin: 0; letter-spacing: -.02em; }
+.login-logo { display: block; width: min(100%, 340px); height: auto; margin-left: -4px; }
 .login p { margin: 0; color: var(--ink-2); font-size: 16px; max-width: 34ch; }
 .btn.google { background: var(--glass-strong); color: var(--ink); border: 1px solid var(--line); }
 

@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "1.8";
+const VERSION = "1.9";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -517,8 +517,7 @@ function render() {
 function renderLogin(error = "") {
   setScreen("login", `
     <section class="login">
-      <div class="dl-ic" style="width:56px;height:56px;border-radius:18px;background:var(--accent);color:var(--accent-ink)">${icon("gauge", 30)}</div>
-      <h1>Bildagboken</h1>
+      <h1><img class="login-logo" src="icons/logo.png" alt="Bildagboken" width="900" height="244"></h1>
       <p>Service, tankning, däck, datum och kostnader för er bil. Ni ser samma sak i båda telefonerna.</p>
       <button class="btn google block" type="button" data-act="login">${icon("google", 20)} Logga in med Google</button>
       ${error ? `<p class="err">${esc(error)}</p>` : ""}
