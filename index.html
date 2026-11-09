@@ -67,6 +67,15 @@
 <div class="scrim" id="scrim" data-act="close-sheet" hidden></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" hidden></div>
 <div class="toast-msg" id="toast" role="status" hidden></div>
+<div class="confirm-scrim" id="confirm-scrim" hidden></div>
+<div class="confirm" id="confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-body" hidden>
+  <h3 id="confirm-title"></h3>
+  <div id="confirm-body"></div>
+  <div class="confirm-actions">
+    <button class="btn ghost" type="button" id="confirm-no">Avbryt</button>
+    <button class="btn" type="button" id="confirm-yes">Ta bort</button>
+  </div>
+</div>
 
 <script type="module" src="app.js"></script>
 </body>

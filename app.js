@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "2.2";
+const VERSION = "2.3";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -734,6 +734,27 @@ function carVisual(c) {
   return carSvg(c);
 }
 
+/* Bränslemätare: hur mycket som finns kvar i tanken, i åttondelar som på instrumentbrädan. */
+const FUEL_LABELS = ["Tom", "⅛", "¼", "⅜", "½", "⅝", "¾", "⅞", "Full"];
+const fuelText = (l) => (l === 0 ? "Tom tank" : l === 8 ? "Full tank" : `${FUEL_LABELS[l]} tank`);
+const fuelClass = (l) => (l <= 2 ? "low" : l <= 4 ? "mid" : "ok");
+const fuelNowHtml = (l) => (l == null ? `<small>Inte angivet</small>` : `${esc(fuelText(l))}${l <= 2 ? " <small>Tanka snart</small>" : ""}`);
+
+function fuelCard(c) {
+  const f = c.fuelLevel;
+  const draft = S.fuelDraft && S.fuelDraft.carId === c.id ? S.fuelDraft.level : null;
+  const level = draft ?? (f && typeof f.level === "number" ? f.level : null);
+  const meta = f
+    ? `${f.via === "tank" ? "Fulltankad" : "Uppdaterad"} av ${whoName(f.by) === "Du" ? "dig" : whoName(f.by)} · ${timeAgo(tsMs(f.at)).toLowerCase()}`
+    : "Dra i reglaget så ser ni båda hur mycket som finns kvar i tanken.";
+  return `<article class="card fuel-card">
+    <div class="fuel-head"><h2>Bränsle</h2><div class="fuel-now ${level != null ? fuelClass(level) : ""}" id="fuel-now">${fuelNowHtml(level)}</div></div>
+    <input type="range" class="fuel-range" id="fuel-range" min="0" max="8" step="1" value="${level ?? 4}" aria-label="Bränsle kvar i tanken" aria-valuetext="${esc(level != null ? fuelText(level) : "Inte angivet")}">
+    <div class="fuel-ticks" aria-hidden="true"><span>Tom</span><span>¼</span><span>½</span><span>¾</span><span>Full</span></div>
+    <p class="fuel-meta" id="fuel-meta">${esc(meta)}</p>
+  </article>`;
+}
+
 function unseenFromOthers() {
   const seen = lastSeenMs();
   return S.entries.filter((e) => e.createdBy !== uid() && tsMs(e.createdAt) > seen);
@@ -825,6 +846,7 @@ function viewOverview() {
     ${switcher}
   </article>`);
 
+  parts.push(fuelCard(c));
   parts.push(inviteCard());
 
   const ps = primaryService(c);
@@ -1027,7 +1049,9 @@ function viewCar() {
 function viewNotifications() {
   const seen = lastSeenMs();
   const c = car();
+  const fl = c.fuelLevel?.level;
   const reminders = [
+    ...(typeof fl === "number" && fl <= 2 ? [{ icon: "fuel", title: "Tanka snart", sub: `Bränslet är på ${fuelText(fl).toLowerCase()}`, label: FUEL_LABELS[fl] }] : []),
     ...bookingRows(c).filter((b) => b.days <= 1),
     ...deadlines(c).filter((d) => d.level === "urgent"),
     ...allItemStatus(c).filter((s) => !s.unknown && s.level === "urgent").map((s) => ({ title: `Dags för ${s.item.name.toLowerCase()}`, sub: s.label })),
@@ -1087,7 +1111,7 @@ function viewSettings() {
       <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(carName(x))}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
         <span class="row-actions">${x.id === S.carId ? `<span class="pill ok">Vald</span>` : `<button class="link" type="button" data-act="pick-car" data-id="${esc(x.id)}">Välj</button>`}
         <button class="link danger" type="button" data-act="delete-car" data-id="${esc(x.id)}" aria-label="Ta bort ${esc(carName(x))}">Ta bort</button></span></div>`).join("")}</div>
-      <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för er båda. Tryck två gånger för att bekräfta.</p>
+      <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för er båda. Du får frågan en gång till innan något tas bort.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="add-car">Lägg till bil</button></div>
     </div>
     <div class="card">
@@ -1122,6 +1146,33 @@ function closeSheet() {
   sheet.innerHTML = "";
   document.body.style.overflow = "";
 }
+
+/* Bekräftelseruta: frågar "Vill du verkligen …?" med Avbryt och Ta bort. Ger true om man trycker Ta bort. */
+let confirmResolve = null;
+function confirmDialog({ title, lines = [], okLabel = "Ta bort", warn = "Det går inte att ångra." }) {
+  const box = $("#confirm"), dim = $("#confirm-scrim");
+  $("#confirm-title").textContent = title;
+  $("#confirm-body").innerHTML = lines.filter(Boolean).map((l) => `<p>${esc(l)}</p>`).join("") + (warn ? `<p class="warn">${esc(warn)}</p>` : "");
+  const yes = $("#confirm-yes");
+  yes.textContent = okLabel;
+  yes.className = "btn solid-danger";
+  box.hidden = false;
+  dim.hidden = false;
+  $("#confirm-no").focus();
+  return new Promise((resolve) => { confirmResolve = resolve; });
+}
+function closeConfirm(answer) {
+  $("#confirm").hidden = true;
+  $("#confirm-scrim").hidden = true;
+  const r = confirmResolve;
+  confirmResolve = null;
+  if (r) r(answer);
+}
+$("#confirm-yes").addEventListener("click", () => closeConfirm(true));
+$("#confirm-no").addEventListener("click", () => closeConfirm(false));
+$("#confirm-scrim").addEventListener("click", () => closeConfirm(false));
+
+const TYPE_DEFINITE = { tank: "tankningen", matare: "mätarställningen", service: "servicen", eget: "jobbet", dack: "däckposten", kostnad: "kostnaden" };
 
 function typePicker() {
   openSheet("Vad vill du logga?", `<div class="types">
@@ -1462,6 +1513,10 @@ async function saveEntry(form) {
     else tires.push({ kind: data.tireKind, depth: data.depth });
     carUpdate.tires = tires;
   }
+  // Fulltankning sätter bränslemätaren till Full.
+  if (type === "tank" && data.full && !existing) {
+    carUpdate.fuelLevel = { level: 8, by: uid(), at: serverTimestamp(), via: "tank" };
+  }
   if (form.dataset.booking) {
     carUpdate.bookings = (carTarget.bookings || []).filter((x) => x.id !== form.dataset.booking);
   }
@@ -1706,13 +1761,15 @@ const ACTIONS = {
         showToast("Bokningen är borttagen");
     }
   },
-  "delete-booking"(el) {
-    if (el.dataset.confirm !== "1") {
-      el.dataset.confirm = "1";
-      el.textContent = "Tryck igen för att ta bort bokningen";
-      return;
-    }
-    removeBooking(S.carId, el.dataset.id);
+  async "delete-booking"(el) {
+    const b = (car()?.bookings || []).find((x) => x.id === el.dataset.id);
+    if (!b) return closeSheet();
+    const ok = await confirmDialog({
+      title: "Ta bort bokningen?",
+      lines: [`${BOOK_KINDS[b.kind] || "Bokning"} · ${bookingWhen(b)}`, b.place],
+    });
+    if (!ok) return;
+    removeBooking(S.carId, b.id);
     closeSheet();
     showToast("Bokningen är borttagen");
   },
@@ -1720,14 +1777,18 @@ const ACTIONS = {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (e) entryForm(e.type, e);
   },
-  "delete-entry"(el) {
-    if (el.dataset.confirm !== "1") {
-      el.dataset.confirm = "1";
-      el.textContent = "Tryck igen för att ta bort";
-      return;
-    }
+  async "delete-entry"(el) {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (!e) return closeSheet();
+    const detail = entryDetail(e);
+    const ok = await confirmDialog({
+      title: `Ta bort ${TYPE_DEFINITE[e.type] || "posten"}?`,
+      lines: [
+        [fmtDate(e.date), e.amount != null ? `${fmt(e.amount)} kr` : null, `loggad av ${whoName(e.createdBy).replace(/^Du$/, "dig")}`].filter(Boolean).join(" · "),
+        e.type === "eget" || e.type === "kostnad" ? entryTitle(e) : detail,
+      ],
+    });
+    if (!ok) return;
     deleteDoc(ref("entries", e.id)).catch(onWriteError);
     if (e.photoId) deleteDoc(ref("photos", e.photoId)).catch(() => {});
     closeSheet();
@@ -1761,17 +1822,22 @@ const ACTIONS = {
   async "delete-car"(el) {
     const c = S.cars.find((x) => x.id === el.dataset.id) || car();
     if (!c) return;
-    if (el.dataset.confirm !== "1") {
-      el.dataset.confirm = "1";
-      el.textContent = el.classList.contains("link") ? "Tryck igen" : `Tryck igen för att ta bort ${c.make} ${c.model}`;
-      return;
-    }
+    const n = S.entries.filter((e) => e.carId === c.id).length;
+    const ok = await confirmDialog({
+      title: `Ta bort ${carName(c)}?`,
+      lines: [
+        `Bilen${n ? ` och hela dess logg (${n} ${n === 1 ? "post" : "poster"})` : ""} tas bort för er båda.`,
+        c.plate ? `Reg.nr ${c.plate}` : null,
+      ],
+      okLabel: "Ta bort bilen",
+    });
+    if (!ok) return;
     el.disabled = true;
     el.textContent = "Tar bort …";
     try {
       await deleteCar(c.id);
       if (!sheet.hidden) closeSheet();
-      showToast(`${c.make} ${c.model} är borttagen`);
+      showToast(`${carName(c)} är borttagen`);
     } catch (e) {
       onWriteError(e);
       el.disabled = false;
@@ -1990,6 +2056,15 @@ function saveItems(form) {
 
 let manualTotal = false;
 function onInput(ev) {
+  if (ev.target.id === "fuel-range") {
+    // Visa nivån direkt medan man drar; den sparas när man släpper (change).
+    const l = Number(ev.target.value);
+    S.fuelDraft = { carId: S.carId, level: l };
+    const now = $("#fuel-now");
+    if (now) { now.className = `fuel-now ${fuelClass(l)}`; now.innerHTML = fuelNowHtml(l); }
+    ev.target.setAttribute("aria-valuetext", fuelText(l));
+    return;
+  }
   if (ev.target.id === "log-search") {
     const had = !!S.query;
     S.query = ev.target.value;
@@ -2026,6 +2101,14 @@ function onChange(ev) {
     pref.set("car", S.carId);
     render();
   }
+  if (ev.target.id === "fuel-range") {
+    const l = Number(ev.target.value);
+    updateDoc(ref("cars", S.carId), { fuelLevel: { level: l, by: uid(), at: serverTimestamp(), via: "manual" } }).catch(onWriteError);
+    S.fuelDraft = null;
+    const meta = $("#fuel-meta");
+    if (meta) meta.textContent = "Uppdaterad av dig · nyss";
+    return;
+  }
   if (ev.target.id === "hero-photo") {
     const f = ev.target.files?.[0];
     ev.target.value = "";
@@ -2050,12 +2133,26 @@ function showToast(text, ms = 3500) {
   toastTimer = setTimeout(() => { t.hidden = true; }, ms);
 }
 
-function announce(e) {
-  const text = activityText(e);
+function notify(text, tag) {
   if (document.visibilityState === "visible") {
     showToast(text, 5000);
   } else if ("Notification" in window && Notification.permission === "granted" && navigator.serviceWorker) {
-    navigator.serviceWorker.ready.then((reg) => reg.showNotification("Bildagboken", { body: text, icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag: e.id })).catch(() => {});
+    navigator.serviceWorker.ready.then((reg) => reg.showNotification("Bildagboken", { body: text, icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag })).catch(() => {});
+  }
+}
+function announce(e) { notify(activityText(e), e.id); }
+
+// När någon annan sätter bränslet lågt får de andra en avisering.
+const fuelSeen = {};
+function checkFuelChanges(cars, first) {
+  for (const c of cars) {
+    const f = c.fuelLevel;
+    if (!f || typeof f.level !== "number") continue;
+    const at = tsMs(f.at);
+    const prev = fuelSeen[c.id];
+    fuelSeen[c.id] = at;
+    if (first || !prev || at <= prev || f.by === uid()) continue;
+    if (f.level <= 2) notify(`${memberName(f.by)}: bränslet i ${carName(c)} är på ${fuelText(f.level).toLowerCase()}. Tanka snart.`, `fuel-${c.id}`);
   }
 }
 
@@ -2099,6 +2196,7 @@ function subscribe(hid) {
       const saved = pref.get("car");
       S.carId = S.cars.find((c) => c.id === saved)?.id || S.cars[0]?.id || null;
     }
+    checkFuelChanges(S.cars, !S.loaded.cars);
     S.loaded.cars = true;
     render();
   }, onListenError));
@@ -2148,7 +2246,11 @@ document.addEventListener("click", (ev) => {
 document.addEventListener("submit", onSubmit);
 document.addEventListener("input", onInput);
 document.addEventListener("change", onChange);
-document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !sheet.hidden) closeSheet(); });
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape") return;
+  if (!$("#confirm").hidden) return closeConfirm(false);
+  if (!sheet.hidden) closeSheet();
+});
 window.addEventListener("hashchange", () => {
   const v = location.hash.slice(1);
   if (v && v !== S.view) { S.view = v; render(); }
