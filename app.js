@@ -7,11 +7,11 @@ import {
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs,
-  query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion
+  query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, writeBatch
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "1.0";
+const VERSION = "1.1";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -810,6 +810,10 @@ function viewCar() {
     return `<div class="dl"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div></div><span class="pill ${low ? "soon" : on ? "ok" : "none"}">${low ? "Slitna" : on ? "På" : "Förråd"}</span></div>`;
   }).join("");
   return `${subHeader(`${c.year || ""} · ${c.fuel || ""}`.replace(/^ · | · $/g, ""), `${c.make} ${c.model}`)}
+    <div class="car-chips" role="group" aria-label="Välj bil">
+      ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon("car", 16)}${esc(`${x.make} ${x.model}`)}</button>`).join("")}
+      <button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>
+    </div>
     <div class="card">
       <h2>Bra att ha <button class="link" type="button" data-act="edit-car">Ändra</button></h2>
       ${specs.length ? `<div class="spec">${specs.map(([k, v]) => `<div><div class="label">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("")}</div>`
@@ -874,6 +878,13 @@ function viewSettings() {
       <button class="btn block" type="submit">Spara namn</button>
     </form>
     <div class="card">
+      <h2>Utseende</h2>
+      <div class="seg" role="group" aria-label="Utseende">
+        ${[["auto", "Automatiskt"], ["light", "Ljust"], ["dark", "Mörkt"]].map(([k, l]) => `<button type="button" data-act="theme" data-v="${k}" aria-pressed="${(pref.get("theme") || "auto") === k}">${l}</button>`).join("")}
+      </div>
+      <p class="hint" style="margin-top:10px">Automatiskt följer telefonens inställning för mörkt läge.</p>
+    </div>
+    <div class="card">
       <h2>Notiser</h2>
       <p class="muted">${esc(permText)}</p>
       ${perm === "default" ? `<div class="ask"><button class="btn-soft" type="button" data-act="enable-notif">Slå på notiser</button></div>` : ""}
@@ -902,6 +913,7 @@ function openSheet(title, body, { back = null } = {}) {
     <div class="sheet-head">
       ${back ? `<button class="icon-btn" type="button" data-act="${back}" aria-label="Tillbaka">${icon("back", 18)}</button>` : ""}
       <h3 id="sheet-title">${esc(title)}</h3>
+      <button class="icon-btn" type="button" data-act="close-sheet" aria-label="Stäng">${icon("close", 18)}</button>
     </div>${body}`;
   sheet.setAttribute("aria-labelledby", "sheet-title");
   sheet.hidden = false;
@@ -1159,7 +1171,18 @@ function openEntry(id) {
 
 function itemsSheet() {
   const c = car();
-  const row = (i) => `<div class="item-row" data-item="${esc(i.id)}">
+  openSheet("Underhåll", `
+    <form class="form" data-form="items" novalidate>
+      <p class="hint">Fyll i när det gjordes senast om det inte finns i loggen. När ni loggar en service med punkten ikryssad räknas den om automatiskt.</p>
+      <div class="form" id="item-rows">${(c.items || []).map(itemRowHtml).join("")}</div>
+      <button class="btn ghost block" type="button" data-act="add-item-row">Lägg till punkt</button>
+      <button class="btn primary block" type="submit">Spara</button>
+      <button class="link" type="button" data-act="reset-items" style="align-self:center">Återställ standardpunkter för ${esc(`${c.make} ${c.model}`)}</button>
+    </form>`);
+}
+
+function itemRowHtml(i) {
+  return `<div class="item-row" data-item="${esc(i.id)}">
     <label class="field"><span>Namn</span><input name="name" value="${esc(i.name)}" required></label>
     <div class="row2">
       <label class="field"><span>Var … mil</span><input name="mil" inputmode="numeric" value="${i.mil ?? ""}" placeholder="–"></label>
@@ -1171,24 +1194,38 @@ function itemsSheet() {
     </div>
     <button class="link" type="button" data-act="remove-item-row" style="justify-self:start">Ta bort</button>
   </div>`;
-  openSheet("Underhåll", `
-    <form class="form" data-form="items" novalidate>
-      <p class="hint">Fyll i när det gjordes senast om det inte finns i loggen. När ni loggar en service med punkten ikryssad räknas den om automatiskt.</p>
-      <div class="form" id="item-rows">${(c.items || []).map(row).join("")}</div>
-      <button class="btn ghost block" type="button" data-act="add-item-row">Lägg till punkt</button>
-      <button class="btn primary block" type="submit">Spara</button>
-    </form>`);
-  sheet.dataset.rowTemplate = row({ id: "__ID__", name: "", mil: null, months: null }).replace(/__ID__/g, "NEWID");
 }
 
 function carSheet(edit) {
   const c = edit ? car() : {};
-  openSheet(edit ? "Ändra bilen" : "Lägg till bil", `
+  openSheet(edit ? `Ändra ${c.make || ""} ${c.model || ""}`.trim() : "Lägg till bil", `
     <form class="form" data-form="${edit ? "car-edit" : "car-new"}" novalidate>
       ${carFormFields(c, { full: edit })}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
+      ${edit ? `<button class="btn danger block" type="button" data-act="delete-car">Ta bort bilen</button>
+      <p class="hint">Tar bort bilen och hela dess logg för er båda. Det går inte att ångra.</p>` : ""}
     </form>`);
+}
+
+async function deleteCar(carId) {
+  const ents = S.entries.filter((e) => e.carId === carId);
+  const ops = [ref("cars", carId), ...ents.map((e) => ref("entries", e.id)), ...ents.filter((e) => e.photoId).map((e) => ref("photos", e.photoId))];
+  for (let i = 0; i < ops.length; i += 400) {
+    const b = writeBatch(db);
+    ops.slice(i, i + 400).forEach((r) => b.delete(r));
+    await b.commit();
+  }
+}
+
+function applyTheme(mode) {
+  const root = document.documentElement;
+  if (mode === "light" || mode === "dark") root.dataset.theme = mode;
+  else delete root.dataset.theme;
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+    const isDarkMeta = /dark/.test(m.media);
+    m.content = mode === "dark" ? "#171514" : mode === "light" ? "#E9E4DF" : isDarkMeta ? "#171514" : "#E9E4DF";
+  });
 }
 
 function readCarForm(form, full) {
@@ -1285,12 +1322,42 @@ const ACTIONS = {
   "add-car"() { carSheet(false); },
   "edit-items"() { itemsSheet(); },
   "add-item-row"() {
-    const tpl = sheet.dataset.rowTemplate.replace(/NEWID/g, "i" + randomId(6));
-    $("#item-rows").insertAdjacentHTML("beforeend", tpl);
+    $("#item-rows").insertAdjacentHTML("beforeend", itemRowHtml({ id: "i" + randomId(6), name: "", mil: null, months: null }));
     $("#item-rows .item-row:last-child input")?.focus();
   },
   "remove-item-row"(el) { el.closest(".item-row")?.remove(); },
+  "reset-items"() {
+    const c = car();
+    const old = Object.fromEntries((c.items || []).map((i) => [i.id, i]));
+    const fresh = defaultItems(c).map((i) => ({ ...i, baseDate: old[i.id]?.baseDate, baseMil: old[i.id]?.baseMil }));
+    $("#item-rows").innerHTML = fresh.map(itemRowHtml).join("");
+    showToast("Standardpunkterna är inlagda. Tryck Spara för att behålla dem.");
+  },
   "pick-car"(el) { S.carId = el.dataset.id; pref.set("car", S.carId); render(); },
+  async "delete-car"(el) {
+    if (el.dataset.confirm !== "1") {
+      el.dataset.confirm = "1";
+      el.textContent = "Tryck igen för att ta bort bilen och loggen";
+      return;
+    }
+    const c = car();
+    el.disabled = true;
+    el.textContent = "Tar bort …";
+    try {
+      await deleteCar(c.id);
+      closeSheet();
+      showToast(`${c.make} ${c.model} är borttagen`);
+    } catch (e) {
+      onWriteError(e);
+      el.disabled = false;
+    }
+  },
+  theme(el) {
+    const v = el.dataset.v;
+    pref.set("theme", v);
+    applyTheme(v);
+    el.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
+  },
   async "copy-invite"() {
     const link = `${location.origin}${location.pathname}?join=${S.house.inviteCode}`;
     const ok = await copyText(`Gå med i vår bildagbok: ${link}\nKod: ${S.house.inviteCode}`);
@@ -1583,6 +1650,7 @@ window.addEventListener("hashchange", () => {
   if (v && v !== S.view) { S.view = v; render(); }
 });
 
+applyTheme(pref.get("theme") || "auto");
 const initial = location.hash.slice(1);
 if (initial) S.view = initial;
 

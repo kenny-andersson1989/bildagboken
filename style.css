@@ -29,8 +29,9 @@
   --r-chip: 999px;
   color-scheme: light;
 }
+/* Mörkt läge: följer telefonen ("Automatiskt") om man inte valt Ljust eller Mörkt i appen. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --ground: #171514;
     --glow-1: rgba(229, 158, 91, .16);
     --glow-2: rgba(231, 112, 38, .14);
@@ -57,6 +58,44 @@
     color-scheme: dark;
   }
 }
+:root[data-theme="dark"] {
+  --ground: #171514;
+  --glow-1: rgba(229, 158, 91, .16);
+  --glow-2: rgba(231, 112, 38, .14);
+  --glass: rgba(44, 40, 37, .62);
+  --glass-strong: rgba(52, 47, 43, .94);
+  --glass-edge: rgba(255, 255, 255, .07);
+  --input: rgba(255, 255, 255, .06);
+  --ink: #F1ECE6;
+  --ink-2: #c3bab1;
+  --ink-3: #958b81;
+  --line: rgba(255, 255, 255, .09);
+  --accent: #F08443;
+  --accent-ink: #1b1209;
+  --accent-soft: rgba(240, 132, 67, .16);
+  --sage: #8FAAA3;
+  --sage-soft: rgba(143, 170, 163, .16);
+  --sand: #8a7d71;
+  --warn: #E0A443;
+  --warn-soft: rgba(224, 164, 67, .15);
+  --track: rgba(255, 255, 255, .08);
+  --car-glass: #3c464b;
+  --scrim: rgba(0, 0, 0, .55);
+  --shadow: 0 10px 30px -12px rgba(0, 0, 0, .6);
+  color-scheme: dark;
+}
+
+/* segmented control (Utseende) */
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 16px; background: var(--track); }
+.seg button { border: 0; background: none; padding: 10px 6px; border-radius: 12px; font: 600 13.5px var(--f-body); color: var(--ink-2); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--glass-strong); color: var(--ink); box-shadow: var(--shadow); }
+
+/* car chips */
+.car-chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -2px; padding-bottom: 2px; }
+.car-chips::-webkit-scrollbar { display: none; }
+.car-chips button { flex: none; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--glass-edge); background: var(--glass); color: var(--ink-2); font: 600 13px var(--f-body); padding: 8px 14px; border-radius: var(--r-chip); cursor: pointer; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.car-chips button[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.car-chips button.add { color: var(--accent); border-style: dashed; border-color: var(--accent); background: transparent; }
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -262,7 +301,7 @@ legend { font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 0; mar
 .photo-in svg { color: var(--accent); flex: none; }
 .photo { border-radius: 16px; width: 100%; display: block; }
 .item-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px; border-radius: 16px; background: var(--input); border: 1px solid var(--line); }
-.item-row .row2, .item-row .field { grid-column: 1 / -1; }
+.item-row > .row2, .item-row > .field { grid-column: 1 / -1; }
 .item-row input { background: var(--glass-strong); }
 .code { font-family: var(--f-display); font-weight: 800; font-size: 30px; letter-spacing: .14em; }
 
@@ -299,7 +338,11 @@ legend { font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 0; mar
   padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
 }
 .sheet .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto 12px; }
-.sheet-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.sheet-head {
+  display: flex; align-items: center; gap: 10px; margin: 0 -16px 14px; padding: 6px 16px 10px;
+  position: sticky; top: -10px; z-index: 2; background: var(--glass-strong);
+  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+}
 .sheet-head h3 { margin: 0; font-family: var(--f-display); font-size: 20px; flex: 1; min-width: 0; }
 .sheet-head .icon-btn { width: 38px; height: 38px; }
 .types { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
