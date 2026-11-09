@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "1.9";
+const VERSION = "2.0";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -194,16 +194,22 @@ function defaultItems(c) {
 /* -------------------------------------------------------- derived values */
 
 const car = () => S.cars.find((c) => c.id === S.carId) || null;
+// Samma namn på bilen överallt, till exempel "Volvo V50 1.8F".
+const carName = (c) => [c?.make, c?.model, c?.engine].filter(Boolean).join(" ") || "Bilen";
 
 // Mätarställningen bestäms av loggen: den senaste posten (efter datum) som har en mätarställning.
 // Äldre bilar utan sådana poster faller tillbaka på värdet som sparades på bilen.
-function odoOf(c) {
-  if (!c) return null;
+function latestOdoEntry(carId, excludeId = null) {
   let best = null;
   for (const e of S.entries) {
-    if (e.carId !== c.id || e.odometer == null) continue;
+    if (e.carId !== carId || e.odometer == null || e.id === excludeId) continue;
     if (!best || (e.date || "") > (best.date || "") || ((e.date || "") === (best.date || "") && tsMs(e.createdAt) > tsMs(best.createdAt))) best = e;
   }
+  return best;
+}
+function odoOf(c) {
+  if (!c) return null;
+  const best = latestOdoEntry(c.id);
   return best ? best.odometer : c.odometer ?? null;
 }
 const carEntries = () => S.entries.filter((e) => e.carId === S.carId);
@@ -412,9 +418,9 @@ function economy(ents, months = 12) {
   const since = addMonths(today0(), -months);
   const inPeriod = ents.filter((e) => parseDate(e.date) >= since);
   const paid = inPeriod.filter((e) => e.amount > 0);
-  const cats = {};
+  const cats = {}, catCount = {};
   let total = 0;
-  for (const e of paid) { const k = catOf(e); cats[k] = (cats[k] || 0) + e.amount; total += e.amount; }
+  for (const e of paid) { const k = catOf(e); cats[k] = (cats[k] || 0) + e.amount; catCount[k] = (catCount[k] || 0) + 1; total += e.amount; }
   const odos = inPeriod.filter((e) => e.odometer != null).map((e) => e.odometer);
   const driven = odos.length >= 2 ? Math.max(...odos) - Math.min(...odos) : null;
   let monthsSpan = 1;
@@ -447,7 +453,7 @@ function economy(ents, months = 12) {
     bars.push({ label: MONTHS_SHORT[d.getMonth()], sum, now: i === 0 });
   }
   const thisMonth = bars[5].sum, lastMonth = bars[4].sum;
-  return { total, cats, driven, perMonth: total / monthsSpan, perMil: driven ? total / driven : null, consumption, fuelPerMil, bars, thisMonth, lastMonth, count: paid.length };
+  return { total, cats, catCount, driven, perMonth: total / monthsSpan, perMil: driven ? total / driven : null, consumption, fuelPerMil, bars, thisMonth, lastMonth, count: paid.length };
 }
 
 function tipsFor(c) {
@@ -489,8 +495,19 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
     const busy = [...app.querySelectorAll("form[data-keep]")].some((f) => f.dataset.dirty === "1" || f.contains(document.activeElement));
     if (busy) return;
   }
+  // Behåll sidledsscrollen i filter- och bilraderna när sidan ritas om.
+  const keepScroll = {};
+  if (S.screen === key) app.querySelectorAll(".filters, .car-chips").forEach((el) => { keepScroll[el.className] = el.scrollLeft; });
   S.screen = key;
   app.innerHTML = html;
+  app.querySelectorAll(".filters, .car-chips").forEach((el) => {
+    if (keepScroll[el.className] != null) el.scrollLeft = keepScroll[el.className];
+    const sel = el.querySelector('[aria-pressed="true"]');
+    if (sel) {
+      const r = sel.getBoundingClientRect(), box = el.getBoundingClientRect();
+      if (r.right > box.right || r.left < box.left) el.scrollLeft += r.left - box.left - (box.width - r.width) / 2;
+    }
+  });
   app.classList.toggle("no-nav", !showNav);
   nav.hidden = !showNav;
   if (showNav) {
@@ -776,11 +793,11 @@ function viewOverview() {
   }
 
   const switcher = S.cars.length > 1
-    ? `<label class="field car-switch"><span class="label">Byt bil</span><select data-act="switch-car" id="car-switch">${S.cars.map((x) => `<option value="${x.id}"${x.id === c.id ? " selected" : ""}>${esc(`${x.make} ${x.model}`)}</option>`).join("")}</select></label>`
+    ? `<label class="field car-switch"><span class="label">Byt bil</span><select data-act="switch-car" id="car-switch">${S.cars.map((x) => `<option value="${x.id}"${x.id === c.id ? " selected" : ""}>${esc(carName(x))}</option>`).join("")}</select></label>`
     : "";
   parts.push(`<article class="card hero">
     <div class="hero-top">
-      <div><h2>${esc(`${c.make || ""} ${c.model || ""} ${c.engine || ""}`.trim())}</h2>
+      <div><h2>${esc(carName(c))}</h2>
       <div class="sub">${esc([c.year, c.fuel, c.color].filter(Boolean).join(" · "))}</div></div>
       ${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}
     </div>
@@ -796,7 +813,6 @@ function viewOverview() {
     ${switcher}
   </article>`);
 
-  parts.push(installCard());
   parts.push(inviteCard());
 
   const ps = primaryService(c);
@@ -847,27 +863,31 @@ function viewOverview() {
 
   const eco = economy(carEntries());
   const maxBar = Math.max(1, ...eco.bars.map((b) => b.sum));
+  const hasCosts = carEntries().some((e) => e.amount > 0);
   parts.push(`<article class="card">
     <h2>Ekonomi <button class="link" type="button" data-go="ekonomi">Mer</button></h2>
-    <div class="eco">
+    ${hasCosts ? `<div class="eco">
       <div class="stat"><div class="label">${MONTHS[new Date().getMonth()].replace(/^./, (x) => x.toUpperCase())}</div><div class="n">${fmt(eco.thisMonth)} <small>kr</small></div></div>
       <div class="stat"><div class="label">Bränsle per mil</div><div class="n">${eco.fuelPerMil != null ? fmt(eco.fuelPerMil, 2) : "–"} <small>kr</small></div></div>
       <div class="bars" aria-label="Kostnad per månad de senaste sex månaderna">
         ${eco.bars.map((b) => `<div class="bar${b.now ? " now" : ""}">${b.sum ? `<b>${fmt(b.sum / 1000, 1)}k</b>` : ""}<i style="height:${Math.round((b.sum / maxBar) * 70)}%"></i><span>${b.label}</span></div>`).join("")}
       </div>
     </div>
-    ${eco.fuelPerMil == null ? `<p class="hint" style="margin-top:10px">Bränsle per mil räknas ut när ni har loggat två tankningar med mätarställning. Tanka fullt varje gång för bäst siffror.</p>` : ""}
+    ${eco.fuelPerMil == null ? `<p class="hint" style="margin-top:10px">Bränsle per mil räknas ut när ni har loggat två tankningar med mätarställning. Tanka fullt varje gång för bäst siffror.</p>` : ""}`
+    : `<p class="muted">Här ser ni vad bilen kostar per månad när ni har loggat er första tankning eller kostnad.</p>
+      <div class="ask"><button class="btn-soft" type="button" data-act="new-entry" data-type="tank">${icon("fuel", 16)} Logga en tankning</button></div>`}
   </article>`);
 
   const tips = tipsFor(c);
   parts.push(`<article class="card">
-    <h2>Bra att hålla koll på för ${esc(`${c.model || "bilen"}${c.engine ? " " + c.engine : ""}`)}</h2>
+    <h2>Tips för ${esc(carName(c))}</h2>
     <div class="recs">${tips.map((t) => `<div class="rec"><span class="sev ${t.sev === "high" ? "high" : t.sev === "mid" ? "mid" : ""}"></span><div><b>${esc(t.title)}</b><p>${esc(t.text)}</p></div></div>`).join("")}</div>
     <div class="ask">
       <a class="btn" href="https://claude.ai/new" target="_blank" rel="noopener" data-act="ask-claude">${icon("spark", 18)} Fråga Claude</a>
       <small>Kopierar en fråga med er bil och historik som du klistrar in i Claude.</small>
     </div>
   </article>`);
+  parts.push(installCard());
   return parts.join("");
 }
 
@@ -911,14 +931,15 @@ function viewEconomy() {
   return `${subHeader("Senaste 12 månaderna", "Ekonomi")}
     <div class="card"><div class="eco">
       <div class="stat"><div class="label">Totalt</div><div class="n">${fmt(eco.total)} <small>kr</small></div></div>
-      <div class="stat"><div class="label">Per mil</div><div class="n">${eco.perMil != null ? fmt(eco.perMil, 2) : "–"} <small>kr</small></div></div>
-      <div class="stat"><div class="label">Per månad</div><div class="n">${fmt(eco.perMonth)} <small>kr</small></div></div>
+      <div class="stat"><div class="label">Per mil</div><div class="n">${eco.perMil != null && eco.total > 0 ? fmt(eco.perMil, 2) : "–"} <small>kr</small></div></div>
+      <div class="stat"><div class="label">Per månad</div><div class="n">${eco.total > 0 ? fmt(eco.perMonth) : "–"} <small>kr</small></div></div>
       <div class="stat"><div class="label">Körsträcka</div><div class="n">${eco.driven != null ? fmt(eco.driven) : "–"} <small>mil</small></div></div>
       <div class="stat"><div class="label">Bränsle per mil</div><div class="n">${eco.fuelPerMil != null ? fmt(eco.fuelPerMil, 2) : "–"} <small>kr</small></div></div>
       <div class="stat"><div class="label">Förbrukning</div><div class="n">${eco.consumption != null ? fmt(eco.consumption, 2) : "–"} <small>l/mil</small></div></div>
     </div></div>
     <div class="card"><h2>Fördelning</h2>
-      ${cats.length ? `<div class="rows">${cats.map(([k, v]) => `<div class="dl"><div class="dl-ic">${icon(CAT_ICON[k] || "receipt", 20)}</div><div><div class="dl-t">${esc(k)}</div><div class="dl-s">${eco.total ? fmt((v / eco.total) * 100) : 0} %</div></div><span class="dl-v">${fmt(v)} kr</span></div>`).join("")}</div>`
+      ${cats.length ? `<div class="rows">${cats.map(([k, v]) => `<button class="dl as-btn" type="button" data-act="open-cat" data-id="${esc(k)}"><span class="dl-ic">${icon(CAT_ICON[k] || "receipt", 20)}</span><span><span class="dl-t">${esc(k)}</span><span class="dl-s">${eco.total ? fmt((v / eco.total) * 100) : 0} % · ${eco.catCount[k]} st</span></span><span class="dl-v">${fmt(v)} kr ›</span></button>`).join("")}</div>
+        <p class="hint" style="margin-top:10px">Tryck på en rad för att se vad som ingår.</p>`
         : `<p class="muted">Inga kostnader loggade de senaste 12 månaderna. Belopp från tankningar, service, däck och andra kostnader hamnar här.</p>`}
     </div>
     <p class="hint" style="text-align:center">Kostnad per mil räknas på körsträckan mellan loggade mätarställningar. Förbrukning i liter visas bara om ni fyller i liter under Fler detaljer.</p>`;
@@ -939,9 +960,9 @@ function viewCar() {
     const low = depth != null && depth < (k === "vinter" ? 4 : 3);
     return `<div class="dl"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div></div><span class="pill ${low ? "soon" : on ? "ok" : "none"}">${low ? "Slitna" : on ? "På" : "Förråd"}</span></div>`;
   }).join("");
-  return `${subHeader(`${c.year || ""} · ${c.fuel || ""}`.replace(/^ · | · $/g, ""), `${c.make} ${c.model}`)}
+  return `${subHeader([c.year, c.fuel].filter(Boolean).join(" · "), carName(c))}
     <div class="car-chips" role="group" aria-label="Välj bil">
-      ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon("car", 16)}${esc(`${x.make} ${x.model}`)}</button>`).join("")}
+      ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon("car", 16)}${esc(carName(x))}</button>`).join("")}
       <button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>
     </div>
     <div class="card">
@@ -981,10 +1002,10 @@ function viewNotifications() {
       ${feed.length ? feed.map((e) => {
         const mine = e.createdBy === uid();
         const isNew = !mine && tsMs(e.createdAt) > seen;
-        const carName = S.cars.length > 1 ? S.cars.find((x) => x.id === e.carId)?.model : "";
+        const otherCar = S.cars.length > 1 ? carName(S.cars.find((x) => x.id === e.carId)) : "";
         return `<button class="entry" type="button" data-act="open-entry" data-id="${esc(e.id)}">
           <span class="avatar${mine ? " me" : ""}">${esc((mine ? myName() : memberName(e.createdBy)).slice(0, 1).toUpperCase())}</span>
-          <span><span class="t">${esc(activityText(e))}</span><span class="m">${esc(timeAgo(tsMs(e.createdAt)))}${carName ? ` · ${esc(carName)}` : ""}</span></span>
+          <span><span class="t">${esc(activityText(e))}</span><span class="m">${esc(timeAgo(tsMs(e.createdAt)))}${otherCar ? ` · ${esc(otherCar)}` : ""}</span></span>
           <span>${isNew ? `<span class="new-pill">Ny</span>` : ""}</span>
         </button>`;
       }).join("") : `<div class="empty"><b>Inget här än</b>När någon av er loggar något syns det här.</div>`}
@@ -1004,9 +1025,10 @@ function viewSettings() {
       <button class="btn-soft" type="button" data-act="copy-invite">Kopiera inbjudningslänk</button>
     </div>
     <form class="card form" data-form="rename" data-keep>
-      <h2>Ditt namn</h2>
-      <label class="field"><span>Så här ser din sambo dig i appen</span><input name="name" id="st-name" required maxlength="30" value="${esc(myName())}"></label>
-      <button class="btn block" type="submit">Spara namn</button>
+      <h2>Namn</h2>
+      <label class="field"><span>Hushållets namn</span><input name="house" id="st-house" required maxlength="40" value="${esc(S.house?.name || "")}"></label>
+      <label class="field"><span>Ditt namn, så ser din sambo dig i appen</span><input name="name" id="st-name" required maxlength="30" value="${esc(myName())}"></label>
+      <button class="btn block" type="submit">Spara</button>
     </form>
     <div class="card">
       <h2>Utseende</h2>
@@ -1023,9 +1045,9 @@ function viewSettings() {
     </div>
     <div class="card">
       <h2>Bilar</h2>
-      <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(`${x.make} ${x.model} ${x.engine || ""}`)}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
+      <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(carName(x))}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
         <span class="row-actions">${x.id === S.carId ? `<span class="pill ok">Vald</span>` : `<button class="link" type="button" data-act="pick-car" data-id="${esc(x.id)}">Välj</button>`}
-        <button class="link danger" type="button" data-act="delete-car" data-id="${esc(x.id)}" aria-label="Ta bort ${esc(`${x.make} ${x.model}`)}">Ta bort</button></span></div>`).join("")}</div>
+        <button class="link danger" type="button" data-act="delete-car" data-id="${esc(x.id)}" aria-label="Ta bort ${esc(carName(x))}">Ta bort</button></span></div>`).join("")}</div>
       <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för er båda. Tryck två gånger för att bekräfta.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="add-car">Lägg till bil</button></div>
     </div>
@@ -1157,30 +1179,30 @@ function entryForm(type, e = {}, opts = {}) {
     case "matare":
       body = `${odo(true)}${date}`;
       break;
+    // Samma ordning i alla formulär: vad → belopp → mätarställning → datum → detaljer.
     case "service":
-      body = `${date}${odo(false)}
+      body = `${items}${parts}
         ${field("Verkstad", `<input name="workshop" id="ef-workshop" value="${v("workshop")}" placeholder="Till exempel Mekonomen">`)}
-        ${items}${parts}${amount()}${note}${photo}`;
+        ${amount()}${odo(false)}${date}${note}${photo}`;
       break;
     case "eget":
       body = `${field("Vad gjorde du?", `<input name="title" id="ef-title" required value="${v("title")}" placeholder="Till exempel bytte glödlampa bak">`)}
-        ${date}${odo(false)}${items}${parts}${amount("Kostnad för delar (kr)")}${note}${photo}`;
+        ${items}${parts}${amount("Kostnad för delar (kr)")}${odo(false)}${date}${note}${photo}`;
       break;
     case "dack": {
       const actDefault = e.tireAction || ((c.tiresOn || "sommar") === "sommar" ? "till_vinter" : "till_sommar");
       body = `${field("Vad gjordes?", `<select name="tireAction" id="ef-tireAction">${Object.entries(TIRE_ACTIONS).map(([k, l]) => `<option value="${k}"${actDefault === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
-        ${date}
         <div class="row2">
-          ${field("Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}" placeholder="Valfritt">`)}
           ${field("Gäller", `<select name="tireKind" id="ef-tireKind"><option value="">–</option><option value="sommar"${e.tireKind === "sommar" ? " selected" : ""}>Sommardäck</option><option value="vinter"${e.tireKind === "vinter" ? " selected" : ""}>Vinterdäck</option></select>`)}
+          ${field("Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}" placeholder="Valfritt">`)}
         </div>
-        ${odo(false)}${amount()}${note}${photo}`;
+        ${amount()}${odo(false)}${date}${note}${photo}`;
       break;
     }
     case "kostnad":
       body = `${field("Typ", `<select name="category" id="ef-category">${COST_CATS.map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
         ${field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
-        ${date}${amount("Belopp (kr)")}${note}${photo}`;
+        ${amount("Belopp (kr)")}${date}${note}${photo}`;
       break;
   }
   const isEdit = !!e.id;
@@ -1233,6 +1255,14 @@ async function saveEntry(form) {
   if (fd.has("amount")) data.amount = num(fd.get("amount"));
 
   if (data.odometer != null && (data.odometer < 0 || data.odometer > 200000)) return formError("Mätarställningen ser fel ut. Ange den i mil, till exempel 21 480.");
+  // Varna om mätarställningen är lägre än den senaste (vanligt när man tappar en siffra).
+  if (data.odometer != null && form.dataset.odoOk !== "1") {
+    const prev = latestOdoEntry(data.carId, id);
+    if (prev && data.odometer < prev.odometer && data.date >= (prev.date || "")) {
+      form.dataset.odoOk = "1";
+      return formError(`${fmt(data.odometer)} mil är lägre än senast (${fmt(prev.odometer)} mil, ${fmtDateShort(prev.date)}). Stämmer det? Tryck Spara igen för att spara ändå.`);
+    }
+  }
 
   switch (type) {
     case "tank": {
@@ -1498,6 +1528,15 @@ const ACTIONS = {
   },
   "open-entry"(el) { openEntry(el.dataset.id); },
   "new-booking"() { bookingForm(); },
+  "open-cat"(el) {
+    const cat = el.dataset.id;
+    const since = addMonths(today0(), -12);
+    const list = carEntries().filter((e) => e.amount > 0 && parseDate(e.date) >= since && catOf(e) === cat);
+    const sum = list.reduce((s, e) => s + e.amount, 0);
+    openSheet(cat, `
+      <p class="muted" style="margin-bottom:10px">Senaste 12 månaderna · ${list.length} st · <b>${fmt(sum)} kr</b></p>
+      <div class="rows">${list.map(entryRow).join("") || `<p class="muted">Inget här.</p>`}</div>`);
+  },
   "goto-maintenance"() {
     setView("bilen");
     document.getElementById("underhall")?.scrollIntoView({ block: "start" });
@@ -1646,12 +1685,14 @@ async function onSubmit(ev) {
     if (kind === "items") return saveItems(form);
     if (kind === "booking") return saveBooking(form);
     if (kind === "rename") {
-      const name = String(new FormData(form).get("name") || "").trim();
-      if (!name) return;
-      updateDoc(doc(db, "households", S.hid), { [`memberInfo.${uid()}.name`]: name }).catch(onWriteError);
+      const fd = new FormData(form);
+      const name = String(fd.get("name") || "").trim();
+      const house = String(fd.get("house") || "").trim();
+      if (!name || !house) return showToast("Fyll i både hushållets namn och ditt namn.");
+      updateDoc(doc(db, "households", S.hid), { name: house, [`memberInfo.${uid()}.name`]: name }).catch(onWriteError);
       delete form.dataset.dirty;
       document.activeElement?.blur?.();
-      showToast("Namnet är sparat");
+      showToast("Namnen är sparade");
     }
   } catch (e) {
     console.error(e);
@@ -1805,6 +1846,10 @@ let manualTotal = false;
 function onInput(ev) {
   const keep = ev.target.closest("form[data-keep]");
   if (keep) keep.dataset.dirty = "1";
+  if (ev.target.name === "odometer" || ev.target.name === "date") {
+    const f = ev.target.closest("form");
+    if (f) delete f.dataset.odoOk;
+  }
   const form = ev.target.closest('form[data-type="tank"]');
   if (!form) return;
   const name = ev.target.name;
