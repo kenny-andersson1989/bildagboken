@@ -184,6 +184,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .hero-top .sub { font-size: 13px; color: var(--ink-3); }
 .plate { font-family: var(--f-display); font-weight: 700; font-size: 13px; letter-spacing: .08em; padding: 4px 9px; border-radius: 6px; border: 1.5px solid var(--ink); white-space: nowrap; text-transform: uppercase; }
 .car { display: block; width: 100%; max-width: 100%; height: auto; margin: 6px 0 4px; }
+.car-pick { display: block; position: relative; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.car-pick:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 16px; }
+.car-pick .cam {
+  position: absolute; left: 10px; bottom: 18px; width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center; color: #fff; background: rgba(20, 16, 12, .55);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); pointer-events: none;
+}
+.vh { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip: rect(0 0 0 0); }
+.row-actions { display: flex; align-items: center; gap: 10px; }
+.link.danger { color: var(--accent); }
 .car-fig { margin: 12px 0 8px; position: relative; }
 .car-photo { display: block; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 16px; background: var(--track); }
 .car-fig figcaption { position: absolute; right: 8px; bottom: 8px; }

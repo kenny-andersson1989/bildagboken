@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "1.3";
+const VERSION = "1.4";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -442,7 +442,11 @@ const app = $("#app");
 const nav = $("#nav");
 
 function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
-  if (keepForm && S.screen === key && app.querySelector("form[data-keep]")) return;
+  // Rita inte om sidan medan någon skriver i ett formulär, men annars ja.
+  if (keepForm && S.screen === key) {
+    const busy = [...app.querySelectorAll("form[data-keep]")].some((f) => f.dataset.dirty === "1" || f.contains(document.activeElement));
+    if (busy) return;
+  }
   S.screen = key;
   app.innerHTML = html;
   app.classList.toggle("no-nav", !showNav);
@@ -724,7 +728,11 @@ function viewOverview() {
       <div class="sub">${esc([c.year, c.fuel, c.color].filter(Boolean).join(" · "))}</div></div>
       ${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}
     </div>
-    ${carVisual(c)}
+    <label class="car-pick" title="Byt bild på bilen">
+      ${carVisual(c)}
+      <span class="cam" aria-hidden="true">${icon("camera", 19)}</span>
+      <input type="file" accept="image/*" id="hero-photo" class="vh" aria-label="Byt bild på bilen">
+    </label>
     <div class="odo">
       <div><div class="label">Mätarställning</div><div class="odo-num">${c.odometer != null ? fmt(c.odometer) : "–"}<span>mil</span></div></div>
       <button class="btn-soft" type="button" data-act="new-entry" data-type="matare">Uppdatera</button>
@@ -963,7 +971,10 @@ function viewSettings() {
     </div>
     <div class="card">
       <h2>Bilar</h2>
-      <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(`${x.make} ${x.model} ${x.engine || ""}`)}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div><span>${x.id === S.carId ? `<span class="pill ok">Vald</span>` : `<button class="link" type="button" data-act="pick-car" data-id="${esc(x.id)}">Välj</button>`}</span></div>`).join("")}</div>
+      <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(`${x.make} ${x.model} ${x.engine || ""}`)}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
+        <span class="row-actions">${x.id === S.carId ? `<span class="pill ok">Vald</span>` : `<button class="link" type="button" data-act="pick-car" data-id="${esc(x.id)}">Välj</button>`}
+        <button class="link danger" type="button" data-act="delete-car" data-id="${esc(x.id)}" aria-label="Ta bort ${esc(`${x.make} ${x.model}`)}">Ta bort</button></span></div>`).join("")}</div>
+      <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för er båda. Tryck två gånger för att bekräfta.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="add-car">Lägg till bil</button></div>
     </div>
     <div class="card">
@@ -1415,17 +1426,18 @@ const ACTIONS = {
   },
   "pick-car"(el) { S.carId = el.dataset.id; pref.set("car", S.carId); render(); },
   async "delete-car"(el) {
+    const c = S.cars.find((x) => x.id === el.dataset.id) || car();
+    if (!c) return;
     if (el.dataset.confirm !== "1") {
       el.dataset.confirm = "1";
-      el.textContent = "Tryck igen för att ta bort bilen och loggen";
+      el.textContent = el.classList.contains("link") ? "Tryck igen" : `Tryck igen för att ta bort ${c.make} ${c.model}`;
       return;
     }
-    const c = car();
     el.disabled = true;
     el.textContent = "Tar bort …";
     try {
       await deleteCar(c.id);
-      closeSheet();
+      if (!sheet.hidden) closeSheet();
       showToast(`${c.make} ${c.model} är borttagen`);
     } catch (e) {
       onWriteError(e);
@@ -1488,6 +1500,8 @@ async function onSubmit(ev) {
       const name = String(new FormData(form).get("name") || "").trim();
       if (!name) return;
       updateDoc(doc(db, "households", S.hid), { [`memberInfo.${uid()}.name`]: name }).catch(onWriteError);
+      delete form.dataset.dirty;
+      document.activeElement?.blur?.();
       showToast("Namnet är sparat");
     }
   } catch (e) {
@@ -1561,6 +1575,27 @@ async function saveNewCar(form) {
   showToast(`${data.make} ${data.model} är tillagd`);
 }
 
+// Komprimerar och sparar ett foto på bilen. Returnerar foto-id, eller null om bilden inte gick att läsa.
+async function uploadCarPhoto(c, file) {
+  const dataUrl = await compressImage(file).catch(() => null);
+  if (!dataUrl) return null;
+  const pRef = doc(col("photos"));
+  setDoc(pRef, { data: dataUrl, carId: c.id, kind: "car", createdBy: uid(), createdAt: serverTimestamp() }).catch(onWriteError);
+  photoCache[pRef.id] = dataUrl;
+  if (c.photoId) deleteDoc(ref("photos", c.photoId)).catch(() => {});
+  return pRef.id;
+}
+
+async function changeHeroPhoto(file) {
+  const c = car();
+  if (!c || !file) return;
+  showToast("Sparar bilden …", 10000);
+  const id = await uploadCarPhoto(c, file);
+  if (!id) return showToast("Bilden gick inte att läsa in. Prova en annan bild.", 5000);
+  updateDoc(ref("cars", c.id), { photoId: id }).catch(onWriteError);
+  showToast("Bilden är bytt. Ta bort den under Bilen → Ändra.");
+}
+
 async function saveCarEdit(form) {
   const data = readCarForm(form, true);
   if (!data.make || !data.model) return formError("Fyll i märke och modell.");
@@ -1574,16 +1609,12 @@ async function saveCarEdit(form) {
   if (file && file.size) {
     const btn = form.querySelector('button[type="submit"]');
     if (btn) { btn.disabled = true; btn.textContent = "Sparar bilden …"; }
-    const dataUrl = await compressImage(file).catch(() => null);
-    if (!dataUrl) {
+    const id = await uploadCarPhoto(c, file);
+    if (!id) {
       if (btn) { btn.disabled = false; btn.textContent = "Spara"; }
       return formError("Bilden gick inte att läsa in. Prova en annan bild.");
     }
-    const pRef = doc(col("photos"));
-    setDoc(pRef, { data: dataUrl, carId: c.id, kind: "car", createdBy: uid(), createdAt: serverTimestamp() }).catch(onWriteError);
-    photoCache[pRef.id] = dataUrl;
-    if (c.photoId) deleteDoc(ref("photos", c.photoId)).catch(() => {});
-    payload.photoId = pRef.id;
+    payload.photoId = id;
   } else if (fd.get("removePhoto") === "on" && c.photoId) {
     deleteDoc(ref("photos", c.photoId)).catch(() => {});
     payload.photoId = null;
@@ -1616,6 +1647,8 @@ function saveItems(form) {
 
 let manualTotal = false;
 function onInput(ev) {
+  const keep = ev.target.closest("form[data-keep]");
+  if (keep) keep.dataset.dirty = "1";
   const form = ev.target.closest('form[data-type="tank"]');
   if (!form) return;
   const name = ev.target.name;
@@ -1631,6 +1664,12 @@ function onChange(ev) {
     S.carId = ev.target.value;
     pref.set("car", S.carId);
     render();
+  }
+  if (ev.target.id === "hero-photo") {
+    const f = ev.target.files?.[0];
+    ev.target.value = "";
+    if (f) changeHeroPhoto(f);
+    return;
   }
   if (ev.target.id === "ef-photo" || ev.target.id === "cf-carPhoto") {
     const f = ev.target.files?.[0];
