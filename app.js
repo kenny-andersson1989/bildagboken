@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "1.7";
+const VERSION = "1.8";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -194,6 +194,18 @@ function defaultItems(c) {
 /* -------------------------------------------------------- derived values */
 
 const car = () => S.cars.find((c) => c.id === S.carId) || null;
+
+// Mätarställningen bestäms av loggen: den senaste posten (efter datum) som har en mätarställning.
+// Äldre bilar utan sådana poster faller tillbaka på värdet som sparades på bilen.
+function odoOf(c) {
+  if (!c) return null;
+  let best = null;
+  for (const e of S.entries) {
+    if (e.carId !== c.id || e.odometer == null) continue;
+    if (!best || (e.date || "") > (best.date || "") || ((e.date || "") === (best.date || "") && tsMs(e.createdAt) > tsMs(best.createdAt))) best = e;
+  }
+  return best ? best.odometer : c.odometer ?? null;
+}
 const carEntries = () => S.entries.filter((e) => e.carId === S.carId);
 const memberName = (u) => S.house?.memberInfo?.[u]?.name || "Någon";
 const whoName = (u) => (u === uid() ? "Du" : memberName(u));
@@ -274,7 +286,7 @@ function itemStatus(item, c, ents) {
   if (!last && item.baseMil != null) lastMil = item.baseMil;
   if (!last && !item.baseDate && item.baseMil == null) return { item, unknown: true, level: "none" };
 
-  const odo = c.odometer || 0;
+  const odo = odoOf(c) || 0;
   let remMil = null, remDays = null, dueDate = null;
   if (item.mil && lastMil != null) remMil = lastMil + item.mil - odo;
   if (item.months && lastDate) { dueDate = addMonths(parseDate(lastDate), item.months); remDays = daysUntil(dueDate); }
@@ -451,7 +463,7 @@ function claudePrompt(c) {
   const ents = carEntries();
   const lastService = ents.find((e) => e.type === "service");
   const lines = [];
-  lines.push(`Jag har en ${[c.make, c.model, c.engine].filter(Boolean).join(" ")}${c.fuel ? ` (${c.fuel.toLowerCase()})` : ""}${c.year ? ` från ${c.year}` : ""}. Mätarställning: ${fmt(c.odometer)} mil.`);
+  lines.push(`Jag har en ${[c.make, c.model, c.engine].filter(Boolean).join(" ")}${c.fuel ? ` (${c.fuel.toLowerCase()})` : ""}${c.year ? ` från ${c.year}` : ""}. Mätarställning: ${fmt(odoOf(c))} mil.`);
   if (lastService) lines.push(`Senaste service: ${fmtDate(lastService.date)}${lastService.odometer != null ? ` vid ${fmt(lastService.odometer)} mil` : ""}: ${entryDetail(lastService, c) || "inga detaljer"}.`);
   const known = st.filter((s) => !s.unknown);
   if (known.length) {
@@ -545,7 +557,7 @@ const CAR_SECTIONS = {
   tires: "Däck",
   specs: "Bra att ha",
 };
-function carFormFields(c = {}, { sections = ["basic"] } = {}) {
+function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
   const sel = (name, opts, val) => `<select name="${name}" id="cf-${name}">${opts.map((o) => {
     const [v, l] = Array.isArray(o) ? o : [o, o];
     return `<option value="${esc(v)}"${String(val ?? "") === String(v) ? " selected" : ""}>${esc(l)}</option>`;
@@ -569,7 +581,12 @@ function carFormFields(c = {}, { sections = ["basic"] } = {}) {
       ${inp("color", "Färg", c.color, 'placeholder="Svart"')}
       ${inp("plate", "Registreringsnummer", c.plate, 'placeholder="ABC 123" autocapitalize="characters"')}
     </div>
-    ${inp("odometer", "Mätarställning (mil)", c.odometer, 'inputmode="numeric" placeholder="21 480"')}`;
+    ${isNew
+      ? inp("odometer", "Mätarställning (mil)", "", 'inputmode="numeric" placeholder="21 480"')
+      : `<div class="field"><span>Mätarställning</span>
+          <div class="odo-row"><b>${odoOf(c) != null ? `${fmt(odoOf(c))} mil` : "Inte angiven"}</b>
+          <button class="btn-soft" type="button" data-act="new-entry" data-type="matare">Uppdatera</button></div>
+          <small>Hämtas från loggen. Har någon skrivit fel, ändra eller ta bort den posten i loggen.</small></div>`}`;
   parts.photo = `
     <label class="photo-in">${icon("image", 22)}<span id="photo-label">${c.photoId ? "Eget foto används. Välj ett nytt för att byta." : "Ta eller välj ett eget foto på bilen"}</span><input type="file" name="carPhoto" id="cf-carPhoto" accept="image/*"></label>
     ${c.photoId ? `<label class="check"><input type="checkbox" name="removePhoto" id="cf-removePhoto"> Ta bort eget foto och använd bild från Wikipedia</label>`
@@ -613,7 +630,7 @@ function renderCarSetup() {
   setScreen("car-setup", `
     <header class="top"><div class="hello"><small>Ett sista steg</small><h1>Lägg till er bil</h1></div></header>
     <form class="card form" data-form="car-new" data-keep>
-      ${carFormFields({}, { sections: ["basic"] })}
+      ${carFormFields({}, { sections: ["basic"], isNew: true })}
       <button class="btn primary block" type="submit">Spara bilen</button>
       <p class="hint">Datum för besiktning, försäkring och däck lägger du till under Bilen efteråt.</p>
     </form>
@@ -774,7 +791,7 @@ function viewOverview() {
       <input type="file" accept="image/*" id="hero-photo" class="vh" aria-label="Byt bild på bilen">
     </label>
     <div class="odo">
-      <div><div class="label">Mätarställning</div><div class="odo-num">${c.odometer != null ? fmt(c.odometer) : "–"}<span>mil</span></div></div>
+      <div><div class="label">Mätarställning</div><div class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span></div></div>
       <button class="btn-soft" type="button" data-act="new-entry" data-type="matare">Uppdatera</button>
     </div>
     ${switcher}
@@ -942,7 +959,7 @@ function viewCar() {
     <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
     <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
-        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", c.odometer != null ? `${fmt(c.odometer)} mil` : ""], ["Besiktning senast", c.besiktning ? fmtDate(c.besiktning) : ""], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", c.skattManad ? MONTHS[c.skattManad - 1] : ""].filter(Boolean).join(", ")]]
+        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Besiktning senast", c.besiktning ? fmtDate(c.besiktning) : ""], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", c.skattManad ? MONTHS[c.skattManad - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>`;
@@ -1103,7 +1120,7 @@ function entryForm(type, e = {}, opts = {}) {
   const c = car();
   const v = (k) => esc(e[k] ?? "");
   const date = field("Datum", `<input type="date" name="date" id="ef-date" required value="${esc(e.date || todayStr())}">`);
-  const odo = (required = false) => field("Mätarställning (mil)", `<input name="odometer" id="ef-odometer" inputmode="numeric" ${required ? "required" : ""} placeholder="${c.odometer != null ? `Senast ${fmt(c.odometer)}` : "Till exempel 21 480"}" value="${e.odometer ?? ""}">`);
+  const odo = (required = false) => field("Mätarställning (mil)", `<input name="odometer" id="ef-odometer" inputmode="numeric" ${required ? "required" : ""} placeholder="${odoOf(c) != null ? `Senast ${fmt(odoOf(c))}` : "Till exempel 21 480"}" value="${e.odometer ?? ""}">`);
   const amount = (label = "Kostnad (kr)") => field(label, `<input name="amount" id="ef-amount" inputmode="decimal" value="${e.amount ?? ""}">`);
   const note = field("Anteckning", `<textarea name="note" id="ef-note" rows="2">${v("note")}</textarea>`);
   const photo = `<label class="photo-in">${icon("image", 22)}<span id="photo-label">${e.photoId ? "Bild bifogad. Välj en ny för att byta." : "Lägg till kvitto eller bild"}</span><input type="file" name="photo" id="ef-photo" accept="image/*"></label>`;
@@ -1283,7 +1300,6 @@ async function saveEntry(form) {
   // Håll bilens uppgifter i takt med loggen.
   const carTarget = S.cars.find((x) => x.id === data.carId) || c;
   const carUpdate = {};
-  if (data.odometer != null && data.odometer > (carTarget.odometer || 0)) carUpdate.odometer = data.odometer;
   if (type === "dack" && !existing) {
     if (data.tireAction === "till_vinter") carUpdate.tiresOn = "vinter";
     if (data.tireAction === "till_sommar") carUpdate.tiresOn = "sommar";
@@ -1373,7 +1389,7 @@ function carSheet(edit, sections = ["basic"]) {
   const title = !edit ? "Lägg till bil" : sections.length === 1 || sections[0] !== "basic" ? CAR_SECTIONS[sections[0]] : `Ändra ${c.make || ""} ${c.model || ""}`.trim();
   openSheet(title, `
     <form class="form" data-form="${edit ? "car-edit" : "car-new"}" novalidate>
-      ${carFormFields(c, { sections })}
+      ${carFormFields(c, { sections, isNew: !edit })}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
       ${edit && sections.includes("basic") ? `<p class="hint">Vill du ta bort bilen? Det gör du under Inställningar → Bilar.</p>` : ""}
@@ -1410,9 +1426,10 @@ function readCarForm(form) {
     Object.assign(data, {
       make: str("make"), model: str("model"), year: str("year") || null, engine: str("engine") || null,
       fuel: str("fuel"), color: str("color") || null, plate: str("plate").toUpperCase() || null,
-      odometer: num(fd.get("odometer")),
     });
   }
+  // Bara för en ny bil: blir bilens första loggpost.
+  if (has("odometer")) data.odometer = num(fd.get("odometer"));
   if (has("besiktning")) {
     Object.assign(data, {
       besiktning: str("besiktning") || null,
@@ -1690,7 +1707,14 @@ async function joinHouse(form) {
 async function saveNewCar(form) {
   const data = readCarForm(form);
   if (!data.make || !data.model) return formError("Fyll i märke och modell.") ?? showToast("Fyll i märke och modell.");
+  const startOdo = data.odometer;
+  delete data.odometer;
+  if (startOdo != null && (startOdo < 0 || startOdo > 200000)) return formError("Mätarställningen ser fel ut. Ange den i mil, till exempel 21 480.") ?? showToast("Mätarställningen ser fel ut. Ange den i mil.");
   const cRef = doc(col("cars"));
+  if (startOdo != null) {
+    // Mätarställningen vid start blir bilens första loggpost.
+    setDoc(doc(col("entries")), { type: "matare", carId: cRef.id, date: todayStr(), odometer: startOdo, note: null, createdBy: uid(), createdAt: serverTimestamp() }).catch(onWriteError);
+  }
   const full = {
     ...clean(data),
     items: defaultItems(data),

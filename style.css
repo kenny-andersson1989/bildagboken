@@ -319,6 +319,8 @@ legend { font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 0; mar
 .photo-in input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .photo-in svg { color: var(--accent); flex: none; }
 .photo { border-radius: 16px; width: 100%; display: block; }
+.odo-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 14px; background: var(--input); border: 1px solid var(--line); }
+.odo-row b { font-family: var(--f-display); font-size: 18px; font-variant-numeric: tabular-nums; }
 .big-input { font-family: var(--f-display); font-weight: 700; font-size: 26px; padding: 14px 16px; }
 details.more { border-top: 1px solid var(--line); padding-top: 12px; }
 details.more summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--accent); list-style: none; padding: 4px 0; }
