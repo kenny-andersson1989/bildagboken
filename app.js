@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "1.5";
+const VERSION = "1.6";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -779,8 +779,7 @@ function viewOverview() {
     if (ps.unknown) {
       parts.push(`<article class="card"><h2>Nästa service</h2>
         <p class="muted">Ange när ${esc(ps.item.name.toLowerCase())} byttes senast, så räknar appen ut när det är dags igen.</p>
-        <div class="ask"><button class="btn-soft" type="button" data-act="edit-items">Ange senaste byte</button>
-        <button class="link" type="button" data-act="new-entry" data-type="service">eller logga en service</button></div></article>`);
+        <div class="ask"><button class="btn-soft" type="button" data-act="goto-maintenance">Ange senaste byte</button></div></article>`);
     } else {
       const C = 2 * Math.PI * 50;
       const remainFrac = Math.max(0, Math.min(1, ps.frac));
@@ -925,7 +924,7 @@ function viewCar() {
       ${specs.length ? `<div class="spec">${specs.map(([k, v]) => `<div><div class="label">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("")}</div>`
         : `<p class="muted">Fyll i oljetyp, däckdimension, lufttryck, torkarblad och glödlampor, så har ni det till hands i butiken.</p>`}
     </div>
-    <div class="card">
+    <div class="card" id="underhall" style="scroll-margin-top:16px">
       <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
       <div class="rows">${st.map((s) => `<div class="dl"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc([
         s.item.mil ? `var ${fmt(s.item.mil)} mil` : "", s.item.months ? `${s.item.months >= 24 && s.item.months % 12 === 0 ? `${s.item.months / 12} år` : `${s.item.months} mån`}` : ""].filter(Boolean).join(" eller ") + (s.unknown ? " · senaste byte okänt" : s.lastDate ? ` · senast ${fmtDateShort(s.lastDate)}` : ""))}</div></div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.unknown ? "Okänt" : s.label)}</span></div>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
@@ -1464,6 +1463,10 @@ const ACTIONS = {
   },
   "open-entry"(el) { openEntry(el.dataset.id); },
   "new-booking"() { bookingForm(); },
+  "goto-maintenance"() {
+    setView("bilen");
+    document.getElementById("underhall")?.scrollIntoView({ block: "start" });
+  },
   "open-booking"(el) {
     const b = (car()?.bookings || []).find((x) => x.id === el.dataset.id);
     if (b) bookingForm(b);
