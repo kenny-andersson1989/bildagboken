@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "1.4";
+const VERSION = "1.5";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -137,6 +137,8 @@ const TIRE_ACTIONS = {
   forvaring: "Däckförvaring",
   ovrigt: "Övrigt",
 };
+const BOOK_KINDS = { service: "Service", reparation: "Reparation", besiktning: "Besiktning", dack: "Däckbyte", annat: "Annat" };
+const WEEKDAYS = ["söndag", "måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag"];
 const SPEC_TEMPLATE = "Motorolja: \nOljemängd: \nDäckdimension: \nLufttryck fram/bak: \nTorkarblad: \nBatteri: \nGlödlampor: ";
 
 const isFlex = (c) => /flex|e85/i.test(c?.fuel || "") || /\d[.,]\d\s*f\b/i.test(c?.engine || "");
@@ -354,6 +356,34 @@ function deadlines(c) {
     if (!x.label) x.label = x.days == null ? "Klart" : daysText(x.days);
   }
   return out.sort((a, b) => (a.days ?? 9999) - (b.days ?? 9999));
+}
+
+/* Bokade tider (service, besiktning m.m.) sparas som en lista på bilen. */
+function bookingWhen(b) {
+  const d = parseDate(b.date);
+  if (!d) return "";
+  const year = d.getFullYear() !== new Date().getFullYear() ? ` ${d.getFullYear()}` : "";
+  return `${WEEKDAYS[d.getDay()].replace(/^./, (x) => x.toUpperCase())} ${d.getDate()} ${MONTHS[d.getMonth()]}${year}${b.time ? ` kl ${b.time}` : ""}`;
+}
+function sortedBookings(c) {
+  return [...(c?.bookings || [])].sort((a, b) => `${a.date}${a.time || ""}`.localeCompare(`${b.date}${b.time || ""}`));
+}
+function bookingRows(c) {
+  return sortedBookings(c).map((b) => {
+    const days = daysUntil(parseDate(b.date));
+    const kind = BOOK_KINDS[b.kind] || "Bokning";
+    const past = days < 0;
+    return {
+      icon: "calendar",
+      title: past ? `${kind}: blev det gjort?` : `${kind} bokad`,
+      sub: [bookingWhen(b), b.place].filter(Boolean).join(" · "),
+      days,
+      level: past || days <= 1 ? "urgent" : days <= 7 ? "soon" : "ok",
+      label: past ? "Logga" : days === 0 ? "I dag" : days === 1 ? "I morgon" : daysText(days),
+      act: "open-booking",
+      id: b.id,
+    };
+  });
 }
 
 function catOf(e) {
@@ -676,11 +706,12 @@ function subHeader(small, title, back = false) {
 }
 
 function rowHtml(x) {
-  return `<div class="dl">
-    <div class="dl-ic">${icon(x.icon, 22)}</div>
-    <div><div class="dl-t">${esc(x.title)}</div><div class="dl-s">${esc(x.sub || "")}</div></div>
-    <span class="pill ${x.level}">${esc(x.label)}</span>
-  </div>`;
+  const inner = `<span class="dl-ic">${icon(x.icon, 22)}</span>
+    <span><span class="dl-t">${esc(x.title)}</span><span class="dl-s">${esc(x.sub || "")}</span></span>
+    <span class="pill ${x.level}">${esc(x.label)}</span>`;
+  return x.act
+    ? `<button class="dl as-btn" type="button" data-act="${x.act}" data-id="${esc(x.id)}">${inner}</button>`
+    : `<div class="dl">${inner}</div>`;
 }
 
 function installCard() {
@@ -785,8 +816,9 @@ function viewOverview() {
     .map((s) => ({ icon: "wrench", title: s.item.name, sub: s.dueDate ? `Senast ${fmtDate(s.dueDate)}` : s.lastMil != null && s.item.mil ? `Vid ${fmt(s.lastMil + s.item.mil)} mil` : "", level: s.level, label: s.label }));
   parts.push(`<article class="card">
     <h2>Att hålla koll på <button class="link" type="button" data-act="edit-car">Ändra datum</button></h2>
-    <div class="rows">${[...soonItems, ...dls].map(rowHtml).join("")}</div>
+    <div class="rows">${[...bookingRows(c), ...soonItems, ...dls].map(rowHtml).join("")}</div>
     ${!c.besiktning && !c.forsakringDatum && !c.skattManad ? `<p class="hint" style="margin-top:10px">Lägg till besiktning, försäkring och skatt under Ändra datum.</p>` : ""}
+    <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
   </article>`);
 
   const eco = economy(carEntries());
@@ -905,11 +937,6 @@ function viewCar() {
         ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", c.odometer != null ? `${fmt(c.odometer)} mil` : ""], ["Besiktning senast", c.besiktning ? fmtDate(c.besiktning) : ""], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", c.skattManad ? MONTHS[c.skattManad - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
-    </div>
-    <div class="card">
-      <h2>Ta bort ${esc(`${c.make} ${c.model}`)}</h2>
-      <p class="muted">Tar bort bilen och hela dess logg för er båda. Det går inte att ångra.</p>
-      <div class="ask"><button class="btn danger" type="button" data-act="delete-car">Ta bort bilen</button></div>
     </div>`;
 }
 
@@ -917,6 +944,7 @@ function viewNotifications() {
   const seen = lastSeenMs();
   const c = car();
   const reminders = [
+    ...bookingRows(c).filter((b) => b.days <= 1),
     ...deadlines(c).filter((d) => d.level === "urgent"),
     ...allItemStatus(c).filter((s) => !s.unknown && s.level === "urgent").map((s) => ({ title: `Dags för ${s.item.name.toLowerCase()}`, sub: s.label })),
   ];
@@ -924,7 +952,7 @@ function viewNotifications() {
   const perm = "Notification" in window ? Notification.permission : "unsupported";
   return `${subHeader("Det ni gjort med bilen", "Aviseringar", true)}
     ${perm === "default" ? `<div class="card"><h2>Få notiser i telefonen</h2><p class="muted">Då ser du när din sambo loggar något. Notiserna kommer när appen är öppen eller nyss har använts.</p><div class="ask"><button class="btn-soft" type="button" data-act="enable-notif">Slå på notiser</button></div></div>` : ""}
-    ${reminders.length ? `<div class="card"><h2>Påminnelser</h2><div class="rows">${reminders.map((r) => `<div class="dl"><div class="avatar sys">${icon("bell", 18)}</div><div><div class="dl-t">${esc(r.title)}</div><div class="dl-s">${esc(r.sub || "")}</div></div><span class="pill urgent">${esc(r.label || "Nu")}</span></div>`).join("")}</div></div>` : ""}
+    ${reminders.length ? `<div class="card"><h2>Påminnelser</h2><div class="rows">${reminders.map((r) => rowHtml({ icon: r.icon || "bell", title: r.title, sub: r.sub, level: "urgent", label: r.label || "Nu", act: r.act, id: r.id })).join("")}</div></div>` : ""}
     <div class="card">
       ${feed.length ? feed.map((e) => {
         const mine = e.createdBy === uid();
@@ -1014,6 +1042,7 @@ function typePicker() {
   openSheet("Vad vill du logga?", `<div class="types">
     ${Object.entries(TYPE).map(([k, t]) => `<button type="button" data-act="new-entry" data-type="${k}">${icon(t.icon, 26)}${t.label}</button>`).join("")}
   </div>
+  <button class="btn ghost block" type="button" data-act="new-booking" style="margin-top:12px">${icon("calendar", 18)} Lägg in bokad tid</button>
   <p class="hint" style="margin-top:14px">Det du sparar syns direkt hos din sambo.</p>`);
 }
 
@@ -1021,7 +1050,48 @@ function field(label, input, hint = "") {
   return `<label class="field"><span>${label}</span>${input}${hint ? `<small>${hint}</small>` : ""}</label>`;
 }
 
-function entryForm(type, e = {}) {
+function bookingForm(b = {}) {
+  const isEdit = !!b.id;
+  const kinds = Object.entries(BOOK_KINDS);
+  openSheet(isEdit ? `${BOOK_KINDS[b.kind] || "Bokning"} ${fmtDateShort(b.date)}` : "Bokad tid", `
+    <form class="form" data-form="booking"${isEdit ? ` data-id="${esc(b.id)}"` : ""} novalidate>
+      ${isEdit ? `<button class="btn primary block" type="button" data-act="booking-done" data-id="${esc(b.id)}">${b.kind === "annat" ? "Klart, ta bort bokningen" : "Klart, logga det"}</button>` : ""}
+      ${field("Vad är bokat?", `<select name="kind" id="bk-kind">${kinds.map(([k, l]) => `<option value="${k}"${(b.kind || "service") === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
+      <div class="row2">
+        ${field("Datum", `<input type="date" name="date" id="bk-date" required value="${esc(b.date || "")}">`)}
+        ${field("Tid", `<input type="time" name="time" id="bk-time" value="${esc(b.time || "")}">`)}
+      </div>
+      ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Till exempel Mekonomen Kungsbacka">`)}
+      ${field("Anteckning", `<textarea name="note" id="bk-note" rows="2" placeholder="Till exempel lämna nyckeln i brevlådan">${esc(b.note || "")}</textarea>`)}
+      <p class="err" id="form-err" hidden></p>
+      <button class="btn ${isEdit ? "" : "primary "}block" type="submit">${isEdit ? "Spara ändringar" : "Spara bokningen"}</button>
+      ${isEdit ? `<button class="btn danger block" type="button" data-act="delete-booking" data-id="${esc(b.id)}">Ta bort bokningen</button>` : ""}
+      <p class="hint">Bokningen syns för er båda under Att hålla koll på, och dyker upp bland påminnelserna dagen innan.</p>
+    </form>`, { back: isEdit ? null : "new-entry" });
+}
+
+function saveBooking(form) {
+  const c = car();
+  const fd = new FormData(form);
+  const str = (k) => String(fd.get(k) ?? "").trim();
+  const date = str("date");
+  if (!date) return formError("Välj vilket datum som är bokat.");
+  const id = form.dataset.id || "b" + randomId(8);
+  const b = clean({ id, kind: str("kind") || "service", date, time: str("time") || null, place: str("place") || null, note: str("note") || null, createdBy: uid() });
+  const list = (c.bookings || []).filter((x) => x.id !== id);
+  list.push(b);
+  updateDoc(ref("cars", c.id), { bookings: list }).catch(onWriteError);
+  closeSheet();
+  showToast(form.dataset.id ? "Bokningen är ändrad" : `${BOOK_KINDS[b.kind]} ${bookingWhen(b).toLowerCase()} är inlagd`);
+}
+
+function removeBooking(carId, bookingId) {
+  const c = S.cars.find((x) => x.id === carId);
+  if (!c) return;
+  updateDoc(ref("cars", c.id), { bookings: (c.bookings || []).filter((x) => x.id !== bookingId) }).catch(onWriteError);
+}
+
+function entryForm(type, e = {}, opts = {}) {
   const c = car();
   const v = (k) => esc(e[k] ?? "");
   const date = field("Datum", `<input type="date" name="date" id="ef-date" required value="${esc(e.date || todayStr())}">`);
@@ -1091,12 +1161,12 @@ function entryForm(type, e = {}) {
   }
   const isEdit = !!e.id;
   openSheet(isEdit ? `Ändra ${TYPE[type].label.toLowerCase()}` : TYPE[type].label, `
-    <form class="form" data-form="entry" data-type="${type}"${isEdit ? ` data-id="${esc(e.id)}"` : ""} novalidate>
+    <form class="form" data-form="entry" data-type="${type}"${isEdit ? ` data-id="${esc(e.id)}"` : ""}${opts.bookingId ? ` data-booking="${esc(opts.bookingId)}"` : ""} novalidate>
       ${body}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
       ${type === "tank" && !isEdit ? `<p class="hint">Din sambo får en avisering när du sparar.</p>` : ""}
-    </form>`, { back: isEdit ? null : "new-entry" });
+    </form>`, { back: isEdit || opts.bookingId ? null : "new-entry" });
   if (type === "tank" && !isEdit) $("#ef-amount")?.focus({ preventScroll: true });
   if (type === "matare") $("#ef-odometer")?.focus({ preventScroll: true });
 }
@@ -1217,6 +1287,9 @@ async function saveEntry(form) {
     else tires.push({ kind: data.tireKind, depth: data.depth });
     carUpdate.tires = tires;
   }
+  if (form.dataset.booking) {
+    carUpdate.bookings = (carTarget.bookings || []).filter((x) => x.id !== form.dataset.booking);
+  }
   if (Object.keys(carUpdate).length) updateDoc(ref("cars", carTarget.id), carUpdate).catch(onWriteError);
 
   closeSheet();
@@ -1294,8 +1367,7 @@ function carSheet(edit) {
       ${carFormFields(c, { full: edit })}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
-      ${edit ? `<button class="btn danger block" type="button" data-act="delete-car">Ta bort bilen</button>
-      <p class="hint">Tar bort bilen och hela dess logg för er båda. Det går inte att ångra.</p>` : ""}
+      ${edit ? `<p class="hint">Vill du ta bort bilen? Det gör du under Inställningar → Bilar.</p>` : ""}
     </form>`);
 }
 
@@ -1391,6 +1463,41 @@ const ACTIONS = {
     else typePicker();
   },
   "open-entry"(el) { openEntry(el.dataset.id); },
+  "new-booking"() { bookingForm(); },
+  "open-booking"(el) {
+    const b = (car()?.bookings || []).find((x) => x.id === el.dataset.id);
+    if (b) bookingForm(b);
+  },
+  "booking-done"(el) {
+    const c = car();
+    const b = (c.bookings || []).find((x) => x.id === el.dataset.id);
+    if (!b) return closeSheet();
+    const note = b.note || null;
+    const date = b.date <= todayStr() ? b.date : todayStr();
+    switch (b.kind) {
+      case "service":
+      case "reparation":
+        return entryForm("service", { date, workshop: b.place, note, title: b.kind === "reparation" ? "Reparation" : null }, { bookingId: b.id });
+      case "dack":
+        return entryForm("dack", { date, note: [b.place, note].filter(Boolean).join(" · ") || null }, { bookingId: b.id });
+      case "besiktning":
+        return entryForm("kostnad", { date, category: "Besiktning", title: b.place ? `Besiktning hos ${b.place}` : "Besiktning", note }, { bookingId: b.id });
+      default:
+        removeBooking(c.id, b.id);
+        closeSheet();
+        showToast("Bokningen är borttagen");
+    }
+  },
+  "delete-booking"(el) {
+    if (el.dataset.confirm !== "1") {
+      el.dataset.confirm = "1";
+      el.textContent = "Tryck igen för att ta bort bokningen";
+      return;
+    }
+    removeBooking(S.carId, el.dataset.id);
+    closeSheet();
+    showToast("Bokningen är borttagen");
+  },
   "edit-entry"(el) {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (e) entryForm(e.type, e);
@@ -1496,6 +1603,7 @@ async function onSubmit(ev) {
     if (kind === "car-new") return await saveNewCar(form);
     if (kind === "car-edit") return saveCarEdit(form);
     if (kind === "items") return saveItems(form);
+    if (kind === "booking") return saveBooking(form);
     if (kind === "rename") {
       const name = String(new FormData(form).get("name") || "").trim();
       if (!name) return;
