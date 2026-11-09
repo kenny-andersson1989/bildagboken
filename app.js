@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "2.0";
+const VERSION = "2.1";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -891,10 +891,10 @@ function viewOverview() {
   return parts.join("");
 }
 
-function entryRow(e) {
+function entryRow(e, fromCat = null) {
   const mine = e.createdBy === uid();
   const d = entryDetail(e);
-  return `<button class="entry" type="button" data-act="open-entry" data-id="${esc(e.id)}">
+  return `<button class="entry" type="button" data-act="open-entry" data-id="${esc(e.id)}"${fromCat ? ` data-cat="${esc(fromCat)}"` : ""}>
     <span class="dl-ic">${icon(TYPE[e.type]?.icon || "list", 20)}</span>
     <span><span class="t">${esc(entryTitle(e))}</span>${d ? `<span class="d">${esc(d)}</span>` : ""}
       <span class="m"><span class="who${mine ? " me" : ""}">${esc(whoName(e.createdBy))}</span>${esc(fmtDateShort(e.date))}${e.odometer != null && e.type !== "matare" ? ` · ${fmt(e.odometer)} mil` : ""}${e.photoId ? " · bild" : ""}</span></span>
@@ -1064,10 +1064,10 @@ function viewSettings() {
 const sheet = $("#sheet");
 const scrim = $("#scrim");
 
-function openSheet(title, body, { back = null } = {}) {
+function openSheet(title, body, { back = null, backId = null } = {}) {
   sheet.innerHTML = `<div class="grab"></div>
     <div class="sheet-head">
-      ${back ? `<button class="icon-btn" type="button" data-act="${back}" aria-label="Tillbaka">${icon("back", 18)}</button>` : ""}
+      ${back ? `<button class="icon-btn" type="button" data-act="${back}"${backId ? ` data-id="${esc(backId)}"` : ""} aria-label="Tillbaka">${icon("back", 18)}</button>` : ""}
       <h3 id="sheet-title">${esc(title)}</h3>
       <button class="icon-btn" type="button" data-act="close-sheet" aria-label="Stäng">${icon("close", 18)}</button>
     </div>${body}`;
@@ -1350,7 +1350,7 @@ async function saveEntry(form) {
   if (!existing && S.view !== "oversikt" && S.view !== "logg") setView("logg");
 }
 
-function openEntry(id) {
+function openEntry(id, { fromCat = null } = {}) {
   const e = S.entries.find((x) => x.id === id);
   if (!e) return;
   const c = S.cars.find((x) => x.id === e.carId) || car();
@@ -1376,7 +1376,7 @@ function openEntry(id) {
     <div class="btn-row" style="margin-top:18px">
       <button class="btn" type="button" data-act="edit-entry" data-id="${esc(e.id)}">Ändra</button>
       <button class="btn danger" type="button" data-act="delete-entry" data-id="${esc(e.id)}">Ta bort</button>
-    </div>`);
+    </div>`, fromCat ? { back: "open-cat", backId: fromCat } : {});
   if (e.photoId) {
     getDoc(ref("photos", e.photoId)).then((s) => {
       const box = $("#photo-box");
@@ -1526,7 +1526,7 @@ const ACTIONS = {
     if (t && TYPE[t]) entryForm(t);
     else typePicker();
   },
-  "open-entry"(el) { openEntry(el.dataset.id); },
+  "open-entry"(el) { openEntry(el.dataset.id, { fromCat: el.dataset.cat || null }); },
   "new-booking"() { bookingForm(); },
   "open-cat"(el) {
     const cat = el.dataset.id;
@@ -1535,7 +1535,7 @@ const ACTIONS = {
     const sum = list.reduce((s, e) => s + e.amount, 0);
     openSheet(cat, `
       <p class="muted" style="margin-bottom:10px">Senaste 12 månaderna · ${list.length} st · <b>${fmt(sum)} kr</b></p>
-      <div class="rows">${list.map(entryRow).join("") || `<p class="muted">Inget här.</p>`}</div>`);
+      <div class="rows">${list.map((e) => entryRow(e, cat)).join("") || `<p class="muted">Inget här.</p>`}</div>`);
   },
   "goto-maintenance"() {
     setView("bilen");
