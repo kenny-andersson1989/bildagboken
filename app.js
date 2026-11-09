@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "1.6";
+const VERSION = "1.7";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -537,7 +537,15 @@ function renderOnboarding(error = "") {
   if (join) $("#ob-code")?.focus();
 }
 
-function carFormFields(c = {}, { full = false } = {}) {
+// Formuläret för bilen är uppdelat i delar, så att varje "Ändra" bara visar sin egen del.
+const CAR_SECTIONS = {
+  basic: "Uppgifter om bilen",
+  photo: "Bild på bilen",
+  dates: "Datum och kostnader",
+  tires: "Däck",
+  specs: "Bra att ha",
+};
+function carFormFields(c = {}, { sections = ["basic"] } = {}) {
   const sel = (name, opts, val) => `<select name="${name}" id="cf-${name}">${opts.map((o) => {
     const [v, l] = Array.isArray(o) ? o : [o, o];
     return `<option value="${esc(v)}"${String(val ?? "") === String(v) ? " selected" : ""}>${esc(l)}</option>`;
@@ -545,7 +553,9 @@ function carFormFields(c = {}, { full = false } = {}) {
   const inp = (name, label, val, attrs = "") => `<label class="field"><span>${label}</span><input name="${name}" id="cf-${name}" value="${esc(val ?? "")}" ${attrs}></label>`;
   const summer = (c.tires || []).find((t) => t.kind === "sommar") || {};
   const winter = (c.tires || []).find((t) => t.kind === "vinter") || {};
-  let html = `
+  const head = (k) => (sections.length > 1 ? `<p class="section-t">${CAR_SECTIONS[k]}</p>` : "");
+  const parts = {};
+  parts.basic = `
     <div class="row2">
       ${inp("make", "Märke", c.make, 'required placeholder="Volvo"')}
       ${inp("model", "Modell", c.model, 'required placeholder="V50"')}
@@ -560,13 +570,11 @@ function carFormFields(c = {}, { full = false } = {}) {
       ${inp("plate", "Registreringsnummer", c.plate, 'placeholder="ABC 123" autocapitalize="characters"')}
     </div>
     ${inp("odometer", "Mätarställning (mil)", c.odometer, 'inputmode="numeric" placeholder="21 480"')}`;
-  if (!full) return html;
-  html += `
-    <p class="section-t">Bild på bilen</p>
+  parts.photo = `
     <label class="photo-in">${icon("image", 22)}<span id="photo-label">${c.photoId ? "Eget foto används. Välj ett nytt för att byta." : "Ta eller välj ett eget foto på bilen"}</span><input type="file" name="carPhoto" id="cf-carPhoto" accept="image/*"></label>
     ${c.photoId ? `<label class="check"><input type="checkbox" name="removePhoto" id="cf-removePhoto"> Ta bort eget foto och använd bild från Wikipedia</label>`
-      : `<p class="hint">Utan eget foto hämtas en bild på modellen från Wikipedia.</p>`}
-    <p class="section-t">Datum och kostnader</p>
+      : `<p class="hint">Utan eget foto hämtas en bild på modellen från Wikipedia.</p>`}`;
+  parts.dates = `
     ${inp("besiktning", "Besiktning senast", c.besiktning, 'type="date"')}
     <div class="row2">
       ${inp("forsakringBolag", "Försäkringsbolag", c.forsakringBolag, 'placeholder="If, Folksam …"')}
@@ -575,8 +583,8 @@ function carFormFields(c = {}, { full = false } = {}) {
     <div class="row2">
       <label class="field"><span>Skatt betalas i</span>${sel("skattManad", [["", "Vet inte"], ...MONTHS.map((m, i) => [String(i + 1), m])], c.skattManad || "")}</label>
       ${inp("skattBelopp", "Skatt per år (kr)", c.skattBelopp, 'inputmode="numeric"')}
-    </div>
-    <p class="section-t">Däck</p>
+    </div>`;
+  parts.tires = `
     <label class="field"><span>Det här sitter på nu</span>${sel("tiresOn", [["sommar", "Sommardäck"], ["vinter", "Vinterdäck"]], c.tiresOn || "sommar")}</label>
     <div class="row2">
       ${inp("s_brand", "Sommardäck, märke", summer.brand, 'placeholder="Michelin Primacy 4"')}
@@ -594,17 +602,18 @@ function carFormFields(c = {}, { full = false } = {}) {
       ${inp("w_year", "Tillverkningsår", winter.year, 'inputmode="numeric"')}
       ${inp("w_depth", "Mönsterdjup (mm)", winter.depth, 'inputmode="decimal"')}
     </div>
-    <label class="check"><input type="checkbox" name="w_studded" id="cf-w_studded"${winter.studded ? " checked" : ""}> Vinterdäcken är dubbade</label>
-    <p class="section-t">Bra att ha</p>
-    <label class="field"><span>En sak per rad, till exempel "Motorolja: 5W-30"</span><textarea name="specsText" id="cf-specsText" rows="7">${esc(c.specsText ?? SPEC_TEMPLATE)}</textarea></label>`;
-  return html;
+    <label class="check"><input type="checkbox" name="w_studded" id="cf-w_studded"${winter.studded ? " checked" : ""}> Vinterdäcken är dubbade</label>`;
+  parts.specs = `
+    <label class="field"><span>En sak per rad, till exempel "Motorolja: 5W-30"</span><textarea name="specsText" id="cf-specsText" rows="9">${esc(c.specsText ?? SPEC_TEMPLATE)}</textarea></label>
+    <p class="hint">Fusklapp för butiken: oljetyp, däckdimension, lufttryck, torkarblad, glödlampor och liknande.</p>`;
+  return sections.map((k) => head(k) + parts[k]).join("");
 }
 
 function renderCarSetup() {
   setScreen("car-setup", `
     <header class="top"><div class="hello"><small>Ett sista steg</small><h1>Lägg till er bil</h1></div></header>
     <form class="card form" data-form="car-new" data-keep>
-      ${carFormFields({}, { full: false })}
+      ${carFormFields({}, { sections: ["basic"] })}
       <button class="btn primary block" type="submit">Spara bilen</button>
       <p class="hint">Datum för besiktning, försäkring och däck lägger du till under Bilen efteråt.</p>
     </form>
@@ -814,7 +823,7 @@ function viewOverview() {
   const soonItems = allItemStatus(c).filter((s) => !s.unknown && s !== ps && s.item.id !== ps?.item.id && (s.level === "urgent" || s.level === "soon"))
     .map((s) => ({ icon: "wrench", title: s.item.name, sub: s.dueDate ? `Senast ${fmtDate(s.dueDate)}` : s.lastMil != null && s.item.mil ? `Vid ${fmt(s.lastMil + s.item.mil)} mil` : "", level: s.level, label: s.label }));
   parts.push(`<article class="card">
-    <h2>Att hålla koll på <button class="link" type="button" data-act="edit-car">Ändra datum</button></h2>
+    <h2>Att hålla koll på <button class="link" type="button" data-act="edit-car" data-section="dates">Ändra datum</button></h2>
     <div class="rows">${[...bookingRows(c), ...soonItems, ...dls].map(rowHtml).join("")}</div>
     ${!c.besiktning && !c.forsakringDatum && !c.skattManad ? `<p class="hint" style="margin-top:10px">Lägg till besiktning, försäkring och skatt under Ändra datum.</p>` : ""}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
@@ -920,7 +929,7 @@ function viewCar() {
       <button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>
     </div>
     <div class="card">
-      <h2>Bra att ha <button class="link" type="button" data-act="edit-car">Ändra</button></h2>
+      <h2>Bra att ha <button class="link" type="button" data-act="edit-car" data-section="specs">Ändra</button></h2>
       ${specs.length ? `<div class="spec">${specs.map(([k, v]) => `<div><div class="label">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("")}</div>`
         : `<p class="muted">Fyll i oljetyp, däckdimension, lufttryck, torkarblad och glödlampor, så har ni det till hands i butiken.</p>`}
     </div>
@@ -930,8 +939,8 @@ function viewCar() {
         s.item.mil ? `var ${fmt(s.item.mil)} mil` : "", s.item.months ? `${s.item.months >= 24 && s.item.months % 12 === 0 ? `${s.item.months / 12} år` : `${s.item.months} mån`}` : ""].filter(Boolean).join(" eller ") + (s.unknown ? " · senaste byte okänt" : s.lastDate ? ` · senast ${fmtDateShort(s.lastDate)}` : ""))}</div></div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.unknown ? "Okänt" : s.label)}</span></div>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
-    <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car">Ändra</button></h2><div class="rows">${tires}</div></div>
-    <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car">Ändra</button></h2>
+    <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
+    <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
         ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", c.odometer != null ? `${fmt(c.odometer)} mil` : ""], ["Besiktning senast", c.besiktning ? fmtDate(c.besiktning) : ""], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", c.skattManad ? MONTHS[c.skattManad - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
@@ -1359,14 +1368,15 @@ function itemRowHtml(i) {
   </div>`;
 }
 
-function carSheet(edit) {
+function carSheet(edit, sections = ["basic"]) {
   const c = edit ? car() : {};
-  openSheet(edit ? `Ändra ${c.make || ""} ${c.model || ""}`.trim() : "Lägg till bil", `
+  const title = !edit ? "Lägg till bil" : sections.length === 1 || sections[0] !== "basic" ? CAR_SECTIONS[sections[0]] : `Ändra ${c.make || ""} ${c.model || ""}`.trim();
+  openSheet(title, `
     <form class="form" data-form="${edit ? "car-edit" : "car-new"}" novalidate>
-      ${carFormFields(c, { full: edit })}
+      ${carFormFields(c, { sections })}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
-      ${edit ? `<p class="hint">Vill du ta bort bilen? Det gör du under Inställningar → Bilar.</p>` : ""}
+      ${edit && sections.includes("basic") ? `<p class="hint">Vill du ta bort bilen? Det gör du under Inställningar → Bilar.</p>` : ""}
     </form>`);
 }
 
@@ -1390,29 +1400,38 @@ function applyTheme(mode) {
   });
 }
 
-function readCarForm(form, full) {
+// Läser bara de fält som finns i formuläret, så att en del aldrig skriver över en annan.
+function readCarForm(form) {
   const fd = new FormData(form);
+  const has = (k) => !!form.elements.namedItem(k);
   const str = (k) => String(fd.get(k) ?? "").trim();
-  const data = {
-    make: str("make"), model: str("model"), year: str("year") || null, engine: str("engine") || null,
-    fuel: str("fuel"), color: str("color") || null, plate: str("plate").toUpperCase() || null,
-    odometer: num(fd.get("odometer")),
-  };
-  if (full) {
+  const data = {};
+  if (has("make")) {
+    Object.assign(data, {
+      make: str("make"), model: str("model"), year: str("year") || null, engine: str("engine") || null,
+      fuel: str("fuel"), color: str("color") || null, plate: str("plate").toUpperCase() || null,
+      odometer: num(fd.get("odometer")),
+    });
+  }
+  if (has("besiktning")) {
     Object.assign(data, {
       besiktning: str("besiktning") || null,
       forsakringBolag: str("forsakringBolag") || null,
       forsakringDatum: str("forsakringDatum") || null,
       skattManad: str("skattManad") ? Number(str("skattManad")) : null,
       skattBelopp: num(fd.get("skattBelopp")),
+    });
+  }
+  if (has("tiresOn")) {
+    Object.assign(data, {
       tiresOn: str("tiresOn") || "sommar",
       tires: [
         clean({ kind: "sommar", brand: str("s_brand") || null, size: str("s_size") || null, year: str("s_year") || null, depth: num(fd.get("s_depth")) }),
         clean({ kind: "vinter", brand: str("w_brand") || null, size: str("w_size") || null, year: str("w_year") || null, depth: num(fd.get("w_depth")), studded: fd.get("w_studded") === "on" }),
       ],
-      specsText: String(fd.get("specsText") ?? ""),
     });
   }
+  if (has("specsText")) data.specsText = String(fd.get("specsText") ?? "");
   return data;
 }
 
@@ -1519,7 +1538,10 @@ const ACTIONS = {
     showToast("Borttaget");
   },
   filter(el) { S.filter = el.dataset.f; render(); },
-  "edit-car"() { carSheet(true); },
+  "edit-car"(el) {
+    const sections = (el.dataset.section || "basic,photo,dates").split(",").filter((k) => CAR_SECTIONS[k]);
+    carSheet(true, sections.length ? sections : ["basic"]);
+  },
   "add-car"() { carSheet(false); },
   "edit-items"() { itemsSheet(); },
   "add-item-row"() {
@@ -1666,7 +1688,7 @@ async function joinHouse(form) {
 }
 
 async function saveNewCar(form) {
-  const data = readCarForm(form, false);
+  const data = readCarForm(form);
   if (!data.make || !data.model) return formError("Fyll i märke och modell.") ?? showToast("Fyll i märke och modell.");
   const cRef = doc(col("cars"));
   const full = {
@@ -1704,16 +1726,16 @@ async function changeHeroPhoto(file) {
   const id = await uploadCarPhoto(c, file);
   if (!id) return showToast("Bilden gick inte att läsa in. Prova en annan bild.", 5000);
   updateDoc(ref("cars", c.id), { photoId: id }).catch(onWriteError);
-  showToast("Bilden är bytt. Ta bort den under Bilen → Ändra.");
+  showToast("Bilden är bytt. Ta bort den under Bilen → Uppgifter → Ändra.");
 }
 
 async function saveCarEdit(form) {
-  const data = readCarForm(form, true);
-  if (!data.make || !data.model) return formError("Fyll i märke och modell.");
+  const data = readCarForm(form);
+  if ("make" in data && (!data.make || !data.model)) return formError("Fyll i märke och modell.");
   const c = car();
   const fd = new FormData(form);
   const payload = clean(data);
-  if (`${c.make}|${c.model}`.toLowerCase() !== `${data.make}|${data.model}`.toLowerCase()) {
+  if ("make" in data && `${c.make}|${c.model}`.toLowerCase() !== `${data.make}|${data.model}`.toLowerCase()) {
     Object.assign(payload, { imageUrl: null, imageCredit: null, imageChecked: null });
   }
   const file = fd.get("carPhoto");
