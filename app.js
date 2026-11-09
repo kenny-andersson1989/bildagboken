@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "2.1";
+const VERSION = "2.2";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -335,7 +335,7 @@ function tireDeadline(c) {
   const studded = !!winter?.studded;
   if (on === "sommar") {
     const oct1 = new Date(y, 9, 1), dec1 = new Date(y, 11, 1), apr1 = new Date(y, 3, 1);
-    if (t >= oct1 && t < dec1) return { icon: "tire", title: "Vinterdäck på", sub: "Senast 1 december · sommardäck sitter på", days: daysUntil(dec1) };
+    if (t >= oct1 && t < dec1) return { key: "dack", date: dec1, calTitle: "Vinterdäck ska vara på", icon: "tire", title: "Vinterdäck på", sub: "Senast 1 december · sommardäck sitter på", days: daysUntil(dec1) };
     if (t >= dec1 || t < apr1) return { icon: "tire", title: "Vinterdäck på", sub: "Krävs vid vinterväglag 1 december–31 mars", days: -1, label: "Nu", level: "urgent" };
     return { icon: "tire", title: "Sommardäck sitter på", sub: "Nästa byte i oktober–november", days: daysUntil(new Date(y, 9, 15)), level: "ok" };
   }
@@ -346,7 +346,7 @@ function tireDeadline(c) {
       : { icon: "tire", title: "Sommardäck på", sub: "Vinterdäcken sitter fortfarande på", days: 0, label: "Dags", level: "soon" };
   }
   if (t >= mar15 && t <= apr15) {
-    return { icon: "tire", title: "Sommardäck på", sub: studded ? "Dubbdäck av senast 15 april" : "Byt när vårvädret är stabilt", days: daysUntil(apr15) };
+    return { key: "dack", date: apr15, calTitle: studded ? "Dubbdäcken ska vara av" : "Dags för sommardäck", icon: "tire", title: "Sommardäck på", sub: studded ? "Dubbdäck av senast 15 april" : "Byt när vårvädret är stabilt", days: daysUntil(apr15) };
   }
   return { icon: "tire", title: "Vinterdäck sitter på", sub: studded ? "Dubbdäck · av senast 15 april" : "Byt till sommardäck i april", days: null, label: "Klart", level: "ok" };
 }
@@ -355,11 +355,11 @@ function deadlines(c) {
   const out = [tireDeadline(c)];
   if (c.besiktning) {
     const d = parseDate(c.besiktning);
-    out.push({ icon: "check", title: "Besiktning", sub: `Senast ${fmtDate(d)}`, days: daysUntil(d) });
+    out.push({ key: "besiktning", date: d, calTitle: "Sista dag för besiktning", icon: "check", title: "Besiktning", sub: `Senast ${fmtDate(d)}`, days: daysUntil(d) });
   }
   if (c.forsakringDatum) {
     const d = parseDate(c.forsakringDatum);
-    out.push({ icon: "calendar", title: "Försäkring förnyas", sub: [fmtDate(d), c.forsakringBolag].filter(Boolean).join(" · "), days: daysUntil(d) });
+    out.push({ key: "forsakring", date: d, calTitle: `Försäkringen förnyas${c.forsakringBolag ? ` (${c.forsakringBolag})` : ""}`, icon: "calendar", title: "Försäkring förnyas", sub: [fmtDate(d), c.forsakringBolag].filter(Boolean).join(" · "), days: daysUntil(d) });
   }
   if (c.skattManad) {
     const m = Number(c.skattManad) - 1;
@@ -367,11 +367,13 @@ function deadlines(c) {
     let d = new Date(t.getFullYear(), m, 1);
     if (t.getMonth() > m) d = new Date(t.getFullYear() + 1, m, 1);
     const days = t.getMonth() === m ? 0 : daysUntil(d);
-    out.push({ icon: "receipt", title: "Fordonsskatt", sub: `Betalas i ${MONTHS[m]}${c.skattBelopp ? ` · ${fmt(c.skattBelopp)} kr` : ""}`, days, label: days === 0 ? "Denna månad" : undefined });
+    out.push({ key: "skatt", date: d, calTitle: `Fordonsskatt ska betalas${c.skattBelopp ? ` (${fmt(c.skattBelopp)} kr)` : ""}`, icon: "receipt", title: "Fordonsskatt", sub: `Betalas i ${MONTHS[m]}${c.skattBelopp ? ` · ${fmt(c.skattBelopp)} kr` : ""}`, days, label: days === 0 ? "Denna månad" : undefined });
   }
   for (const x of out) {
     if (!x.level) x.level = levelFromDays(x.days);
     if (!x.label) x.label = x.days == null ? "Klart" : daysText(x.days);
+    // Datum som ligger framåt i tiden går att trycka på för att lägga in i kalendern.
+    if (x.key && x.date && daysUntil(x.date) >= 0) { x.act = "open-deadline"; x.id = x.key; }
   }
   return out.sort((a, b) => (a.days ?? 9999) - (b.days ?? 9999));
 }
@@ -498,8 +500,18 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   // Behåll sidledsscrollen i filter- och bilraderna när sidan ritas om.
   const keepScroll = {};
   if (S.screen === key) app.querySelectorAll(".filters, .car-chips").forEach((el) => { keepScroll[el.className] = el.scrollLeft; });
+  // Behåll fokus och markören i ett fält (till exempel sökfältet) om sidan ritas om medan man skriver.
+  const active = app.contains(document.activeElement) && document.activeElement.id ? document.activeElement : null;
+  const caret = active && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
   S.screen = key;
   app.innerHTML = html;
+  if (active) {
+    const again = document.getElementById(active.id);
+    if (again && again !== active) {
+      again.focus({ preventScroll: true });
+      try { if (caret) again.setSelectionRange(caret[0], caret[1]); } catch { /* fältet stödjer inte markör */ }
+    }
+  }
   app.querySelectorAll(".filters, .car-chips").forEach((el) => {
     if (keepScroll[el.className] != null) el.scrollLeft = keepScroll[el.className];
     const sel = el.querySelector('[aria-pressed="true"]');
@@ -902,9 +914,22 @@ function entryRow(e, fromCat = null) {
   </button>`;
 }
 
-function viewLog() {
-  const filters = [["alla", "Alla"], ["tank", "Tankning"], ["service", "Service"], ["eget", "Eget jobb"], ["dack", "Däck"], ["kostnad", "Kostnader"], ["matare", "Mätare"]];
-  const ents = carEntries().filter((e) => S.filter === "alla" || e.type === S.filter);
+// Sök: varje ord man skriver måste finnas någonstans i posten (titel, detaljer, verkstad, anteckning, vem, belopp, datum).
+function entryMatches(e, q) {
+  if (!q) return true;
+  const c = S.cars.find((x) => x.id === e.carId) || car();
+  const hay = [
+    TYPE[e.type]?.label, entryTitle(e), entryDetail(e, c), e.note, e.workshop, e.station, e.category, e.fuel,
+    (e.parts || []).join(" "), itemNames(e, c).join(" "), whoName(e.createdBy), memberName(e.createdBy),
+    e.amount != null ? `${Math.round(e.amount)} ${fmt(e.amount)} kr` : "", e.odometer != null ? `${e.odometer} ${fmt(e.odometer)} mil` : "",
+    fmtDate(e.date), e.date,
+  ].filter(Boolean).join(" ").toLowerCase();
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w.replace(/\s/g, "")) || hay.replace(/\s/g, "").includes(w));
+}
+
+function logListHtml() {
+  const q = (S.query || "").trim();
+  const ents = carEntries().filter((e) => (S.filter === "alla" || e.type === S.filter) && entryMatches(e, q));
   const groups = [];
   for (const e of ents) {
     const key = (e.date || "").slice(0, 7);
@@ -917,12 +942,26 @@ function viewLog() {
     const name = MONTHS[m - 1].replace(/^./, (x) => x.toUpperCase());
     return y === new Date().getFullYear() ? name : `${name} ${y}`;
   };
+  const count = q ? `<p class="hint" style="margin:0 4px">${ents.length === 1 ? "1 träff" : `${ents.length} träffar`} för ”${esc(q)}”</p>` : "";
+  if (!groups.length) {
+    return q
+      ? `${count}<div class="card empty"><b>Inga träffar</b>Prova ett annat ord, till exempel verkstad, del eller belopp.</div>`
+      : `<div class="card empty"><b>${S.filter === "alla" ? "Inget loggat än" : "Inget här än"}</b>Tryck på plusknappen för att logga en tankning, service eller något du gjort själv.</div>`;
+  }
+  return count + groups.map((g) => `<div class="month">${esc(monthLabel(g.key))}</div><div class="card">${g.items.map((e) => entryRow(e)).join("")}</div>`).join("");
+}
+
+function viewLog() {
+  const filters = [["alla", "Alla"], ["tank", "Tankning"], ["service", "Service"], ["eget", "Eget jobb"], ["dack", "Däck"], ["kostnad", "Kostnader"], ["matare", "Mätare"]];
   return `${subHeader("Allt som hänt med bilen", "Logg")}
+    <label class="search">${icon("search", 18)}
+      <input type="search" id="log-search" placeholder="Sök i loggen, till exempel bromsar eller Mekonomen" value="${esc(S.query || "")}" autocomplete="off" enterkeyhint="search" aria-label="Sök i loggen">
+      ${S.query ? `<button class="search-clear" type="button" data-act="clear-search" aria-label="Rensa sökningen">${icon("close", 14)}</button>` : ""}
+    </label>
     <div class="filters" role="group" aria-label="Filtrera loggen">
       ${filters.map(([k, l]) => `<button type="button" data-act="filter" data-f="${k}" aria-pressed="${S.filter === k}">${l}</button>`).join("")}
     </div>
-    ${groups.length ? groups.map((g) => `<div class="month">${esc(monthLabel(g.key))}</div><div class="card">${g.items.map(entryRow).join("")}</div>`).join("")
-      : `<div class="card empty"><b>${S.filter === "alla" ? "Inget loggat än" : "Inget här än"}</b>Tryck på plusknappen för att logga en tankning, service eller något du gjort själv.</div>`}`;
+    <div id="log-list" class="log-list">${logListHtml()}</div>`;
 }
 
 function viewEconomy() {
@@ -1111,12 +1150,15 @@ function bookingForm(b = {}) {
       ${field("Anteckning", `<textarea name="note" id="bk-note" rows="2" placeholder="Till exempel lämna nyckeln i brevlådan">${esc(b.note || "")}</textarea>`)}
       <p class="err" id="form-err" hidden></p>
       <button class="btn ${isEdit ? "" : "primary "}block" type="submit">${isEdit ? "Spara ändringar" : "Spara bokningen"}</button>
-      ${isEdit ? `<button class="btn danger block" type="button" data-act="delete-booking" data-id="${esc(b.id)}">Ta bort bokningen</button>` : ""}
-      <p class="hint">Bokningen syns för er båda under Att hålla koll på, och dyker upp bland påminnelserna dagen innan.</p>
+      ${isEdit
+        ? `<button class="btn ghost block" type="button" data-act="booking-calendar" data-id="${esc(b.id)}">${icon("calendar", 18)} Lägg till i kalendern</button>
+           <button class="btn danger block" type="button" data-act="delete-booking" data-id="${esc(b.id)}">Ta bort bokningen</button>`
+        : `<button class="btn ghost block" type="submit" name="cal" value="1">${icon("calendar", 18)} Spara och lägg till i kalendern</button>`}
+      <p class="hint">Bokningen syns för er båda under Att hålla koll på och bland påminnelserna dagen innan. Lägger du den i kalendern påminner telefonen dig också.</p>
     </form>`, { back: isEdit ? null : "new-entry" });
 }
 
-function saveBooking(form) {
+function saveBooking(form, wantCalendar = false) {
   const c = car();
   const fd = new FormData(form);
   const str = (k) => String(fd.get(k) ?? "").trim();
@@ -1129,6 +1171,86 @@ function saveBooking(form) {
   updateDoc(ref("cars", c.id), { bookings: list }).catch(onWriteError);
   closeSheet();
   showToast(form.dataset.id ? "Bokningen är ändrad" : `${BOOK_KINDS[b.kind]} ${bookingWhen(b).toLowerCase()} är inlagd`);
+  if (wantCalendar) addToCalendar(bookingCalendarEvent(b, c));
+}
+
+/* ------------------------------------------------------------- kalender */
+
+// Bygger en kalenderfil (.ics) som iPhone, Android och datorer kan lägga in i kalendern.
+function buildIcs({ uid: eventId, title, date, time = null, durationMin = 60, location = null, description = null, alarm }) {
+  const esc2 = (s) => String(s || "").replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
+  const ymdC = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  const hm = (d) => `${ymdC(d)}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+  const d = typeof date === "string" ? parseDate(date) : new Date(date);
+  let start, end;
+  if (time) {
+    const [h, m] = time.split(":").map(Number);
+    const s = new Date(d); s.setHours(h || 0, m || 0, 0, 0);
+    const e = new Date(s.getTime() + durationMin * 60000);
+    start = `DTSTART:${hm(s)}`; end = `DTEND:${hm(e)}`;
+  } else {
+    const e = new Date(d); e.setDate(e.getDate() + 1);
+    start = `DTSTART;VALUE=DATE:${ymdC(d)}`; end = `DTEND;VALUE=DATE:${ymdC(e)}`;
+  }
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  return [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Bildagboken//SV", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "BEGIN:VEVENT", `UID:${eventId}@bildagboken`, `DTSTAMP:${stamp}`, start, end,
+    `SUMMARY:${esc2(title)}`,
+    location ? `LOCATION:${esc2(location)}` : null,
+    description ? `DESCRIPTION:${esc2(description)}` : null,
+    // Påminnelse: dagen innan för bokade tider, en vecka innan för sista datum.
+    "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${esc2(title)}`, `TRIGGER:${alarm || (time ? "-P1D" : "-PT15H")}`, "END:VALARM",
+    "END:VEVENT", "END:VCALENDAR",
+  ].filter(Boolean).join("\r\n");
+}
+
+function addToCalendar(ev) {
+  const ics = buildIcs(ev);
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const a = document.createElement("a");
+  a.href = url;
+  // På iPhone öppnas kalenderfilen direkt och man trycker "Lägg till". På dator laddas filen ner.
+  if (!ios) a.download = `${(ev.fileName || ev.title || "bildagboken").replace(/[^\wåäöÅÄÖ -]/g, "").trim() || "bildagboken"}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  showToast(ios ? "Tryck på Lägg till för att spara i kalendern." : "Kalenderfilen laddas ner. Öppna den så läggs händelsen in i kalendern.", 6000);
+}
+
+function bookingCalendarEvent(b, c = car()) {
+  const kind = BOOK_KINDS[b.kind] || "Bokning";
+  return {
+    uid: `${c.id}-${b.id}`,
+    title: `${kind}: ${carName(c)}`,
+    date: b.date,
+    time: b.time,
+    durationMin: b.kind === "besiktning" ? 30 : 60,
+    location: b.place,
+    description: [b.note, c.plate ? `Reg.nr ${c.plate}` : null, "Inlagd från Bildagboken"].filter(Boolean).join("\n"),
+    fileName: `${kind} ${b.date}`,
+  };
+}
+
+function deadlineSheet(key) {
+  const c = car();
+  const x = deadlines(c).find((d) => d.key === key);
+  if (!x) return;
+  const section = key === "dack" ? "tires" : "dates";
+  openSheet(x.title, `
+    <dl class="detail-list">
+      <div><dt>Datum</dt><dd>${esc(fmtDate(x.date))}</dd></div>
+      <div><dt>Kvar</dt><dd>${esc(x.label)}</dd></div>
+      ${x.sub ? `<div><dt>Info</dt><dd>${esc(x.sub)}</dd></div>` : ""}
+    </dl>
+    <div class="form" style="margin-top:18px">
+      <button class="btn primary block" type="button" data-act="deadline-calendar" data-id="${esc(key)}">${icon("calendar", 18)} Lägg till i kalendern</button>
+      <button class="btn ghost block" type="button" data-act="edit-car" data-section="${section}">Ändra datum</button>
+      <p class="hint">Kalendern påminner dig en vecka innan.</p>
+    </div>`);
 }
 
 function removeBooking(carId, bookingId) {
@@ -1528,6 +1650,25 @@ const ACTIONS = {
   },
   "open-entry"(el) { openEntry(el.dataset.id, { fromCat: el.dataset.cat || null }); },
   "new-booking"() { bookingForm(); },
+  "booking-calendar"(el) {
+    const c = car();
+    const b = (c.bookings || []).find((x) => x.id === el.dataset.id);
+    if (b) addToCalendar(bookingCalendarEvent(b, c));
+  },
+  "open-deadline"(el) { deadlineSheet(el.dataset.id); },
+  "deadline-calendar"(el) {
+    const c = car();
+    const x = deadlines(c).find((d) => d.key === el.dataset.id);
+    if (!x) return;
+    addToCalendar({
+      uid: `${c.id}-${x.key}-${ymd(x.date)}`,
+      title: `${x.calTitle}: ${carName(c)}`,
+      date: x.date,
+      description: [x.sub, c.plate ? `Reg.nr ${c.plate}` : null, "Inlagd från Bildagboken"].filter(Boolean).join("\n"),
+      alarm: "-P6DT15H",
+      fileName: `${x.title} ${ymd(x.date)}`,
+    });
+  },
   "open-cat"(el) {
     const cat = el.dataset.id;
     const since = addMonths(today0(), -12);
@@ -1593,6 +1734,11 @@ const ACTIONS = {
     showToast("Borttaget");
   },
   filter(el) { S.filter = el.dataset.f; render(); },
+  "clear-search"() {
+    S.query = "";
+    render();
+    $("#log-search")?.focus();
+  },
   "edit-car"(el) {
     const sections = (el.dataset.section || "basic,photo,dates").split(",").filter((k) => CAR_SECTIONS[k]);
     carSheet(true, sections.length ? sections : ["basic"]);
@@ -1683,7 +1829,7 @@ async function onSubmit(ev) {
     if (kind === "car-new") return await saveNewCar(form);
     if (kind === "car-edit") return saveCarEdit(form);
     if (kind === "items") return saveItems(form);
-    if (kind === "booking") return saveBooking(form);
+    if (kind === "booking") return saveBooking(form, ev.submitter?.value === "1");
     if (kind === "rename") {
       const fd = new FormData(form);
       const name = String(fd.get("name") || "").trim();
@@ -1844,6 +1990,20 @@ function saveItems(form) {
 
 let manualTotal = false;
 function onInput(ev) {
+  if (ev.target.id === "log-search") {
+    const had = !!S.query;
+    S.query = ev.target.value;
+    // Uppdatera bara listan, så att sökfältet och tangentbordet stannar kvar.
+    const list = $("#log-list");
+    if (list) list.innerHTML = logListHtml();
+    if (had !== !!S.query) {
+      const box = ev.target.closest(".search");
+      const btn = box?.querySelector(".search-clear");
+      if (S.query && !btn) box.insertAdjacentHTML("beforeend", `<button class="search-clear" type="button" data-act="clear-search" aria-label="Rensa sökningen">${icon("close", 14)}</button>`);
+      if (!S.query && btn) btn.remove();
+    }
+    return;
+  }
   const keep = ev.target.closest("form[data-keep]");
   if (keep) keep.dataset.dirty = "1";
   if (ev.target.name === "odometer" || ev.target.name === "date") {
