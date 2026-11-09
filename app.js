@@ -1,0 +1,1599 @@
+// Bildagboken — delad bilapp för ett hushåll. Data synkas via Firebase (Firestore + Google-inloggning).
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
+  onAuthStateChanged, signOut
+} from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+import {
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  collection, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs,
+  query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion
+} from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+
+const VERSION = "1.0";
+
+const fb = initializeApp(firebaseConfig);
+const auth = getAuth(fb);
+let db;
+try {
+  db = initializeFirestore(fb, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+} catch (e) {
+  db = initializeFirestore(fb, {});
+}
+
+/* ------------------------------------------------------------------ state */
+
+const S = {
+  user: null,
+  hid: null,
+  house: null,
+  cars: [],
+  carId: null,
+  entries: [],
+  view: "oversikt",
+  filter: "alla",
+  loaded: { house: false, cars: false, entries: false },
+  unsubs: [],
+  screen: "",
+};
+
+/* ---------------------------------------------------------------- helpers */
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const nf = [0, 1, 2].map((d) => new Intl.NumberFormat("sv-SE", { minimumFractionDigits: d, maximumFractionDigits: d }));
+const fmt = (n, d = 0) => (n == null || Number.isNaN(n) ? "–" : nf[d].format(n));
+const num = (v) => {
+  if (v == null) return null;
+  const s = String(v).replace(/\s/g, "").replace(",", ".");
+  if (s === "") return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+};
+const pad = (n) => String(n).padStart(2, "0");
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const todayStr = () => ymd(new Date());
+const parseDate = (s) => {
+  if (!s) return null;
+  const [y, m, d] = String(s).split("-").map(Number);
+  return y ? new Date(y, (m || 1) - 1, d || 1) : null;
+};
+const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+const daysUntil = (d) => Math.round((d - today0()) / 864e5);
+const addMonths = (d, m) => { const r = new Date(d); r.setMonth(r.getMonth() + m); return r; };
+const MONTHS = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"];
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "Maj", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"];
+const fmtDate = (s) => {
+  const d = typeof s === "string" ? parseDate(s) : s;
+  if (!d) return "–";
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+};
+const fmtDateShort = (s) => {
+  const d = typeof s === "string" ? parseDate(s) : s;
+  if (!d) return "–";
+  const base = `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}`;
+  return d.getFullYear() === new Date().getFullYear() ? base : `${base} ${d.getFullYear()}`;
+};
+const tsMs = (t) => (t && typeof t.toMillis === "function" ? t.toMillis() : typeof t === "number" ? t : 0);
+const timeAgo = (ms) => {
+  if (!ms) return "";
+  const diff = Date.now() - ms;
+  const min = Math.round(diff / 60000);
+  if (min < 1) return "Nyss";
+  if (min < 60) return `${min} min sedan`;
+  const d = new Date(ms);
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const days = Math.floor((today0() - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
+  if (days === 0) return `I dag ${hm}`;
+  if (days === 1) return `I går ${hm}`;
+  return fmtDateShort(d);
+};
+const daysText = (d) => {
+  if (d < 0) return d === -1 ? "1 dag sen" : `${-d} dagar sen`;
+  if (d === 0) return "I dag";
+  if (d < 60) return d === 1 ? "1 dag" : `${d} dagar`;
+  const m = Math.round(d / 30.4);
+  return m >= 18 ? `${fmt(m / 12, 1)} år` : `${m} mån`;
+};
+const icon = (name, size = 22) => `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+const uid = () => S.user?.uid;
+const randomId = (len = 8, alphabet = "abcdefghijkmnpqrstuvwxyz23456789") => {
+  const a = new Uint32Array(len);
+  crypto.getRandomValues(a);
+  return Array.from(a, (x) => alphabet[x % alphabet.length]).join("");
+};
+const clean = (o) => {
+  const r = {};
+  for (const [k, v] of Object.entries(o)) if (v !== undefined) r[k] = v;
+  return r;
+};
+const pref = {
+  get(k) { try { return localStorage.getItem("bildagboken." + k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem("bildagboken." + k, v); } catch { /* ingen lagring */ } },
+};
+
+const housePath = (...p) => ["households", S.hid, ...p];
+const col = (...p) => collection(db, ...housePath(...p));
+const ref = (...p) => doc(db, ...housePath(...p));
+
+/* ------------------------------------------------------------- domain data */
+
+const TYPE = {
+  tank: { label: "Tankning", icon: "fuel" },
+  matare: { label: "Mätare", icon: "gauge" },
+  service: { label: "Service", icon: "wrench" },
+  eget: { label: "Eget jobb", icon: "hand" },
+  dack: { label: "Däck", icon: "tire" },
+  kostnad: { label: "Kostnad", icon: "receipt" },
+};
+const FUELS = ["Bensin", "Diesel", "Flexifuel (bensin/E85)", "Laddhybrid", "Hybrid", "El"];
+const COST_CATS = ["Försäkring", "Skatt", "Besiktning", "Parkering", "Tvätt", "Tillbehör", "Övrigt"];
+const TIRE_ACTIONS = {
+  till_vinter: "Bytte till vinterdäck",
+  till_sommar: "Bytte till sommardäck",
+  monster: "Mätte mönsterdjup",
+  nya: "Köpte nya däck",
+  forvaring: "Däckförvaring",
+  ovrigt: "Övrigt",
+};
+const SPEC_TEMPLATE = "Motorolja: \nOljemängd: \nDäckdimension: \nLufttryck fram/bak: \nTorkarblad: \nBatteri: \nGlödlampor: ";
+
+const isFlex = (c) => /flex|e85/i.test(c?.fuel || "") || /\d[.,]\d\s*f\b/i.test(c?.engine || "");
+const isElectric = (c) => /^el$/i.test(c?.fuel || "");
+const isDiesel = (c) => /diesel/i.test(c?.fuel || "");
+
+function fuelOptions(c) {
+  if (isElectric(c)) return ["El (kWh)"];
+  if (isDiesel(c)) return ["Diesel", "HVO100"];
+  if (isFlex(c)) return ["E85", "Bensin 95", "Bensin 98"];
+  if (/laddhybrid/i.test(c?.fuel || "")) return ["Bensin 95", "Bensin 98", "El (kWh)"];
+  return ["Bensin 95", "Bensin 98"];
+}
+
+// Bilmodeller med kända saker att hålla koll på. Texterna är generella råd, inte en verkstadsdiagnos.
+const PROFILES = [
+  {
+    test: (c) => /volvo/i.test(c.make || "") && /\b(v50|s40|c30|c70)\b/i.test(c.model || "") && /1[.,]8/.test(c.engine || ""),
+    chain: true,
+    tips: [
+      { sev: "high", when: (m) => m >= 10 || m <= 2, flex: true, title: "Vinterstart på E85", text: "Etanol startar sämre i kyla. Använd motorvärmaren och tanka gärna bensin när det är riktigt kallt." },
+      { sev: "mid", flex: true, title: "Tändstift", text: "Slits fortare när man kör mycket E85. Följ intervallet under Underhåll." },
+      { sev: "low", title: "Kamkedja", text: "1,8-motorn har kamkedja, inte kamrem. Lyssna efter rassel de första sekunderna vid kallstart." },
+      { sev: "low", title: "Bakre bromsok", text: "Kärvar gärna på äldre bilar av den här modellen. Känn efter om en fälg blir varmare än de andra efter körning." },
+      { sev: "low", title: "Främre bussningar", text: "Länkarmsbussningar slits med åren. Knackljud över gupp eller vag styrning är tecken att låta kolla." },
+    ],
+  },
+];
+const GENERIC_TIPS = [
+  { sev: "mid", when: (m) => m >= 10 || m <= 1, title: "Batteriet inför vintern", text: "Kyla tar hårt på batteriet. Är det äldre än fem år, låt testa det innan det blir riktigt kallt." },
+  { sev: "low", title: "Lufttryck", text: "Kolla lufttrycket en gång i månaden och före långresor. Rätt tryck sparar bränsle och däck." },
+  { sev: "low", title: "Oljenivån", text: "Dra oljestickan med jämna mellanrum, till exempel varannan tankning. Äldre motorer kan dra lite olja." },
+];
+
+function profileFor(c) {
+  return PROFILES.find((p) => p.test(c)) || null;
+}
+
+function defaultItems(c) {
+  const el = isElectric(c), diesel = isDiesel(c), flex = isFlex(c);
+  const p = profileFor(c);
+  const items = [];
+  if (!el) items.push({ id: "olja", name: "Motorolja och oljefilter", mil: 2000, months: 12 });
+  if (!el) items.push({ id: "luftfilter", name: "Luftfilter", mil: 4000, months: 48 });
+  items.push({ id: "kupefilter", name: "Kupéfilter", mil: 2000, months: 24 });
+  if (!el && !diesel) items.push({ id: "tandstift", name: "Tändstift", mil: flex ? 3000 : 6000, months: 72 });
+  items.push({ id: "bromsvatska", name: "Bromsvätska", mil: null, months: 24 });
+  items.push({ id: "torkare", name: "Torkarblad", mil: null, months: 12 });
+  if (!el && !(p && p.chain)) items.push({ id: "kamrem", name: "Kamrem", mil: 12000, months: 120 });
+  return items;
+}
+
+/* -------------------------------------------------------- derived values */
+
+const car = () => S.cars.find((c) => c.id === S.carId) || null;
+const carEntries = () => S.entries.filter((e) => e.carId === S.carId);
+const memberName = (u) => S.house?.memberInfo?.[u]?.name || "Någon";
+const whoName = (u) => (u === uid() ? "Du" : memberName(u));
+const myName = () => memberName(uid());
+const lastSeenMs = () => tsMs(S.house?.memberInfo?.[uid()]?.lastSeen);
+
+function sortEntries(list) {
+  return list.sort((a, b) => (b.date || "").localeCompare(a.date || "") || tsMs(b.createdAt) - tsMs(a.createdAt));
+}
+
+function entryTitle(e) {
+  switch (e.type) {
+    case "tank": return "Tankning";
+    case "matare": return "Mätarställning";
+    case "service": return e.title || (e.workshop ? `Service · ${e.workshop}` : "Service");
+    case "eget": return e.title || "Eget jobb";
+    case "dack": return TIRE_ACTIONS[e.tireAction] || "Däck";
+    case "kostnad": return e.title || e.category || "Kostnad";
+    default: return "Logg";
+  }
+}
+
+function itemNames(e, c) {
+  const items = c?.items || [];
+  return (e.items || []).map((id) => items.find((i) => i.id === id)?.name).filter(Boolean);
+}
+
+function entryDetail(e, c = car()) {
+  const unit = /kWh/.test(e.fuel || "") ? "kWh" : "l";
+  switch (e.type) {
+    case "tank": {
+      const bits = [];
+      if (e.liters != null) bits.push(`${fmt(e.liters, 1)} ${unit} ${e.fuel || ""}`.trim());
+      if (e.pricePerL != null) bits.push(`${fmt(e.pricePerL, 2)} kr/${unit}`);
+      if (e.station) bits.push(e.station);
+      return bits.join(" · ");
+    }
+    case "matare": return `${fmt(e.odometer)} mil`;
+    case "service":
+    case "eget": return [...itemNames(e, c), ...(e.parts || [])].join(", ") || e.note || "";
+    case "dack": {
+      const bits = [];
+      if (e.depth != null) bits.push(`${fmt(e.depth, 1)} mm`);
+      if (e.note) bits.push(e.note);
+      return bits.join(" · ");
+    }
+    case "kostnad": return e.title && e.category ? e.category : e.note || "";
+    default: return "";
+  }
+}
+
+function activityText(e) {
+  const n = whoName(e.createdBy);
+  const unit = /kWh/.test(e.fuel || "") ? "kWh" : "l";
+  const kr = e.amount != null ? ` för ${fmt(e.amount)} kr` : "";
+  switch (e.type) {
+    case "tank": return `${n} tankade${e.liters != null ? ` ${fmt(e.liters, 1)} ${unit} ${e.fuel || ""}`.trimEnd() : ""}${kr}`;
+    case "matare": return `${n} uppdaterade mätarställningen till ${fmt(e.odometer)} mil`;
+    case "service": return `${n} loggade service${e.workshop ? ` hos ${e.workshop}` : ""}${kr}`;
+    case "eget": return `${n}: ${e.title || "eget jobb"}${kr}`;
+    case "dack": return `${n}: ${(TIRE_ACTIONS[e.tireAction] || "däck").toLowerCase()}`;
+    case "kostnad": return `${n} lade till ${(e.title || e.category || "en kostnad").toLowerCase()}${kr}`;
+    default: return `${n} loggade något`;
+  }
+}
+
+function itemStatus(item, c, ents) {
+  let last = null;
+  for (const e of ents) {
+    if (!(e.items || []).includes(item.id)) continue;
+    if (!last || (e.date || "") > (last.date || "")) last = e;
+  }
+  let lastDate = last?.date ?? null;
+  let lastMil = last?.odometer ?? null;
+  if (item.baseDate && (!lastDate || item.baseDate > lastDate)) { lastDate = item.baseDate; lastMil = item.baseMil ?? null; }
+  if (!last && item.baseMil != null) lastMil = item.baseMil;
+  if (!last && !item.baseDate && item.baseMil == null) return { item, unknown: true, level: "none" };
+
+  const odo = c.odometer || 0;
+  let remMil = null, remDays = null, dueDate = null;
+  if (item.mil && lastMil != null) remMil = lastMil + item.mil - odo;
+  if (item.months && lastDate) { dueDate = addMonths(parseDate(lastDate), item.months); remDays = daysUntil(dueDate); }
+  const fr = [];
+  if (remMil != null) fr.push({ f: remMil / item.mil, kind: "mil" });
+  if (remDays != null) fr.push({ f: remDays / (item.months * 30.44), kind: "days" });
+  if (!fr.length) return { item, unknown: true, level: "none", last, lastDate, lastMil };
+  fr.sort((a, b) => a.f - b.f);
+  const frac = fr[0].f;
+  const by = fr[0].kind;
+  let level = "ok";
+  if (frac < 0) level = "urgent";
+  else if (frac < 0.12 || (remMil != null && remMil < 300) || (remDays != null && remDays < 45)) level = "soon";
+  const label = frac < 0 ? "Dags nu" : by === "mil" ? `${fmt(remMil)} mil` : daysText(remDays);
+  return { item, last, lastDate, lastMil, remMil, remDays, dueDate, frac, by, level, label };
+}
+
+function allItemStatus(c = car()) {
+  const ents = carEntries();
+  return (c?.items || []).map((i) => itemStatus(i, c, ents));
+}
+
+function primaryService(c) {
+  const st = allItemStatus(c);
+  return st.find((s) => s.item.id === "olja") || st.find((s) => s.item.mil) || null;
+}
+
+function levelFromDays(d) {
+  if (d == null) return "ok";
+  if (d < 0) return "urgent";
+  if (d < 30) return "urgent";
+  if (d < 90) return "soon";
+  return "ok";
+}
+
+function tireDeadline(c) {
+  const t = today0(), y = t.getFullYear();
+  const on = c.tiresOn || "sommar";
+  const winter = (c.tires || []).find((s) => s.kind === "vinter");
+  const studded = !!winter?.studded;
+  if (on === "sommar") {
+    const oct1 = new Date(y, 9, 1), dec1 = new Date(y, 11, 1), apr1 = new Date(y, 3, 1);
+    if (t >= oct1 && t < dec1) return { icon: "tire", title: "Vinterdäck på", sub: "Senast 1 december · sommardäck sitter på", days: daysUntil(dec1) };
+    if (t >= dec1 || t < apr1) return { icon: "tire", title: "Vinterdäck på", sub: "Krävs vid vinterväglag 1 december–31 mars", days: -1, label: "Nu", level: "urgent" };
+    return { icon: "tire", title: "Sommardäck sitter på", sub: "Nästa byte i oktober–november", days: daysUntil(new Date(y, 9, 15)), level: "ok" };
+  }
+  const mar15 = new Date(y, 2, 15), apr15 = new Date(y, 3, 15), oct1 = new Date(y, 9, 1);
+  if (t > apr15 && t < oct1) {
+    return studded
+      ? { icon: "tire", title: "Dubbdäck av", sub: "Skulle av senast 15 april", days: -1, label: "Nu", level: "urgent" }
+      : { icon: "tire", title: "Sommardäck på", sub: "Vinterdäcken sitter fortfarande på", days: 0, label: "Dags", level: "soon" };
+  }
+  if (t >= mar15 && t <= apr15) {
+    return { icon: "tire", title: "Sommardäck på", sub: studded ? "Dubbdäck av senast 15 april" : "Byt när vårvädret är stabilt", days: daysUntil(apr15) };
+  }
+  return { icon: "tire", title: "Vinterdäck sitter på", sub: studded ? "Dubbdäck · av senast 15 april" : "Byt till sommardäck i april", days: null, label: "Klart", level: "ok" };
+}
+
+function deadlines(c) {
+  const out = [tireDeadline(c)];
+  if (c.besiktning) {
+    const d = parseDate(c.besiktning);
+    out.push({ icon: "check", title: "Besiktning", sub: `Senast ${fmtDate(d)}`, days: daysUntil(d) });
+  }
+  if (c.forsakringDatum) {
+    const d = parseDate(c.forsakringDatum);
+    out.push({ icon: "calendar", title: "Försäkring förnyas", sub: [fmtDate(d), c.forsakringBolag].filter(Boolean).join(" · "), days: daysUntil(d) });
+  }
+  if (c.skattManad) {
+    const m = Number(c.skattManad) - 1;
+    const t = today0();
+    let d = new Date(t.getFullYear(), m, 1);
+    if (t.getMonth() > m) d = new Date(t.getFullYear() + 1, m, 1);
+    const days = t.getMonth() === m ? 0 : daysUntil(d);
+    out.push({ icon: "receipt", title: "Fordonsskatt", sub: `Betalas i ${MONTHS[m]}${c.skattBelopp ? ` · ${fmt(c.skattBelopp)} kr` : ""}`, days, label: days === 0 ? "Denna månad" : undefined });
+  }
+  for (const x of out) {
+    if (!x.level) x.level = levelFromDays(x.days);
+    if (!x.label) x.label = x.days == null ? "Klart" : daysText(x.days);
+  }
+  return out.sort((a, b) => (a.days ?? 9999) - (b.days ?? 9999));
+}
+
+function catOf(e) {
+  if (e.type === "tank") return "Bränsle";
+  if (e.type === "service" || e.type === "eget") return "Service och reparationer";
+  if (e.type === "dack") return "Däck";
+  if (e.category === "Skatt" || e.category === "Besiktning") return "Skatt och besiktning";
+  if (e.category === "Försäkring") return "Försäkring";
+  return "Övrigt";
+}
+const CAT_ICON = { "Bränsle": "fuel", "Service och reparationer": "wrench", "Däck": "tire", "Skatt och besiktning": "check", "Försäkring": "calendar", "Övrigt": "receipt" };
+
+function economy(ents, months = 12) {
+  const since = addMonths(today0(), -months);
+  const inPeriod = ents.filter((e) => parseDate(e.date) >= since);
+  const paid = inPeriod.filter((e) => e.amount > 0);
+  const cats = {};
+  let total = 0;
+  for (const e of paid) { const k = catOf(e); cats[k] = (cats[k] || 0) + e.amount; total += e.amount; }
+  const odos = inPeriod.filter((e) => e.odometer != null).map((e) => e.odometer);
+  const driven = odos.length >= 2 ? Math.max(...odos) - Math.min(...odos) : null;
+  let monthsSpan = 1;
+  if (inPeriod.length) {
+    const first = inPeriod.reduce((m, e) => (e.date < m ? e.date : m), inPeriod[0].date);
+    const f = parseDate(first), t = new Date();
+    monthsSpan = Math.max(1, Math.min(months, (t.getFullYear() - f.getFullYear()) * 12 + t.getMonth() - f.getMonth() + 1));
+  }
+  const tanks = inPeriod.filter((e) => e.type === "tank" && e.odometer != null && e.liters > 0 && !/kWh/.test(e.fuel || ""))
+    .sort((a, b) => a.odometer - b.odometer);
+  let consumption = null;
+  if (tanks.length >= 2) {
+    const dist = tanks[tanks.length - 1].odometer - tanks[0].odometer;
+    const liters = tanks.slice(1).reduce((s, e) => s + e.liters, 0);
+    if (dist > 0) consumption = liters / dist;
+  }
+  const bars = [];
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+    const sum = ents.filter((e) => (e.date || "").startsWith(key) && e.amount > 0).reduce((s, e) => s + e.amount, 0);
+    bars.push({ label: MONTHS_SHORT[d.getMonth()], sum, now: i === 0 });
+  }
+  const thisMonth = bars[5].sum, lastMonth = bars[4].sum;
+  return { total, cats, driven, perMonth: total / monthsSpan, perMil: driven ? total / driven : null, consumption, bars, thisMonth, lastMonth, count: paid.length };
+}
+
+function tipsFor(c) {
+  const m = new Date().getMonth() + 1;
+  const p = profileFor(c);
+  const list = [...(p ? p.tips : []), ...GENERIC_TIPS];
+  if (!p && isFlex(c)) list.unshift({ sev: "mid", when: (mm) => mm >= 10 || mm <= 2, title: "E85 i kyla", text: "Etanol startar sämre när det är kallt. Använd motorvärmare och tanka bensin när det är riktigt kallt." });
+  return list.filter((t) => (!t.when || t.when(m)) && (!t.flex || isFlex(c))).slice(0, 5);
+}
+
+function claudePrompt(c) {
+  const st = allItemStatus(c);
+  const ents = carEntries();
+  const lastService = ents.find((e) => e.type === "service");
+  const lines = [];
+  lines.push(`Jag har en ${[c.make, c.model, c.engine].filter(Boolean).join(" ")}${c.fuel ? ` (${c.fuel.toLowerCase()})` : ""}${c.year ? ` från ${c.year}` : ""}. Mätarställning: ${fmt(c.odometer)} mil.`);
+  if (lastService) lines.push(`Senaste service: ${fmtDate(lastService.date)}${lastService.odometer != null ? ` vid ${fmt(lastService.odometer)} mil` : ""}: ${entryDetail(lastService, c) || "inga detaljer"}.`);
+  const known = st.filter((s) => !s.unknown);
+  if (known.length) {
+    lines.push("Underhåll enligt min logg:");
+    for (const s of known) lines.push(`- ${s.item.name}: senast ${s.lastDate ? fmtDate(s.lastDate) : "okänt datum"}${s.lastMil != null ? `, vid ${fmt(s.lastMil)} mil` : ""}.`);
+  }
+  const unknown = st.filter((s) => s.unknown).map((s) => s.item.name.toLowerCase());
+  if (unknown.length) lines.push(`Jag vet inte när detta gjordes senast: ${unknown.join(", ")}.`);
+  const own = ents.filter((e) => e.type === "eget").slice(0, 5);
+  if (own.length) lines.push(`Saker vi gjort själva nyligen: ${own.map((e) => `${e.title || "eget jobb"} (${fmtDateShort(e.date)})`).join("; ")}.`);
+  lines.push("Vad bör jag hålla extra koll på med just den här bilen, och vad är det snart dags att byta eller kontrollera? Svara kort och konkret på svenska.");
+  return lines.join("\n");
+}
+
+/* -------------------------------------------------------------- rendering */
+
+const app = $("#app");
+const nav = $("#nav");
+
+function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
+  if (keepForm && S.screen === key && app.querySelector("form[data-keep]")) return;
+  S.screen = key;
+  app.innerHTML = html;
+  app.classList.toggle("no-nav", !showNav);
+  nav.hidden = !showNav;
+  if (showNav) {
+    nav.querySelectorAll(".tab").forEach((t) => {
+      if (t.dataset.go === S.view) t.setAttribute("aria-current", "page");
+      else t.removeAttribute("aria-current");
+    });
+  }
+}
+
+function render() {
+  if (!S.user) return renderLogin();
+  if (!S.hid) return;
+  if (!S.loaded.house || !S.loaded.cars || !S.loaded.entries) {
+    return setScreen("loading", `<p class="loading">Hämtar er bil …</p>`);
+  }
+  if (!S.cars.length) return renderCarSetup();
+  const views = { oversikt: viewOverview, logg: viewLog, ekonomi: viewEconomy, bilen: viewCar, aviseringar: viewNotifications, installningar: viewSettings };
+  const fn = views[S.view] || viewOverview;
+  setScreen("view-" + S.view, fn(), { showNav: true, keepForm: true });
+}
+
+function renderLogin(error = "") {
+  setScreen("login", `
+    <section class="login">
+      <div class="dl-ic" style="width:56px;height:56px;border-radius:18px;background:var(--accent);color:var(--accent-ink)">${icon("gauge", 30)}</div>
+      <h1>Bildagboken</h1>
+      <p>Service, tankning, däck, datum och kostnader för er bil. Ni ser samma sak i båda telefonerna.</p>
+      <button class="btn google block" type="button" data-act="login">${icon("google", 20)} Logga in med Google</button>
+      ${error ? `<p class="err">${esc(error)}</p>` : ""}
+      <p class="hint">Har du fått en inbjudan? Logga in först, sedan skriver du in koden.</p>
+    </section>`);
+}
+
+function renderOnboarding(error = "") {
+  const join = new URLSearchParams(location.search).get("join") || "";
+  const first = (S.user.displayName || "").split(" ")[0];
+  setScreen("onboarding", `
+    <header class="top"><div class="hello"><small>Välkommen</small><h1>Kom igång</h1></div></header>
+    <form class="card form" data-form="create-house" data-keep>
+      <h2>Starta en ny bildagbok</h2>
+      <label class="field"><span>Ditt namn</span><input name="name" id="ob-name" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
+      <label class="field"><span>Vad heter hushållet?</span><input name="house" id="ob-house" maxlength="40" placeholder="Till exempel Familjen Andersson"></label>
+      <button class="btn primary block" type="submit">Skapa</button>
+      <p class="hint">Sedan bjuder du in din sambo med en kod.</p>
+    </form>
+    <form class="card form" data-form="join-house" data-keep>
+      <h2>Gå med i en befintlig</h2>
+      <label class="field"><span>Ditt namn</span><input name="name" id="ob-name2" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
+      <label class="field"><span>Inbjudningskod</span><input name="code" id="ob-code" required maxlength="8" value="${esc(join)}" autocapitalize="characters" autocomplete="off" placeholder="Sex tecken" style="text-transform:uppercase;letter-spacing:.12em"></label>
+      <button class="btn block" type="submit">Gå med</button>
+    </form>
+    ${error ? `<p class="err">${esc(error)}</p>` : ""}
+    <button class="link" type="button" data-act="logout" style="align-self:center">Logga ut (${esc(S.user.email || "")})</button>`);
+  if (join) $("#ob-code")?.focus();
+}
+
+function carFormFields(c = {}, { full = false } = {}) {
+  const sel = (name, opts, val) => `<select name="${name}" id="cf-${name}">${opts.map((o) => {
+    const [v, l] = Array.isArray(o) ? o : [o, o];
+    return `<option value="${esc(v)}"${String(val ?? "") === String(v) ? " selected" : ""}>${esc(l)}</option>`;
+  }).join("")}</select>`;
+  const inp = (name, label, val, attrs = "") => `<label class="field"><span>${label}</span><input name="${name}" id="cf-${name}" value="${esc(val ?? "")}" ${attrs}></label>`;
+  const summer = (c.tires || []).find((t) => t.kind === "sommar") || {};
+  const winter = (c.tires || []).find((t) => t.kind === "vinter") || {};
+  let html = `
+    <div class="row2">
+      ${inp("make", "Märke", c.make, 'required placeholder="Volvo"')}
+      ${inp("model", "Modell", c.model, 'required placeholder="V50"')}
+    </div>
+    <div class="row2">
+      ${inp("year", "Årsmodell", c.year, 'inputmode="numeric" placeholder="2007"')}
+      ${inp("engine", "Motor", c.engine, 'placeholder="1.8F"')}
+    </div>
+    <label class="field"><span>Drivmedel</span>${sel("fuel", FUELS, c.fuel || "Bensin")}</label>
+    <div class="row2">
+      ${inp("color", "Färg", c.color, 'placeholder="Svart"')}
+      ${inp("plate", "Registreringsnummer", c.plate, 'placeholder="ABC 123" autocapitalize="characters"')}
+    </div>
+    ${inp("odometer", "Mätarställning (mil)", c.odometer, 'inputmode="numeric" placeholder="21 480"')}`;
+  if (!full) return html;
+  html += `
+    <p class="section-t">Datum och kostnader</p>
+    ${inp("besiktning", "Besiktning senast", c.besiktning, 'type="date"')}
+    <div class="row2">
+      ${inp("forsakringBolag", "Försäkringsbolag", c.forsakringBolag, 'placeholder="If, Folksam …"')}
+      ${inp("forsakringDatum", "Försäkringen förnyas", c.forsakringDatum, 'type="date"')}
+    </div>
+    <div class="row2">
+      <label class="field"><span>Skatt betalas i</span>${sel("skattManad", [["", "Vet inte"], ...MONTHS.map((m, i) => [String(i + 1), m])], c.skattManad || "")}</label>
+      ${inp("skattBelopp", "Skatt per år (kr)", c.skattBelopp, 'inputmode="numeric"')}
+    </div>
+    <p class="section-t">Däck</p>
+    <label class="field"><span>Det här sitter på nu</span>${sel("tiresOn", [["sommar", "Sommardäck"], ["vinter", "Vinterdäck"]], c.tiresOn || "sommar")}</label>
+    <div class="row2">
+      ${inp("s_brand", "Sommardäck, märke", summer.brand, 'placeholder="Michelin Primacy 4"')}
+      ${inp("s_size", "Dimension", summer.size, 'placeholder="205/55 R16"')}
+    </div>
+    <div class="row2">
+      ${inp("s_year", "Tillverkningsår", summer.year, 'inputmode="numeric"')}
+      ${inp("s_depth", "Mönsterdjup (mm)", summer.depth, 'inputmode="decimal"')}
+    </div>
+    <div class="row2">
+      ${inp("w_brand", "Vinterdäck, märke", winter.brand, 'placeholder="Nokian Hakkapeliitta"')}
+      ${inp("w_size", "Dimension", winter.size, 'placeholder="205/55 R16"')}
+    </div>
+    <div class="row2">
+      ${inp("w_year", "Tillverkningsår", winter.year, 'inputmode="numeric"')}
+      ${inp("w_depth", "Mönsterdjup (mm)", winter.depth, 'inputmode="decimal"')}
+    </div>
+    <label class="check"><input type="checkbox" name="w_studded" id="cf-w_studded"${winter.studded ? " checked" : ""}> Vinterdäcken är dubbade</label>
+    <p class="section-t">Bra att ha</p>
+    <label class="field"><span>En sak per rad, till exempel "Motorolja: 5W-30"</span><textarea name="specsText" id="cf-specsText" rows="7">${esc(c.specsText ?? SPEC_TEMPLATE)}</textarea></label>`;
+  return html;
+}
+
+function renderCarSetup() {
+  setScreen("car-setup", `
+    <header class="top"><div class="hello"><small>Ett sista steg</small><h1>Lägg till er bil</h1></div></header>
+    <form class="card form" data-form="car-new" data-keep>
+      ${carFormFields({}, { full: false })}
+      <button class="btn primary block" type="submit">Spara bilen</button>
+      <p class="hint">Datum för besiktning, försäkring och däck lägger du till under Bilen efteråt.</p>
+    </form>
+    ${inviteCard()}`, { keepForm: true });
+}
+
+function carSvg(c) {
+  const colors = { svart: "#1d1c1b", vit: "#ecebe7", silver: "#a7abae", "grå": "#77797b", gra: "#77797b", "röd": "#8e2020", rod: "#8e2020", "blå": "#24406b", bla: "#24406b", "grön": "#2f4b3c", gron: "#2f4b3c", beige: "#c9b79c", brun: "#5a4030", gul: "#d9a929", orange: "#d96a1f" };
+  const key = Object.keys(colors).find((k) => (c.color || "").toLowerCase().includes(k));
+  const body = key ? colors[key] : "#4a4744";
+  return `<svg class="car" viewBox="0 0 320 112" role="img" aria-label="${esc([c.color, c.make, c.model].filter(Boolean).join(" "))} från sidan">
+    <ellipse cx="160" cy="104" rx="140" ry="5" fill="var(--ink)" opacity=".12"/>
+    <path fill="${body}" d="M12 80c0-9 5-15 18-17l50-6c13-12 28-21 48-25 10-2 22-3 36-3h70c12 0 20 2 26 8l22 21c10 2 16 7 16 15v8c0 4-3 6-7 6h-10a27 27 0 0 0-54 0H106a27 27 0 0 0-54 0H22c-6 0-10-3-10-8Z"/>
+    <path fill="var(--car-glass)" d="M88 57c12-11 25-18 40-21 6-1 14-2 22-2l4 23Z"/>
+    <path fill="var(--car-glass)" d="M160 34h46l2 23h-44Z"/>
+    <path fill="var(--car-glass)" d="M213 34h22c8 0 13 2 17 6l16 17h-53Z"/>
+    <path d="M70 69h228" stroke="#fff" stroke-opacity=".14" stroke-width="1.5"/>
+    <rect x="294" y="62" width="9" height="12" rx="2" fill="#E77026" opacity=".9"/>
+    <rect x="14" y="66" width="10" height="6" rx="2" fill="#f3efe6" opacity=".9"/>
+    <circle cx="79" cy="88" r="21" fill="#141414"/><circle cx="79" cy="88" r="12" fill="#6f6f6f"/><circle cx="79" cy="88" r="4" fill="#2a2a2a"/>
+    <circle cx="257" cy="88" r="21" fill="#141414"/><circle cx="257" cy="88" r="12" fill="#6f6f6f"/><circle cx="257" cy="88" r="4" fill="#2a2a2a"/>
+  </svg>`;
+}
+
+function unseenFromOthers() {
+  const seen = lastSeenMs();
+  return S.entries.filter((e) => e.createdBy !== uid() && tsMs(e.createdAt) > seen);
+}
+
+function headerMain() {
+  const d = new Date();
+  const dateTxt = `${["Söndag", "Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag"][d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  const n = unseenFromOthers().length;
+  return `<header class="top">
+    <div class="hello"><small>${dateTxt}</small><h1>Hej ${esc(myName())}</h1></div>
+    <div class="top-actions">
+      <button class="icon-btn" type="button" data-go="aviseringar" aria-label="Aviseringar${n ? `, ${n} nya` : ""}">${icon("bell")}${n ? `<span class="badge">${n > 9 ? "9+" : n}</span>` : ""}</button>
+      <button class="icon-btn" type="button" data-go="installningar" aria-label="Inställningar">${icon("gear")}</button>
+    </div>
+  </header>`;
+}
+
+function subHeader(small, title, back = false) {
+  return `<header class="top">
+    <div class="hello"><small>${esc(small)}</small><h1>${esc(title)}</h1></div>
+    ${back ? `<button class="icon-btn" type="button" data-go="oversikt" aria-label="Tillbaka till översikten">${icon("back")}</button>` : ""}
+  </header>`;
+}
+
+function rowHtml(x) {
+  return `<div class="dl">
+    <div class="dl-ic">${icon(x.icon, 22)}</div>
+    <div><div class="dl-t">${esc(x.title)}</div><div class="dl-s">${esc(x.sub || "")}</div></div>
+    <span class="pill ${x.level}">${esc(x.label)}</span>
+  </div>`;
+}
+
+function installCard() {
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  if (standalone || pref.get("installDismissed")) return "";
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  return `<article class="card">
+    <h2>Lägg appen på hemskärmen <button class="link" type="button" data-act="dismiss-install">Dölj</button></h2>
+    <p class="muted">${ios
+      ? "Tryck på Dela-knappen i Safari och välj <b>Lägg till på hemskärmen</b>. Då öppnas Bildagboken som en vanlig app."
+      : "Öppna webbläsarens meny och välj <b>Installera app</b> eller <b>Lägg till på startskärmen</b>."}</p>
+  </article>`;
+}
+
+function inviteCard() {
+  if (!S.house || (S.house.members || []).length > 1) return "";
+  return `<article class="card">
+    <h2>Bjud in din sambo</h2>
+    <p class="muted">Ni delar allt i appen. Din sambo loggar in med sitt Google-konto och skriver in koden:</p>
+    <p class="code" style="margin:10px 0">${esc(S.house.inviteCode)}</p>
+    <button class="btn-soft" type="button" data-act="copy-invite">Kopiera inbjudningslänk</button>
+  </article>`;
+}
+
+function viewOverview() {
+  const c = car();
+  const parts = [headerMain()];
+
+  const unseen = unseenFromOthers();
+  if (unseen.length) {
+    const e = unseen.sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt))[0];
+    parts.push(`<button class="card toast" type="button" data-go="aviseringar">
+      <span class="avatar">${esc(memberName(e.createdBy).slice(0, 1).toUpperCase())}</span>
+      <p><b>${esc(activityText(e))}</b><time>${esc(timeAgo(tsMs(e.createdAt)))}</time></p>
+      <span class="new-pill">${unseen.length > 1 ? `${unseen.length} nya` : "Ny"}</span>
+    </button>`);
+  }
+
+  const switcher = S.cars.length > 1
+    ? `<label class="field car-switch"><span class="label">Byt bil</span><select data-act="switch-car" id="car-switch">${S.cars.map((x) => `<option value="${x.id}"${x.id === c.id ? " selected" : ""}>${esc(`${x.make} ${x.model}`)}</option>`).join("")}</select></label>`
+    : "";
+  parts.push(`<article class="card hero">
+    <div class="hero-top">
+      <div><h2>${esc(`${c.make || ""} ${c.model || ""} ${c.engine || ""}`.trim())}</h2>
+      <div class="sub">${esc([c.year, c.fuel, c.color].filter(Boolean).join(" · "))}</div></div>
+      ${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}
+    </div>
+    ${carSvg(c)}
+    <div class="odo">
+      <div><div class="label">Mätarställning</div><div class="odo-num">${c.odometer != null ? fmt(c.odometer) : "–"}<span>mil</span></div></div>
+      <button class="btn-soft" type="button" data-act="new-entry" data-type="matare">Uppdatera</button>
+    </div>
+    ${switcher}
+  </article>`);
+
+  parts.push(installCard());
+  parts.push(inviteCard());
+
+  const ps = primaryService(c);
+  if (ps) {
+    if (ps.unknown) {
+      parts.push(`<article class="card"><h2>Nästa service</h2>
+        <p class="muted">Ange när ${esc(ps.item.name.toLowerCase())} byttes senast, så räknar appen ut när det är dags igen.</p>
+        <div class="ask"><button class="btn-soft" type="button" data-act="edit-items">Ange senaste byte</button>
+        <button class="link" type="button" data-act="new-entry" data-type="service">eller logga en service</button></div></article>`);
+    } else {
+      const C = 2 * Math.PI * 50;
+      const remainFrac = Math.max(0, Math.min(1, ps.frac));
+      const center = ps.frac < 0
+        ? `<div class="big">Dags</div><div class="unit">nu</div>`
+        : ps.by === "mil" ? `<div class="big">${fmt(ps.remMil)}</div><div class="unit">mil kvar</div>`
+        : `<div class="big">${esc(daysText(ps.remDays))}</div><div class="unit">kvar</div>`;
+      const lastE = ps.last;
+      const chips = lastE ? [...itemNames(lastE, c), ...(lastE.parts || [])] : [];
+      const due = [ps.item.mil && ps.lastMil != null ? `vid ${fmt(ps.lastMil + ps.item.mil)} mil` : "", ps.dueDate ? `senast ${MONTHS[ps.dueDate.getMonth()]} ${ps.dueDate.getFullYear()}` : ""].filter(Boolean).join(" eller ");
+      parts.push(`<article class="card">
+        <h2>Nästa service <button class="link" type="button" data-go="bilen">Underhåll</button></h2>
+        <div class="gauge-row">
+          <div class="gauge">
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <circle cx="60" cy="60" r="50" fill="none" stroke="var(--track)" stroke-width="11"/>
+              <circle class="val" cx="60" cy="60" r="50" fill="none" stroke="var(--accent)" stroke-width="11" stroke-linecap="round" stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${(C * (1 - remainFrac)).toFixed(2)}"/>
+            </svg>
+            <div class="center">${center}</div>
+          </div>
+          <div class="facts">
+            <div class="fact"><div class="label">Senast</div><div class="v">${ps.lastDate ? fmtDate(ps.lastDate) : "–"}</div><div class="s">${[ps.lastMil != null ? `vid ${fmt(ps.lastMil)} mil` : "", lastE?.workshop].filter(Boolean).map(esc).join(" · ")}</div></div>
+            ${chips.length ? `<div class="fact"><div class="label">Byttes</div><div class="parts">${chips.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}</div></div>` : ""}
+            ${due ? `<div class="fact"><div class="s">Nästa ${esc(due)}.</div></div>` : ""}
+          </div>
+        </div>
+      </article>`);
+    }
+  }
+
+  const dls = deadlines(c);
+  const soonItems = allItemStatus(c).filter((s) => !s.unknown && s !== ps && s.item.id !== ps?.item.id && (s.level === "urgent" || s.level === "soon"))
+    .map((s) => ({ icon: "wrench", title: s.item.name, sub: s.dueDate ? `Senast ${fmtDate(s.dueDate)}` : s.lastMil != null && s.item.mil ? `Vid ${fmt(s.lastMil + s.item.mil)} mil` : "", level: s.level, label: s.label }));
+  parts.push(`<article class="card">
+    <h2>Att hålla koll på <button class="link" type="button" data-act="edit-car">Ändra datum</button></h2>
+    <div class="rows">${[...soonItems, ...dls].map(rowHtml).join("")}</div>
+    ${!c.besiktning && !c.forsakringDatum && !c.skattManad ? `<p class="hint" style="margin-top:10px">Lägg till besiktning, försäkring och skatt under Ändra datum.</p>` : ""}
+  </article>`);
+
+  const eco = economy(carEntries());
+  const maxBar = Math.max(1, ...eco.bars.map((b) => b.sum));
+  parts.push(`<article class="card">
+    <h2>Ekonomi <button class="link" type="button" data-go="ekonomi">Mer</button></h2>
+    <div class="eco">
+      <div class="stat"><div class="label">${MONTHS[new Date().getMonth()].replace(/^./, (x) => x.toUpperCase())}</div><div class="n">${fmt(eco.thisMonth)} <small>kr</small></div></div>
+      <div class="stat"><div class="label">Förbrukning</div><div class="n">${eco.consumption != null ? fmt(eco.consumption, 2) : "–"} <small>l/mil</small></div></div>
+      <div class="bars" aria-label="Kostnad per månad de senaste sex månaderna">
+        ${eco.bars.map((b) => `<div class="bar${b.now ? " now" : ""}">${b.sum ? `<b>${fmt(b.sum / 1000, 1)}k</b>` : ""}<i style="height:${Math.round((b.sum / maxBar) * 70)}%"></i><span>${b.label}</span></div>`).join("")}
+      </div>
+    </div>
+    ${eco.consumption == null ? `<p class="hint" style="margin-top:10px">Förbrukningen räknas ut när ni har loggat två tankningar med mätarställning.</p>` : ""}
+  </article>`);
+
+  const tips = tipsFor(c);
+  parts.push(`<article class="card">
+    <h2>Bra att hålla koll på för ${esc(`${c.model || "bilen"}${c.engine ? " " + c.engine : ""}`)}</h2>
+    <div class="recs">${tips.map((t) => `<div class="rec"><span class="sev ${t.sev === "high" ? "high" : t.sev === "mid" ? "mid" : ""}"></span><div><b>${esc(t.title)}</b><p>${esc(t.text)}</p></div></div>`).join("")}</div>
+    <div class="ask">
+      <a class="btn" href="https://claude.ai/new" target="_blank" rel="noopener" data-act="ask-claude">${icon("spark", 18)} Fråga Claude</a>
+      <small>Kopierar en fråga med er bil och historik som du klistrar in i Claude.</small>
+    </div>
+  </article>`);
+  return parts.join("");
+}
+
+function entryRow(e) {
+  const mine = e.createdBy === uid();
+  const d = entryDetail(e);
+  return `<button class="entry" type="button" data-act="open-entry" data-id="${esc(e.id)}">
+    <span class="dl-ic">${icon(TYPE[e.type]?.icon || "list", 20)}</span>
+    <span><span class="t">${esc(entryTitle(e))}</span>${d ? `<span class="d">${esc(d)}</span>` : ""}
+      <span class="m"><span class="who${mine ? " me" : ""}">${esc(whoName(e.createdBy))}</span>${esc(fmtDateShort(e.date))}${e.odometer != null && e.type !== "matare" ? ` · ${fmt(e.odometer)} mil` : ""}${e.photoId ? " · bild" : ""}</span></span>
+    <span class="amt">${e.amount != null ? `${fmt(e.amount)} kr` : ""}</span>
+  </button>`;
+}
+
+function viewLog() {
+  const filters = [["alla", "Alla"], ["tank", "Tankning"], ["service", "Service"], ["eget", "Eget jobb"], ["dack", "Däck"], ["kostnad", "Kostnader"], ["matare", "Mätare"]];
+  const ents = carEntries().filter((e) => S.filter === "alla" || e.type === S.filter);
+  const groups = [];
+  for (const e of ents) {
+    const key = (e.date || "").slice(0, 7);
+    let g = groups[groups.length - 1];
+    if (!g || g.key !== key) { g = { key, items: [] }; groups.push(g); }
+    g.items.push(e);
+  }
+  const monthLabel = (key) => {
+    const [y, m] = key.split("-").map(Number);
+    const name = MONTHS[m - 1].replace(/^./, (x) => x.toUpperCase());
+    return y === new Date().getFullYear() ? name : `${name} ${y}`;
+  };
+  return `${subHeader("Allt som hänt med bilen", "Logg")}
+    <div class="filters" role="group" aria-label="Filtrera loggen">
+      ${filters.map(([k, l]) => `<button type="button" data-act="filter" data-f="${k}" aria-pressed="${S.filter === k}">${l}</button>`).join("")}
+    </div>
+    ${groups.length ? groups.map((g) => `<div class="month">${esc(monthLabel(g.key))}</div><div class="card">${g.items.map(entryRow).join("")}</div>`).join("")
+      : `<div class="card empty"><b>${S.filter === "alla" ? "Inget loggat än" : "Inget här än"}</b>Tryck på plusknappen för att logga en tankning, service eller något du gjort själv.</div>`}`;
+}
+
+function viewEconomy() {
+  const eco = economy(carEntries());
+  const cats = Object.entries(eco.cats).sort((a, b) => b[1] - a[1]);
+  return `${subHeader("Senaste 12 månaderna", "Ekonomi")}
+    <div class="card"><div class="eco">
+      <div class="stat"><div class="label">Totalt</div><div class="n">${fmt(eco.total)} <small>kr</small></div></div>
+      <div class="stat"><div class="label">Per mil</div><div class="n">${eco.perMil != null ? fmt(eco.perMil, 2) : "–"} <small>kr</small></div></div>
+      <div class="stat"><div class="label">Per månad</div><div class="n">${fmt(eco.perMonth)} <small>kr</small></div></div>
+      <div class="stat"><div class="label">Körsträcka</div><div class="n">${eco.driven != null ? fmt(eco.driven) : "–"} <small>mil</small></div></div>
+      <div class="stat" style="grid-column:1/-1"><div class="label">Förbrukning</div><div class="n">${eco.consumption != null ? fmt(eco.consumption, 2) : "–"} <small>l/mil</small></div></div>
+    </div></div>
+    <div class="card"><h2>Fördelning</h2>
+      ${cats.length ? `<div class="rows">${cats.map(([k, v]) => `<div class="dl"><div class="dl-ic">${icon(CAT_ICON[k] || "receipt", 20)}</div><div><div class="dl-t">${esc(k)}</div><div class="dl-s">${eco.total ? fmt((v / eco.total) * 100) : 0} %</div></div><span class="dl-v">${fmt(v)} kr</span></div>`).join("")}</div>`
+        : `<p class="muted">Inga kostnader loggade de senaste 12 månaderna. Belopp från tankningar, service, däck och andra kostnader hamnar här.</p>`}
+    </div>
+    <p class="hint" style="text-align:center">Kostnad per mil räknas på körsträckan mellan loggade mätarställningar.</p>`;
+}
+
+function viewCar() {
+  const c = car();
+  const specs = (c.specsText || "").split("\n").map((l) => {
+    const i = l.indexOf(":");
+    return i > 0 ? [l.slice(0, i).trim(), l.slice(i + 1).trim()] : [l.trim(), ""];
+  }).filter(([k, v]) => k && v);
+  const st = allItemStatus(c);
+  const tires = ["sommar", "vinter"].map((k) => {
+    const t = (c.tires || []).find((x) => x.kind === k) || {};
+    const on = (c.tiresOn || "sommar") === k;
+    const sub = [t.brand, t.size, t.year, t.depth != null && t.depth !== "" ? `${fmt(num(t.depth), 1)} mm` : "", k === "vinter" && t.studded ? "dubbade" : ""].filter(Boolean).join(" · ");
+    const depth = num(t.depth);
+    const low = depth != null && depth < (k === "vinter" ? 4 : 3);
+    return `<div class="dl"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div></div><span class="pill ${low ? "soon" : on ? "ok" : "none"}">${low ? "Slitna" : on ? "På" : "Förråd"}</span></div>`;
+  }).join("");
+  return `${subHeader(`${c.year || ""} · ${c.fuel || ""}`.replace(/^ · | · $/g, ""), `${c.make} ${c.model}`)}
+    <div class="card">
+      <h2>Bra att ha <button class="link" type="button" data-act="edit-car">Ändra</button></h2>
+      ${specs.length ? `<div class="spec">${specs.map(([k, v]) => `<div><div class="label">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("")}</div>`
+        : `<p class="muted">Fyll i oljetyp, däckdimension, lufttryck, torkarblad och glödlampor, så har ni det till hands i butiken.</p>`}
+    </div>
+    <div class="card">
+      <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
+      <div class="rows">${st.map((s) => `<div class="dl"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc([
+        s.item.mil ? `var ${fmt(s.item.mil)} mil` : "", s.item.months ? `${s.item.months >= 24 && s.item.months % 12 === 0 ? `${s.item.months / 12} år` : `${s.item.months} mån`}` : ""].filter(Boolean).join(" eller ") + (s.unknown ? " · senaste byte okänt" : s.lastDate ? ` · senast ${fmtDateShort(s.lastDate)}` : ""))}</div></div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.unknown ? "Okänt" : s.label)}</span></div>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
+      <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
+    </div>
+    <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car">Ändra</button></h2><div class="rows">${tires}</div></div>
+    <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car">Ändra</button></h2>
+      <dl class="detail-list">
+        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", c.odometer != null ? `${fmt(c.odometer)} mil` : ""], ["Besiktning senast", c.besiktning ? fmtDate(c.besiktning) : ""], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", c.skattManad ? MONTHS[c.skattManad - 1] : ""].filter(Boolean).join(", ")]]
+          .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
+      </dl>
+    </div>`;
+}
+
+function viewNotifications() {
+  const seen = lastSeenMs();
+  const c = car();
+  const reminders = [
+    ...deadlines(c).filter((d) => d.level === "urgent"),
+    ...allItemStatus(c).filter((s) => !s.unknown && s.level === "urgent").map((s) => ({ title: `Dags för ${s.item.name.toLowerCase()}`, sub: s.label })),
+  ];
+  const feed = [...S.entries].sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt)).slice(0, 40);
+  const perm = "Notification" in window ? Notification.permission : "unsupported";
+  return `${subHeader("Det ni gjort med bilen", "Aviseringar", true)}
+    ${perm === "default" ? `<div class="card"><h2>Få notiser i telefonen</h2><p class="muted">Då ser du när din sambo loggar något. Notiserna kommer när appen är öppen eller nyss har använts.</p><div class="ask"><button class="btn-soft" type="button" data-act="enable-notif">Slå på notiser</button></div></div>` : ""}
+    ${reminders.length ? `<div class="card"><h2>Påminnelser</h2><div class="rows">${reminders.map((r) => `<div class="dl"><div class="avatar sys">${icon("bell", 18)}</div><div><div class="dl-t">${esc(r.title)}</div><div class="dl-s">${esc(r.sub || "")}</div></div><span class="pill urgent">${esc(r.label || "Nu")}</span></div>`).join("")}</div></div>` : ""}
+    <div class="card">
+      ${feed.length ? feed.map((e) => {
+        const mine = e.createdBy === uid();
+        const isNew = !mine && tsMs(e.createdAt) > seen;
+        const carName = S.cars.length > 1 ? S.cars.find((x) => x.id === e.carId)?.model : "";
+        return `<button class="entry" type="button" data-act="open-entry" data-id="${esc(e.id)}">
+          <span class="avatar${mine ? " me" : ""}">${esc((mine ? myName() : memberName(e.createdBy)).slice(0, 1).toUpperCase())}</span>
+          <span><span class="t">${esc(activityText(e))}</span><span class="m">${esc(timeAgo(tsMs(e.createdAt)))}${carName ? ` · ${esc(carName)}` : ""}</span></span>
+          <span>${isNew ? `<span class="new-pill">Ny</span>` : ""}</span>
+        </button>`;
+      }).join("") : `<div class="empty"><b>Inget här än</b>När någon av er loggar något syns det här.</div>`}
+    </div>`;
+}
+
+function viewSettings() {
+  const members = S.house?.members || [];
+  const perm = "Notification" in window ? Notification.permission : "unsupported";
+  const permText = { granted: "Påslagna", denied: "Avstängda i telefonens inställningar", default: "Inte påslagna", unsupported: "Stöds inte här. På iPhone: lägg först till appen på hemskärmen." }[perm];
+  return `${subHeader(S.house?.name || "Hushållet", "Inställningar", true)}
+    <div class="card">
+      <h2>Ni som delar</h2>
+      <div class="rows">${members.map((m) => `<div class="dl"><div class="avatar${m === uid() ? " me" : ""}">${esc(memberName(m).slice(0, 1).toUpperCase())}</div><div><div class="dl-t">${esc(memberName(m))}${m === uid() ? " (du)" : ""}</div><div class="dl-s">${esc(S.house.memberInfo?.[m]?.email || "")}</div></div><span></span></div>`).join("")}</div>
+      <p class="label" style="margin-top:14px">Inbjudningskod</p>
+      <p class="code" style="margin:4px 0 10px">${esc(S.house?.inviteCode || "")}</p>
+      <button class="btn-soft" type="button" data-act="copy-invite">Kopiera inbjudningslänk</button>
+    </div>
+    <form class="card form" data-form="rename" data-keep>
+      <h2>Ditt namn</h2>
+      <label class="field"><span>Så här ser din sambo dig i appen</span><input name="name" id="st-name" required maxlength="30" value="${esc(myName())}"></label>
+      <button class="btn block" type="submit">Spara namn</button>
+    </form>
+    <div class="card">
+      <h2>Notiser</h2>
+      <p class="muted">${esc(permText)}</p>
+      ${perm === "default" ? `<div class="ask"><button class="btn-soft" type="button" data-act="enable-notif">Slå på notiser</button></div>` : ""}
+      <p class="hint" style="margin-top:10px">Notiser kommer när appen är öppen eller nyss har använts. Aviseringslistan visar alltid allt nytt.</p>
+    </div>
+    <div class="card">
+      <h2>Bilar</h2>
+      <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(`${x.make} ${x.model} ${x.engine || ""}`)}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div><span>${x.id === S.carId ? `<span class="pill ok">Vald</span>` : `<button class="link" type="button" data-act="pick-car" data-id="${esc(x.id)}">Välj</button>`}</span></div>`).join("")}</div>
+      <div class="ask"><button class="btn-soft" type="button" data-act="add-car">Lägg till bil</button></div>
+    </div>
+    <div class="card">
+      <h2>Konto</h2>
+      <p class="muted">Inloggad som ${esc(S.user.email || "")}</p>
+      <div class="ask"><button class="btn ghost" type="button" data-act="logout">Logga ut</button></div>
+    </div>
+    <p class="hint" style="text-align:center">Bildagboken ${VERSION}</p>`;
+}
+
+/* ------------------------------------------------------------------ sheets */
+
+const sheet = $("#sheet");
+const scrim = $("#scrim");
+
+function openSheet(title, body, { back = null } = {}) {
+  sheet.innerHTML = `<div class="grab"></div>
+    <div class="sheet-head">
+      ${back ? `<button class="icon-btn" type="button" data-act="${back}" aria-label="Tillbaka">${icon("back", 18)}</button>` : ""}
+      <h3 id="sheet-title">${esc(title)}</h3>
+    </div>${body}`;
+  sheet.setAttribute("aria-labelledby", "sheet-title");
+  sheet.hidden = false;
+  scrim.hidden = false;
+  sheet.scrollTop = 0;
+  document.body.style.overflow = "hidden";
+}
+function closeSheet() {
+  sheet.hidden = true;
+  scrim.hidden = true;
+  sheet.innerHTML = "";
+  document.body.style.overflow = "";
+}
+
+function typePicker() {
+  openSheet("Vad vill du logga?", `<div class="types">
+    ${Object.entries(TYPE).map(([k, t]) => `<button type="button" data-act="new-entry" data-type="${k}">${icon(t.icon, 26)}${t.label}</button>`).join("")}
+  </div>
+  <p class="hint" style="margin-top:14px">Det du sparar syns direkt hos din sambo.</p>`);
+}
+
+function field(label, input, hint = "") {
+  return `<label class="field"><span>${label}</span>${input}${hint ? `<small>${hint}</small>` : ""}</label>`;
+}
+
+function entryForm(type, e = {}) {
+  const c = car();
+  const v = (k) => esc(e[k] ?? "");
+  const date = field("Datum", `<input type="date" name="date" id="ef-date" required value="${esc(e.date || todayStr())}">`);
+  const odo = (required = false) => field("Mätarställning (mil)", `<input name="odometer" id="ef-odometer" inputmode="numeric" ${required ? "required" : ""} placeholder="${c.odometer != null ? `Senast ${fmt(c.odometer)}` : "Till exempel 21 480"}" value="${e.odometer ?? ""}">`);
+  const amount = (label = "Kostnad (kr)") => field(label, `<input name="amount" id="ef-amount" inputmode="decimal" value="${e.amount ?? ""}">`);
+  const note = field("Anteckning", `<textarea name="note" id="ef-note" rows="2">${v("note")}</textarea>`);
+  const photo = `<label class="photo-in">${icon("image", 22)}<span id="photo-label">${e.photoId ? "Bild bifogad. Välj en ny för att byta." : "Lägg till kvitto eller bild"}</span><input type="file" name="photo" id="ef-photo" accept="image/*"></label>`;
+  const items = (c.items || []).length ? `<fieldset><legend>Det här gjordes</legend><div class="checks">
+    ${c.items.map((i) => `<label class="check"><input type="checkbox" name="items" value="${esc(i.id)}"${(e.items || []).includes(i.id) ? " checked" : ""}> ${esc(i.name)}</label>`).join("")}
+  </div></fieldset>` : "";
+  const parts = field("Annat som byttes", `<input name="parts" id="ef-parts" value="${esc((e.parts || []).join(", "))}" placeholder="Till exempel bromsklossar fram, glödlampa">`, "Skilj med kommatecken.");
+  let body = "";
+  switch (type) {
+    case "tank": {
+      const fuels = fuelOptions(c);
+      const unit = /kWh/.test(e.fuel || fuels[0]) ? "kWh" : "liter";
+      body = `${date}
+        <div class="row2">
+          ${field(`Mängd (${unit})`, `<input name="liters" id="ef-liters" inputmode="decimal" required value="${e.liters ?? ""}">`)}
+          ${field("Drivmedel", `<select name="fuel" id="ef-fuel">${fuels.map((f) => `<option${(e.fuel || pref.get("fuel." + c.id) || fuels[0]) === f ? " selected" : ""}>${esc(f)}</option>`).join("")}</select>`)}
+        </div>
+        <div class="row2">
+          ${field("Pris per enhet (kr)", `<input name="pricePerL" id="ef-price" inputmode="decimal" value="${e.pricePerL ?? ""}">`)}
+          ${field("Totalt (kr)", `<input name="amount" id="ef-amount" inputmode="decimal" value="${e.amount ?? ""}">`)}
+        </div>
+        ${odo(false)}
+        ${field("Station", `<input name="station" id="ef-station" value="${v("station")}" placeholder="Valfritt">`)}
+        <label class="check"><input type="checkbox" name="full" id="ef-full"${e.full === false ? "" : " checked"}> Tankade fullt</label>`;
+      break;
+    }
+    case "matare":
+      body = `${odo(true)}${date}`;
+      break;
+    case "service":
+      body = `${date}${odo(false)}
+        ${field("Verkstad", `<input name="workshop" id="ef-workshop" value="${v("workshop")}" placeholder="Till exempel Mekonomen">`)}
+        ${items}${parts}${amount()}${note}${photo}`;
+      break;
+    case "eget":
+      body = `${field("Vad gjorde du?", `<input name="title" id="ef-title" required value="${v("title")}" placeholder="Till exempel bytte glödlampa bak">`)}
+        ${date}${odo(false)}${items}${parts}${amount("Kostnad för delar (kr)")}${note}${photo}`;
+      break;
+    case "dack": {
+      const actDefault = e.tireAction || ((c.tiresOn || "sommar") === "sommar" ? "till_vinter" : "till_sommar");
+      body = `${field("Vad gjordes?", `<select name="tireAction" id="ef-tireAction">${Object.entries(TIRE_ACTIONS).map(([k, l]) => `<option value="${k}"${actDefault === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
+        ${date}
+        <div class="row2">
+          ${field("Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}" placeholder="Valfritt">`)}
+          ${field("Gäller", `<select name="tireKind" id="ef-tireKind"><option value="">–</option><option value="sommar"${e.tireKind === "sommar" ? " selected" : ""}>Sommardäck</option><option value="vinter"${e.tireKind === "vinter" ? " selected" : ""}>Vinterdäck</option></select>`)}
+        </div>
+        ${odo(false)}${amount()}${note}${photo}`;
+      break;
+    }
+    case "kostnad":
+      body = `${field("Typ", `<select name="category" id="ef-category">${COST_CATS.map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
+        ${field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
+        ${date}${amount("Belopp (kr)")}${note}${photo}`;
+      break;
+  }
+  const isEdit = !!e.id;
+  openSheet(isEdit ? `Ändra ${TYPE[type].label.toLowerCase()}` : TYPE[type].label, `
+    <form class="form" data-form="entry" data-type="${type}"${isEdit ? ` data-id="${esc(e.id)}"` : ""} novalidate>
+      ${body}
+      <p class="err" id="form-err" hidden></p>
+      <button class="btn primary block" type="submit">Spara</button>
+      ${type === "tank" && !isEdit ? `<p class="hint">Din sambo får en avisering när du sparar.</p>` : ""}
+    </form>`, { back: isEdit ? null : "new-entry" });
+  if (type === "tank") $("#ef-liters")?.focus({ preventScroll: true });
+  if (type === "matare") $("#ef-odometer")?.focus({ preventScroll: true });
+}
+
+function formError(msg) {
+  const el = $("#form-err");
+  if (el) { el.textContent = msg; el.hidden = false; }
+}
+
+async function compressImage(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    let max = 1400, q = 0.72, out = "";
+    for (let tries = 0; tries < 6; tries++) {
+      const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const cv = document.createElement("canvas");
+      cv.width = Math.round(img.naturalWidth * scale);
+      cv.height = Math.round(img.naturalHeight * scale);
+      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+      out = cv.toDataURL("image/jpeg", q);
+      if (out.length < 850000) return out;
+      max *= 0.8; q -= 0.08;
+    }
+    return out.length < 1000000 ? out : null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function saveEntry(form) {
+  const type = form.dataset.type;
+  const id = form.dataset.id || null;
+  const existing = id ? S.entries.find((x) => x.id === id) : null;
+  const c = car();
+  const fd = new FormData(form);
+  const str = (k) => String(fd.get(k) ?? "").trim();
+  const data = { type, carId: existing?.carId || c.id, date: str("date") || todayStr(), note: str("note") || null };
+  data.odometer = num(fd.get("odometer"));
+  if (fd.has("amount")) data.amount = num(fd.get("amount"));
+
+  if (data.odometer != null && (data.odometer < 0 || data.odometer > 200000)) return formError("Mätarställningen ser fel ut. Ange den i mil, till exempel 21 480.");
+
+  switch (type) {
+    case "tank": {
+      data.liters = num(fd.get("liters"));
+      data.fuel = str("fuel");
+      data.pricePerL = num(fd.get("pricePerL"));
+      data.station = str("station") || null;
+      data.full = fd.get("full") === "on";
+      if (data.liters == null || data.liters <= 0) return formError("Fyll i hur mycket du tankade.");
+      if (data.amount == null && data.pricePerL != null) data.amount = Math.round(data.liters * data.pricePerL * 100) / 100;
+      if (data.pricePerL == null && data.amount != null) data.pricePerL = Math.round((data.amount / data.liters) * 100) / 100;
+      pref.set("fuel." + c.id, data.fuel);
+      break;
+    }
+    case "matare":
+      if (data.odometer == null) return formError("Fyll i mätarställningen.");
+      break;
+    case "service":
+    case "eget":
+      data.items = fd.getAll("items").map(String);
+      data.parts = str("parts").split(",").map((s) => s.trim()).filter(Boolean);
+      data.workshop = type === "service" ? str("workshop") || null : null;
+      data.title = type === "eget" ? str("title") : null;
+      if (type === "eget" && !data.title) return formError("Skriv vad du gjorde.");
+      break;
+    case "dack":
+      data.tireAction = str("tireAction");
+      data.depth = num(fd.get("depth"));
+      data.tireKind = str("tireKind") || (data.tireAction === "till_vinter" ? "vinter" : data.tireAction === "till_sommar" ? "sommar" : null);
+      break;
+    case "kostnad":
+      data.category = str("category");
+      data.title = str("title") || null;
+      if (data.amount == null) return formError("Fyll i beloppet.");
+      break;
+  }
+
+  const btn = form.querySelector('button[type="submit"]');
+  if (btn) { btn.disabled = true; btn.textContent = "Sparar …"; }
+
+  const file = fd.get("photo");
+  if (file && file.size) {
+    try {
+      const dataUrl = await compressImage(file);
+      if (!dataUrl) throw new Error("för stor");
+      const pRef = doc(col("photos"));
+      setDoc(pRef, { data: dataUrl, carId: data.carId, createdBy: uid(), createdAt: serverTimestamp() }).catch(onWriteError);
+      if (existing?.photoId) deleteDoc(ref("photos", existing.photoId)).catch(() => {});
+      data.photoId = pRef.id;
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = "Spara"; }
+      return formError("Bilden gick inte att läsa in. Prova en annan bild eller ta ett nytt foto.");
+    }
+  }
+
+  const payload = clean(data);
+  if (existing) {
+    updateDoc(ref("entries", existing.id), { ...payload, updatedAt: serverTimestamp() }).catch(onWriteError);
+  } else {
+    setDoc(doc(col("entries")), { ...payload, createdBy: uid(), createdAt: serverTimestamp() }).catch(onWriteError);
+  }
+
+  // Håll bilens uppgifter i takt med loggen.
+  const carTarget = S.cars.find((x) => x.id === data.carId) || c;
+  const carUpdate = {};
+  if (data.odometer != null && data.odometer > (carTarget.odometer || 0)) carUpdate.odometer = data.odometer;
+  if (type === "dack" && !existing) {
+    if (data.tireAction === "till_vinter") carUpdate.tiresOn = "vinter";
+    if (data.tireAction === "till_sommar") carUpdate.tiresOn = "sommar";
+  }
+  if (type === "dack" && data.depth != null && data.tireKind) {
+    const tires = [...(carTarget.tires || [])];
+    const i = tires.findIndex((t) => t.kind === data.tireKind);
+    if (i >= 0) tires[i] = { ...tires[i], depth: data.depth };
+    else tires.push({ kind: data.tireKind, depth: data.depth });
+    carUpdate.tires = tires;
+  }
+  if (Object.keys(carUpdate).length) updateDoc(ref("cars", carTarget.id), carUpdate).catch(onWriteError);
+
+  closeSheet();
+  showToast(existing ? "Ändringen är sparad" : `${TYPE[type].label} sparad${type === "tank" ? ". Din sambo ser den direkt." : ""}`);
+  if (!existing && S.view !== "oversikt" && S.view !== "logg") setView("logg");
+}
+
+function openEntry(id) {
+  const e = S.entries.find((x) => x.id === id);
+  if (!e) return;
+  const c = S.cars.find((x) => x.id === e.carId) || car();
+  const rows = [
+    ["Datum", fmtDate(e.date)],
+    ["Loggad av", whoName(e.createdBy)],
+    e.odometer != null ? ["Mätarställning", `${fmt(e.odometer)} mil`] : null,
+    e.amount != null ? ["Belopp", `${fmt(e.amount, e.amount % 1 ? 2 : 0)} kr`] : null,
+    e.liters != null ? ["Mängd", `${fmt(e.liters, 2)} ${/kWh/.test(e.fuel || "") ? "kWh" : "l"} ${e.fuel || ""}`] : null,
+    e.pricePerL != null ? ["Pris", `${fmt(e.pricePerL, 2)} kr per enhet`] : null,
+    e.type === "tank" ? ["Fulltankad", e.full ? "Ja" : "Nej"] : null,
+    e.station ? ["Station", e.station] : null,
+    e.workshop ? ["Verkstad", e.workshop] : null,
+    e.category && e.type === "kostnad" ? ["Typ", e.category] : null,
+    e.depth != null ? ["Mönsterdjup", `${fmt(e.depth, 1)} mm`] : null,
+    itemNames(e, c).length ? ["Gjordes", itemNames(e, c).join(", ")] : null,
+    e.parts?.length ? ["Annat", e.parts.join(", ")] : null,
+    e.note ? ["Anteckning", e.note] : null,
+  ].filter(Boolean);
+  openSheet(entryTitle(e), `
+    <dl class="detail-list">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
+    ${e.photoId ? `<div id="photo-box" style="margin-top:14px"><p class="hint">Hämtar bilden …</p></div>` : ""}
+    <div class="btn-row" style="margin-top:18px">
+      <button class="btn" type="button" data-act="edit-entry" data-id="${esc(e.id)}">Ändra</button>
+      <button class="btn danger" type="button" data-act="delete-entry" data-id="${esc(e.id)}">Ta bort</button>
+    </div>`);
+  if (e.photoId) {
+    getDoc(ref("photos", e.photoId)).then((s) => {
+      const box = $("#photo-box");
+      if (!box) return;
+      box.innerHTML = s.exists() ? `<img class="photo" src="${esc(s.data().data)}" alt="Bifogad bild för ${esc(entryTitle(e))}">` : `<p class="hint">Bilden finns inte längre.</p>`;
+    }).catch(() => { const box = $("#photo-box"); if (box) box.innerHTML = `<p class="hint">Bilden gick inte att hämta just nu.</p>`; });
+  }
+}
+
+function itemsSheet() {
+  const c = car();
+  const row = (i) => `<div class="item-row" data-item="${esc(i.id)}">
+    <label class="field"><span>Namn</span><input name="name" value="${esc(i.name)}" required></label>
+    <div class="row2">
+      <label class="field"><span>Var … mil</span><input name="mil" inputmode="numeric" value="${i.mil ?? ""}" placeholder="–"></label>
+      <label class="field"><span>eller var … månad</span><input name="months" inputmode="numeric" value="${i.months ?? ""}" placeholder="–"></label>
+    </div>
+    <div class="row2">
+      <label class="field"><span>Senast gjort</span><input name="baseDate" type="date" value="${esc(i.baseDate || "")}"></label>
+      <label class="field"><span>vid (mil)</span><input name="baseMil" inputmode="numeric" value="${i.baseMil ?? ""}"></label>
+    </div>
+    <button class="link" type="button" data-act="remove-item-row" style="justify-self:start">Ta bort</button>
+  </div>`;
+  openSheet("Underhåll", `
+    <form class="form" data-form="items" novalidate>
+      <p class="hint">Fyll i när det gjordes senast om det inte finns i loggen. När ni loggar en service med punkten ikryssad räknas den om automatiskt.</p>
+      <div class="form" id="item-rows">${(c.items || []).map(row).join("")}</div>
+      <button class="btn ghost block" type="button" data-act="add-item-row">Lägg till punkt</button>
+      <button class="btn primary block" type="submit">Spara</button>
+    </form>`);
+  sheet.dataset.rowTemplate = row({ id: "__ID__", name: "", mil: null, months: null }).replace(/__ID__/g, "NEWID");
+}
+
+function carSheet(edit) {
+  const c = edit ? car() : {};
+  openSheet(edit ? "Ändra bilen" : "Lägg till bil", `
+    <form class="form" data-form="${edit ? "car-edit" : "car-new"}" novalidate>
+      ${carFormFields(c, { full: edit })}
+      <p class="err" id="form-err" hidden></p>
+      <button class="btn primary block" type="submit">Spara</button>
+    </form>`);
+}
+
+function readCarForm(form, full) {
+  const fd = new FormData(form);
+  const str = (k) => String(fd.get(k) ?? "").trim();
+  const data = {
+    make: str("make"), model: str("model"), year: str("year") || null, engine: str("engine") || null,
+    fuel: str("fuel"), color: str("color") || null, plate: str("plate").toUpperCase() || null,
+    odometer: num(fd.get("odometer")),
+  };
+  if (full) {
+    Object.assign(data, {
+      besiktning: str("besiktning") || null,
+      forsakringBolag: str("forsakringBolag") || null,
+      forsakringDatum: str("forsakringDatum") || null,
+      skattManad: str("skattManad") ? Number(str("skattManad")) : null,
+      skattBelopp: num(fd.get("skattBelopp")),
+      tiresOn: str("tiresOn") || "sommar",
+      tires: [
+        clean({ kind: "sommar", brand: str("s_brand") || null, size: str("s_size") || null, year: str("s_year") || null, depth: num(fd.get("s_depth")) }),
+        clean({ kind: "vinter", brand: str("w_brand") || null, size: str("w_size") || null, year: str("w_year") || null, depth: num(fd.get("w_depth")), studded: fd.get("w_studded") === "on" }),
+      ],
+      specsText: String(fd.get("specsText") ?? ""),
+    });
+  }
+  return data;
+}
+
+/* ----------------------------------------------------------------- actions */
+
+function setView(v) {
+  S.view = v;
+  if (location.hash !== "#" + v) history.replaceState(null, "", "#" + v);
+  render();
+  window.scrollTo(0, 0);
+  if (v === "aviseringar" && S.hid) {
+    updateDoc(doc(db, "households", S.hid), { [`memberInfo.${uid()}.lastSeen`]: serverTimestamp() }).catch(() => {});
+  }
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const ACTIONS = {
+  async login() {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (e) {
+      if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment", "auth/cancelled-popup-request"].includes(e.code)) {
+        try { await signInWithRedirect(auth, provider); } catch (e2) { renderLogin(authError(e2)); }
+      } else if (e.code !== "auth/popup-closed-by-user") {
+        renderLogin(authError(e));
+      }
+    }
+  },
+  async logout() {
+    cleanup();
+    await signOut(auth);
+  },
+  "close-sheet": closeSheet,
+  "new-entry"(el) {
+    const t = el.dataset.type;
+    if (t && TYPE[t]) entryForm(t);
+    else typePicker();
+  },
+  "open-entry"(el) { openEntry(el.dataset.id); },
+  "edit-entry"(el) {
+    const e = S.entries.find((x) => x.id === el.dataset.id);
+    if (e) entryForm(e.type, e);
+  },
+  "delete-entry"(el) {
+    if (el.dataset.confirm !== "1") {
+      el.dataset.confirm = "1";
+      el.textContent = "Tryck igen för att ta bort";
+      return;
+    }
+    const e = S.entries.find((x) => x.id === el.dataset.id);
+    if (!e) return closeSheet();
+    deleteDoc(ref("entries", e.id)).catch(onWriteError);
+    if (e.photoId) deleteDoc(ref("photos", e.photoId)).catch(() => {});
+    closeSheet();
+    showToast("Borttaget");
+  },
+  filter(el) { S.filter = el.dataset.f; render(); },
+  "edit-car"() { carSheet(true); },
+  "add-car"() { carSheet(false); },
+  "edit-items"() { itemsSheet(); },
+  "add-item-row"() {
+    const tpl = sheet.dataset.rowTemplate.replace(/NEWID/g, "i" + randomId(6));
+    $("#item-rows").insertAdjacentHTML("beforeend", tpl);
+    $("#item-rows .item-row:last-child input")?.focus();
+  },
+  "remove-item-row"(el) { el.closest(".item-row")?.remove(); },
+  "pick-car"(el) { S.carId = el.dataset.id; pref.set("car", S.carId); render(); },
+  async "copy-invite"() {
+    const link = `${location.origin}${location.pathname}?join=${S.house.inviteCode}`;
+    const ok = await copyText(`Gå med i vår bildagbok: ${link}\nKod: ${S.house.inviteCode}`);
+    showToast(ok ? "Inbjudan kopierad. Skicka den till din sambo." : `Koden är ${S.house.inviteCode}. Länk: ${link}`, ok ? 3500 : 9000);
+  },
+  "ask-claude"() {
+    const text = claudePrompt(car());
+    copyText(text).then((ok) => showToast(ok ? "Frågan är kopierad. Klistra in den i Claude." : "Kunde inte kopiera. Öppna Claude och beskriv bilen själv.", 5000));
+  },
+  async "enable-notif"() {
+    if (!("Notification" in window)) return showToast("Notiser stöds inte här. På iPhone: lägg först till appen på hemskärmen.", 6000);
+    const p = await Notification.requestPermission();
+    showToast(p === "granted" ? "Notiser är påslagna" : "Notiser slogs inte på");
+    render();
+  },
+  "dismiss-install"() { pref.set("installDismissed", "1"); render(); },
+};
+
+function authError(e) {
+  const map = {
+    "auth/network-request-failed": "Ingen kontakt med nätet. Försök igen.",
+    "auth/unauthorized-domain": "Den här adressen är inte godkänd för inloggning i Firebase.",
+    "auth/popup-closed-by-user": "Inloggningen avbröts.",
+  };
+  return map[e?.code] || `Inloggningen misslyckades (${e?.code || e?.message || "okänt fel"}).`;
+}
+
+function onWriteError(e) {
+  console.error(e);
+  showToast(e?.code === "permission-denied" ? "Du har inte behörighet att spara det här." : "Kunde inte spara. Det sparas när telefonen har nät igen.", 6000);
+}
+
+/* ----------------------------------------------------------- form submits */
+
+async function onSubmit(ev) {
+  const form = ev.target.closest("form[data-form]");
+  if (!form) return;
+  ev.preventDefault();
+  const kind = form.dataset.form;
+  try {
+    if (kind === "entry") return await saveEntry(form);
+    if (kind === "create-house") return await createHouse(form);
+    if (kind === "join-house") return await joinHouse(form);
+    if (kind === "car-new") return await saveNewCar(form);
+    if (kind === "car-edit") return saveCarEdit(form);
+    if (kind === "items") return saveItems(form);
+    if (kind === "rename") {
+      const name = String(new FormData(form).get("name") || "").trim();
+      if (!name) return;
+      updateDoc(doc(db, "households", S.hid), { [`memberInfo.${uid()}.name`]: name }).catch(onWriteError);
+      showToast("Namnet är sparat");
+    }
+  } catch (e) {
+    console.error(e);
+    showToast(`Något gick fel: ${e.code || e.message}`, 6000);
+  }
+}
+
+async function createHouse(form) {
+  const fd = new FormData(form);
+  const name = String(fd.get("name") || "").trim();
+  const house = String(fd.get("house") || "").trim() || `${name}s bil`;
+  if (!name) return;
+  form.querySelector("button[type=submit]").disabled = true;
+  const code = randomId(6, "ABCDEFGHJKLMNPQRSTUVWXYZ23456789");
+  const hRef = doc(collection(db, "households"));
+  await setDoc(hRef, {
+    name: house,
+    members: [uid()],
+    memberInfo: { [uid()]: { name, email: S.user.email || null, lastSeen: serverTimestamp() } },
+    inviteCode: code,
+    createdAt: serverTimestamp(),
+  });
+  await setDoc(doc(db, "invites", code), { householdId: hRef.id, createdBy: uid(), createdAt: serverTimestamp() });
+  subscribe(hRef.id);
+}
+
+async function joinHouse(form) {
+  const fd = new FormData(form);
+  const name = String(fd.get("name") || "").trim();
+  const code = String(fd.get("code") || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!name || !code) return;
+  const btn = form.querySelector("button[type=submit]");
+  btn.disabled = true;
+  let inv;
+  try {
+    inv = await getDoc(doc(db, "invites", code));
+  } catch (e) {
+    btn.disabled = false;
+    return renderOnboarding("Kunde inte kontrollera koden. Kolla att du har nät och försök igen.");
+  }
+  if (!inv.exists()) { btn.disabled = false; return renderOnboarding("Hittade ingen inbjudan med den koden. Kontrollera stavningen."); }
+  const hid = inv.data().householdId;
+  await updateDoc(doc(db, "households", hid), {
+    members: arrayUnion(uid()),
+    [`memberInfo.${uid()}`]: { name, email: S.user.email || null, lastSeen: serverTimestamp() },
+    joinedWith: code,
+  });
+  history.replaceState(null, "", location.pathname + "#oversikt");
+  subscribe(hid);
+}
+
+async function saveNewCar(form) {
+  const data = readCarForm(form, false);
+  if (!data.make || !data.model) return formError("Fyll i märke och modell.") ?? showToast("Fyll i märke och modell.");
+  const cRef = doc(col("cars"));
+  const full = {
+    ...clean(data),
+    items: defaultItems(data),
+    specsText: SPEC_TEMPLATE,
+    tiresOn: new Date().getMonth() >= 11 || new Date().getMonth() <= 2 ? "vinter" : "sommar",
+    tires: [],
+    createdAt: serverTimestamp(),
+    createdBy: uid(),
+  };
+  setDoc(cRef, full).catch(onWriteError);
+  S.carId = cRef.id;
+  pref.set("car", cRef.id);
+  closeSheet();
+  setView("oversikt");
+  showToast(`${data.make} ${data.model} är tillagd`);
+}
+
+function saveCarEdit(form) {
+  const data = readCarForm(form, true);
+  if (!data.make || !data.model) return formError("Fyll i märke och modell.");
+  const payload = clean(data);
+  updateDoc(ref("cars", S.carId), payload).catch(onWriteError);
+  closeSheet();
+  showToast("Bilen är uppdaterad");
+}
+
+function saveItems(form) {
+  const rows = [...form.querySelectorAll(".item-row")];
+  const items = rows.map((r) => {
+    const g = (n) => r.querySelector(`[name="${n}"]`)?.value.trim() ?? "";
+    return clean({
+      id: r.dataset.item,
+      name: g("name"),
+      mil: num(g("mil")),
+      months: num(g("months")),
+      baseDate: g("baseDate") || null,
+      baseMil: num(g("baseMil")),
+    });
+  }).filter((i) => i.name);
+  updateDoc(ref("cars", S.carId), { items }).catch(onWriteError);
+  closeSheet();
+  showToast("Underhållet är sparat");
+}
+
+/* ---------------------------------------------------------- input helpers */
+
+let manualTotal = false;
+function onInput(ev) {
+  const form = ev.target.closest('form[data-type="tank"]');
+  if (!form) return;
+  const name = ev.target.name;
+  if (name === "amount") { manualTotal = ev.target.value.trim() !== ""; return; }
+  if (name === "liters" || name === "pricePerL") {
+    const l = num(form.liters.value), p = num(form.pricePerL.value);
+    if (!manualTotal && l != null && p != null) form.amount.value = String(Math.round(l * p * 100) / 100).replace(".", ",");
+  }
+}
+
+function onChange(ev) {
+  if (ev.target.id === "car-switch") {
+    S.carId = ev.target.value;
+    pref.set("car", S.carId);
+    render();
+  }
+  if (ev.target.id === "ef-photo") {
+    const f = ev.target.files?.[0];
+    const lab = $("#photo-label");
+    if (lab) lab.textContent = f ? `Vald bild: ${f.name}` : "Lägg till kvitto eller bild";
+  }
+}
+
+/* --------------------------------------------------------- toast & notify */
+
+let toastTimer;
+function showToast(text, ms = 3500) {
+  const t = $("#toast");
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, ms);
+}
+
+function announce(e) {
+  const text = activityText(e);
+  if (document.visibilityState === "visible") {
+    showToast(text, 5000);
+  } else if ("Notification" in window && Notification.permission === "granted" && navigator.serviceWorker) {
+    navigator.serviceWorker.ready.then((reg) => reg.showNotification("Bildagboken", { body: text, icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag: e.id })).catch(() => {});
+  }
+}
+
+/* ------------------------------------------------------------ data wiring */
+
+function cleanup() {
+  S.unsubs.forEach((u) => { try { u(); } catch { /* redan stängd */ } });
+  S.unsubs = [];
+  S.hid = null; S.house = null; S.cars = []; S.entries = []; S.carId = null;
+  S.loaded = { house: false, cars: false, entries: false };
+  closeSheet();
+}
+
+function onListenError(e) {
+  console.error(e);
+  if (e.code === "permission-denied") {
+    cleanup();
+    if (S.user) renderOnboarding("Du har inte längre tillgång till hushållet.");
+  } else {
+    showToast("Tappade kontakten med databasen. Försöker igen när det finns nät.", 6000);
+  }
+}
+
+function subscribe(hid) {
+  S.unsubs.forEach((u) => u());
+  S.unsubs = [];
+  S.hid = hid;
+  S.loaded = { house: false, cars: false, entries: false };
+  render();
+
+  S.unsubs.push(onSnapshot(doc(db, "households", hid), (s) => {
+    S.house = s.data({ serverTimestamps: "estimate" });
+    S.loaded.house = true;
+    render();
+  }, onListenError));
+
+  S.unsubs.push(onSnapshot(collection(db, "households", hid, "cars"), (s) => {
+    S.cars = s.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }))
+      .sort((a, b) => tsMs(a.createdAt) - tsMs(b.createdAt));
+    if (!S.cars.find((c) => c.id === S.carId)) {
+      const saved = pref.get("car");
+      S.carId = S.cars.find((c) => c.id === saved)?.id || S.cars[0]?.id || null;
+    }
+    S.loaded.cars = true;
+    render();
+  }, onListenError));
+
+  let first = true;
+  S.unsubs.push(onSnapshot(query(collection(db, "households", hid, "entries"), orderBy("date", "desc")), (s) => {
+    S.entries = sortEntries(s.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })));
+    if (!first) {
+      for (const ch of s.docChanges()) {
+        if (ch.type !== "added" || ch.doc.metadata.hasPendingWrites) continue;
+        const e = { id: ch.doc.id, ...ch.doc.data({ serverTimestamps: "estimate" }) };
+        if (e.createdBy !== uid()) announce(e);
+      }
+    }
+    first = false;
+    S.loaded.entries = true;
+    render();
+  }, onListenError));
+}
+
+async function loadHousehold() {
+  setScreen("loading", `<p class="loading">Hämtar er bildagbok …</p>`);
+  try {
+    const qs = await getDocs(query(collection(db, "households"), where("members", "array-contains", uid())));
+    if (qs.empty) return renderOnboarding();
+    subscribe(qs.docs[0].id);
+  } catch (e) {
+    console.error(e);
+    setScreen("error", `<div class="card empty"><b>Kunde inte hämta er data</b>${esc(e.code === "unavailable" ? "Telefonen verkar sakna nät. Försök igen om en stund." : e.code || e.message)}<div class="ask" style="justify-content:center"><button class="btn" type="button" data-act="retry">Försök igen</button></div></div>`);
+  }
+}
+ACTIONS.retry = loadHousehold;
+
+/* ------------------------------------------------------------------- boot */
+
+document.addEventListener("click", (ev) => {
+  const go = ev.target.closest("[data-go]");
+  if (go) { ev.preventDefault(); closeSheet(); setView(go.dataset.go); return; }
+  const a = ev.target.closest("[data-act]");
+  if (!a || a.tagName === "SELECT") return;
+  const fn = ACTIONS[a.dataset.act];
+  if (!fn) return;
+  if (a.tagName !== "A") ev.preventDefault();
+  if (a.closest("#nav") || a.dataset.act === "new-entry") manualTotal = false;
+  fn(a, ev);
+});
+document.addEventListener("submit", onSubmit);
+document.addEventListener("input", onInput);
+document.addEventListener("change", onChange);
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !sheet.hidden) closeSheet(); });
+window.addEventListener("hashchange", () => {
+  const v = location.hash.slice(1);
+  if (v && v !== S.view) { S.view = v; render(); }
+});
+
+const initial = location.hash.slice(1);
+if (initial) S.view = initial;
+
+getRedirectResult(auth).catch((e) => renderLogin(authError(e)));
+onAuthStateChanged(auth, (user) => {
+  const changed = (user?.uid || null) !== (S.user?.uid || null);
+  S.user = user;
+  if (!user) { cleanup(); renderLogin(); return; }
+  if (changed || !S.hid) loadHousehold();
+});
+
+if ("serviceWorker" in navigator && location.protocol === "https:" || location.hostname === "localhost") {
+  navigator.serviceWorker?.register("./sw.js").catch(() => {});
+}

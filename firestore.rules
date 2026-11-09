@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function memberOf(hid) {
+      return signedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/households/$(hid)).data.members;
+    }
+
+    // Inbjudningskoder: går att slå upp en och en (inte lista) för den som är inloggad.
+    match /invites/{code} {
+      allow get: if signedIn();
+      allow create: if signedIn() && memberOf(request.resource.data.householdId);
+      allow delete: if signedIn() && memberOf(resource.data.householdId);
+    }
+
+    match /households/{hid} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow create: if signedIn() && request.resource.data.members == [request.auth.uid];
+      allow update: if signedIn() && (
+        // Medlemmar får ändra hushållet.
+        (request.auth.uid in resource.data.members && request.resource.data.members.size() > 0)
+        // Den som inte är medlem får bara lägga till sig själv, och bara med en giltig inbjudningskod.
+        || (
+          !(request.auth.uid in resource.data.members)
+          && request.resource.data.members.toSet() == resource.data.members.toSet().union([request.auth.uid].toSet())
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberInfo', 'joinedWith'])
+          && get(/databases/$(database)/documents/invites/$(request.resource.data.joinedWith)).data.householdId == hid
+        )
+      );
+      allow delete: if false;
+
+      // Bilar, loggar och bilder: bara hushållets medlemmar.
+      match /{document=**} {
+        allow read, write: if memberOf(hid);
+      }
+    }
+  }
+}
