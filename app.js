@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "1.2";
+const VERSION = "1.3";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -465,6 +465,7 @@ function render() {
   const views = { oversikt: viewOverview, logg: viewLog, ekonomi: viewEconomy, bilen: viewCar, aviseringar: viewNotifications, installningar: viewSettings };
   const fn = views[S.view] || viewOverview;
   setScreen("view-" + S.view, fn(), { showNav: true, keepForm: true });
+  ensureCarImage(car());
 }
 
 function renderLogin(error = "") {
@@ -527,6 +528,10 @@ function carFormFields(c = {}, { full = false } = {}) {
     ${inp("odometer", "Mätarställning (mil)", c.odometer, 'inputmode="numeric" placeholder="21 480"')}`;
   if (!full) return html;
   html += `
+    <p class="section-t">Bild på bilen</p>
+    <label class="photo-in">${icon("image", 22)}<span id="photo-label">${c.photoId ? "Eget foto används. Välj ett nytt för att byta." : "Ta eller välj ett eget foto på bilen"}</span><input type="file" name="carPhoto" id="cf-carPhoto" accept="image/*"></label>
+    ${c.photoId ? `<label class="check"><input type="checkbox" name="removePhoto" id="cf-removePhoto"> Ta bort eget foto och använd bild från Wikipedia</label>`
+      : `<p class="hint">Utan eget foto hämtas en bild på modellen från Wikipedia.</p>`}
     <p class="section-t">Datum och kostnader</p>
     ${inp("besiktning", "Besiktning senast", c.besiktning, 'type="date"')}
     <div class="row2">
@@ -588,6 +593,57 @@ function carSvg(c) {
     <circle cx="79" cy="88" r="21" fill="#141414"/><circle cx="79" cy="88" r="12" fill="#6f6f6f"/><circle cx="79" cy="88" r="4" fill="#2a2a2a"/>
     <circle cx="257" cy="88" r="21" fill="#141414"/><circle cx="257" cy="88" r="12" fill="#6f6f6f"/><circle cx="257" cy="88" r="4" fill="#2a2a2a"/>
   </svg>`;
+}
+
+/* Bild på bilen: eget foto om det finns, annars bild från Wikipedia, annars ritad siluett. */
+const photoCache = {};
+const photoPending = {};
+function loadPhoto(id) {
+  if (photoCache[id] || photoPending[id] || !S.hid) return;
+  photoPending[id] = true;
+  getDoc(ref("photos", id)).then((s) => {
+    photoCache[id] = s.exists() ? s.data().data : "";
+    render();
+  }).catch(() => {}).finally(() => { delete photoPending[id]; });
+}
+
+const imageLookups = {};
+async function ensureCarImage(c) {
+  if (!c || c.photoId || !c.make || !c.model || !navigator.onLine) return;
+  const key = `v2|${c.make}|${c.model}`.toLowerCase();
+  if (c.imageChecked === key || imageLookups[c.id] === key) return;
+  imageLookups[c.id] = key;
+  const title = `${c.make.trim()} ${c.model.trim()}`.replace(/\s+/g, "_");
+  let imageUrl = null, imageFallback = null, imageCredit = null;
+  try {
+    const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}?redirect=true`);
+    if (r.ok) {
+      const j = await r.json();
+      const src = j.thumbnail?.source || j.originalimage?.source;
+      if (j.type !== "disambiguation" && src) {
+        // Wikimedia levererar bara vissa standardbredder; 960 px är en av dem.
+        const clean = src.split("?")[0].replace("//thumb.wikimedia.org/", "//upload.wikimedia.org/");
+        imageFallback = clean;
+        imageUrl = /\/\d+px-/.test(clean) ? clean.replace(/\/\d+px-/, "/960px-") : clean;
+        imageCredit = j.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}`;
+      }
+    }
+  } catch { /* ingen bild, siluetten används */ }
+  updateDoc(ref("cars", c.id), { imageUrl, imageFallback, imageCredit, imageChecked: key }).catch(() => {});
+}
+
+function carVisual(c) {
+  if (c.photoId) {
+    const d = photoCache[c.photoId];
+    if (d) return `<figure class="car-fig"><img class="car-photo" src="${esc(d)}" alt="Foto på er ${esc(`${c.make} ${c.model}`)}"></figure>`;
+    loadPhoto(c.photoId);
+    return carSvg(c);
+  }
+  if (c.imageUrl) {
+    return `<figure class="car-fig"><img class="car-photo" src="${esc(c.imageUrl)}" alt="${esc(`${c.make} ${c.model}`)}, bild från Wikipedia" referrerpolicy="no-referrer"${c.imageFallback && c.imageFallback !== c.imageUrl ? ` data-fallback="${esc(c.imageFallback)}"` : ""} onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;this.removeAttribute('data-fallback')}else{this.closest('figure').hidden=true}">
+      <figcaption><a href="${esc(c.imageCredit || "https://wikipedia.org")}" target="_blank" rel="noopener">Bild: Wikipedia</a></figcaption></figure>`;
+  }
+  return carSvg(c);
 }
 
 function unseenFromOthers() {
@@ -668,7 +724,7 @@ function viewOverview() {
       <div class="sub">${esc([c.year, c.fuel, c.color].filter(Boolean).join(" · "))}</div></div>
       ${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}
     </div>
-    ${carSvg(c)}
+    ${carVisual(c)}
     <div class="odo">
       <div><div class="label">Mätarställning</div><div class="odo-num">${c.odometer != null ? fmt(c.odometer) : "–"}<span>mil</span></div></div>
       <button class="btn-soft" type="button" data-act="new-entry" data-type="matare">Uppdatera</button>
@@ -841,6 +897,11 @@ function viewCar() {
         ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", c.odometer != null ? `${fmt(c.odometer)} mil` : ""], ["Besiktning senast", c.besiktning ? fmtDate(c.besiktning) : ""], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", c.skattManad ? MONTHS[c.skattManad - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
+    </div>
+    <div class="card">
+      <h2>Ta bort ${esc(`${c.make} ${c.model}`)}</h2>
+      <p class="muted">Tar bort bilen och hela dess logg för er båda. Det går inte att ångra.</p>
+      <div class="ask"><button class="btn danger" type="button" data-act="delete-car">Ta bort bilen</button></div>
     </div>`;
 }
 
@@ -1500,11 +1561,35 @@ async function saveNewCar(form) {
   showToast(`${data.make} ${data.model} är tillagd`);
 }
 
-function saveCarEdit(form) {
+async function saveCarEdit(form) {
   const data = readCarForm(form, true);
   if (!data.make || !data.model) return formError("Fyll i märke och modell.");
+  const c = car();
+  const fd = new FormData(form);
   const payload = clean(data);
-  updateDoc(ref("cars", S.carId), payload).catch(onWriteError);
+  if (`${c.make}|${c.model}`.toLowerCase() !== `${data.make}|${data.model}`.toLowerCase()) {
+    Object.assign(payload, { imageUrl: null, imageCredit: null, imageChecked: null });
+  }
+  const file = fd.get("carPhoto");
+  if (file && file.size) {
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = "Sparar bilden …"; }
+    const dataUrl = await compressImage(file).catch(() => null);
+    if (!dataUrl) {
+      if (btn) { btn.disabled = false; btn.textContent = "Spara"; }
+      return formError("Bilden gick inte att läsa in. Prova en annan bild.");
+    }
+    const pRef = doc(col("photos"));
+    setDoc(pRef, { data: dataUrl, carId: c.id, kind: "car", createdBy: uid(), createdAt: serverTimestamp() }).catch(onWriteError);
+    photoCache[pRef.id] = dataUrl;
+    if (c.photoId) deleteDoc(ref("photos", c.photoId)).catch(() => {});
+    payload.photoId = pRef.id;
+  } else if (fd.get("removePhoto") === "on" && c.photoId) {
+    deleteDoc(ref("photos", c.photoId)).catch(() => {});
+    payload.photoId = null;
+    Object.assign(payload, { imageChecked: null });
+  }
+  updateDoc(ref("cars", c.id), payload).catch(onWriteError);
   closeSheet();
   showToast("Bilen är uppdaterad");
 }
@@ -1547,7 +1632,7 @@ function onChange(ev) {
     pref.set("car", S.carId);
     render();
   }
-  if (ev.target.id === "ef-photo") {
+  if (ev.target.id === "ef-photo" || ev.target.id === "cf-carPhoto") {
     const f = ev.target.files?.[0];
     const lab = $("#photo-label");
     if (lab) lab.textContent = f ? `Vald bild: ${f.name}` : "Lägg till kvitto eller bild";
@@ -1681,6 +1766,17 @@ onAuthStateChanged(auth, (user) => {
   if (changed || !S.hid) loadHousehold();
 });
 
-if ("serviceWorker" in navigator && location.protocol === "https:" || location.hostname === "localhost") {
-  navigator.serviceWorker?.register("./sw.js").catch(() => {});
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).then((reg) => {
+    // Leta efter en ny version varje gång appen öppnas igen.
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
+  }).catch(() => {});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    // En ny version har tagit över: ladda om en gång, men inte mitt i ett formulär.
+    if (!hadController || reloaded || !sheet.hidden) return;
+    reloaded = true;
+    location.reload();
+  });
 }

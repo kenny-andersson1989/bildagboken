@@ -1,5 +1,5 @@
 // Service worker: gör att appen startar även utan nät och kan visa notiser.
-const CACHE = "bildagboken-v3";
+const CACHE = "bildagboken-v4";
 const SHELL = [
   "./",
   "./index.html",
@@ -30,7 +30,8 @@ self.addEventListener("fetch", (event) => {
   // Appens egna filer: hämta nytt först, använd sparad kopia utan nät.
   if (url.origin === self.location.origin) {
     event.respondWith(
-      fetch(req)
+      // no-cache: fråga alltid servern om filen ändrats, så att nya versioner syns direkt.
+      fetch(req, { cache: "no-cache" })
         .then((res) => {
           if (res.ok) {
             const copy = res.clone();

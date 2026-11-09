@@ -184,6 +184,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .hero-top .sub { font-size: 13px; color: var(--ink-3); }
 .plate { font-family: var(--f-display); font-weight: 700; font-size: 13px; letter-spacing: .08em; padding: 4px 9px; border-radius: 6px; border: 1.5px solid var(--ink); white-space: nowrap; text-transform: uppercase; }
 .car { display: block; width: 100%; max-width: 100%; height: auto; margin: 6px 0 4px; }
+.car-fig { margin: 12px 0 8px; position: relative; }
+.car-photo { display: block; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 16px; background: var(--track); }
+.car-fig figcaption { position: absolute; right: 8px; bottom: 8px; }
+.car-fig figcaption a { font-size: 10.5px; color: #fff; background: rgba(0, 0, 0, .45); padding: 2px 7px; border-radius: 999px; text-decoration: none; }
 .odo { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .odo-num { font-family: var(--f-display); font-weight: 800; font-size: 34px; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .odo-num span { font-size: 15px; font-weight: 600; color: var(--ink-3); margin-left: 4px; }
@@ -321,7 +325,8 @@ details.more > .form { margin-top: 12px; }
 /* bottom nav */
 .nav {
   position: fixed; z-index: 5; left: 0; right: 0; bottom: 0;
-  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  /* På iPhone ligger menyn strax ovanför hemstrecket i stället för en hel marginal ovanför. */
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) max(10px, calc(env(safe-area-inset-bottom, 0px) - 16px)) max(16px, env(safe-area-inset-left, 0px));
   display: flex; justify-content: center; pointer-events: none;
 }
 .nav-inner {
