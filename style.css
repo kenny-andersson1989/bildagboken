@@ -300,6 +300,13 @@ legend { font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 0; mar
 .photo-in input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .photo-in svg { color: var(--accent); flex: none; }
 .photo { border-radius: 16px; width: 100%; display: block; }
+.big-input { font-family: var(--f-display); font-weight: 700; font-size: 26px; padding: 14px 16px; }
+details.more { border-top: 1px solid var(--line); padding-top: 12px; }
+details.more summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--accent); list-style: none; padding: 4px 0; }
+details.more summary::-webkit-details-marker { display: none; }
+details.more summary::after { content: " ▾"; }
+details.more[open] summary::after { content: " ▴"; }
+details.more > .form { margin-top: 12px; }
 .item-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px; border-radius: 16px; background: var(--input); border: 1px solid var(--line); }
 .item-row > .row2, .item-row > .field { grid-column: 1 / -1; }
 .item-row input { background: var(--glass-strong); }

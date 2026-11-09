@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "1.1";
+const VERSION = "1.2";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -225,6 +225,8 @@ function entryDetail(e, c = car()) {
     case "tank": {
       const bits = [];
       if (e.liters != null) bits.push(`${fmt(e.liters, 1)} ${unit} ${e.fuel || ""}`.trim());
+      else if (e.fuel) bits.push(e.fuel);
+      if (e.full) bits.push("fulltankad");
       if (e.pricePerL != null) bits.push(`${fmt(e.pricePerL, 2)} kr/${unit}`);
       if (e.station) bits.push(e.station);
       return bits.join(" · ");
@@ -248,7 +250,7 @@ function activityText(e) {
   const unit = /kWh/.test(e.fuel || "") ? "kWh" : "l";
   const kr = e.amount != null ? ` för ${fmt(e.amount)} kr` : "";
   switch (e.type) {
-    case "tank": return `${n} tankade${e.liters != null ? ` ${fmt(e.liters, 1)} ${unit} ${e.fuel || ""}`.trimEnd() : ""}${kr}`;
+    case "tank": return `${n} tankade${e.liters != null ? ` ${fmt(e.liters, 1)} ${unit} ${e.fuel || ""}`.trimEnd() : e.fuel ? ` ${e.fuel}` : ""}${kr}`;
     case "matare": return `${n} uppdaterade mätarställningen till ${fmt(e.odometer)} mil`;
     case "service": return `${n} loggade service${e.workshop ? ` hos ${e.workshop}` : ""}${kr}`;
     case "eget": return `${n}: ${e.title || "eget jobb"}${kr}`;
@@ -381,6 +383,13 @@ function economy(ents, months = 12) {
   }
   const tanks = inPeriod.filter((e) => e.type === "tank" && e.odometer != null && e.liters > 0 && !/kWh/.test(e.fuel || ""))
     .sort((a, b) => a.odometer - b.odometer);
+  const paidTanks = inPeriod.filter((e) => e.type === "tank" && e.odometer != null && e.amount > 0).sort((a, b) => a.odometer - b.odometer);
+  let fuelPerMil = null;
+  if (paidTanks.length >= 2) {
+    const dist = paidTanks[paidTanks.length - 1].odometer - paidTanks[0].odometer;
+    const cost = paidTanks.slice(1).reduce((s, e) => s + e.amount, 0);
+    if (dist > 0) fuelPerMil = cost / dist;
+  }
   let consumption = null;
   if (tanks.length >= 2) {
     const dist = tanks[tanks.length - 1].odometer - tanks[0].odometer;
@@ -396,7 +405,7 @@ function economy(ents, months = 12) {
     bars.push({ label: MONTHS_SHORT[d.getMonth()], sum, now: i === 0 });
   }
   const thisMonth = bars[5].sum, lastMonth = bars[4].sum;
-  return { total, cats, driven, perMonth: total / monthsSpan, perMil: driven ? total / driven : null, consumption, bars, thisMonth, lastMonth, count: paid.length };
+  return { total, cats, driven, perMonth: total / monthsSpan, perMil: driven ? total / driven : null, consumption, fuelPerMil, bars, thisMonth, lastMonth, count: paid.length };
 }
 
 function tipsFor(c) {
@@ -722,12 +731,12 @@ function viewOverview() {
     <h2>Ekonomi <button class="link" type="button" data-go="ekonomi">Mer</button></h2>
     <div class="eco">
       <div class="stat"><div class="label">${MONTHS[new Date().getMonth()].replace(/^./, (x) => x.toUpperCase())}</div><div class="n">${fmt(eco.thisMonth)} <small>kr</small></div></div>
-      <div class="stat"><div class="label">Förbrukning</div><div class="n">${eco.consumption != null ? fmt(eco.consumption, 2) : "–"} <small>l/mil</small></div></div>
+      <div class="stat"><div class="label">Bränsle per mil</div><div class="n">${eco.fuelPerMil != null ? fmt(eco.fuelPerMil, 2) : "–"} <small>kr</small></div></div>
       <div class="bars" aria-label="Kostnad per månad de senaste sex månaderna">
         ${eco.bars.map((b) => `<div class="bar${b.now ? " now" : ""}">${b.sum ? `<b>${fmt(b.sum / 1000, 1)}k</b>` : ""}<i style="height:${Math.round((b.sum / maxBar) * 70)}%"></i><span>${b.label}</span></div>`).join("")}
       </div>
     </div>
-    ${eco.consumption == null ? `<p class="hint" style="margin-top:10px">Förbrukningen räknas ut när ni har loggat två tankningar med mätarställning.</p>` : ""}
+    ${eco.fuelPerMil == null ? `<p class="hint" style="margin-top:10px">Bränsle per mil räknas ut när ni har loggat två tankningar med mätarställning. Tanka fullt varje gång för bäst siffror.</p>` : ""}
   </article>`);
 
   const tips = tipsFor(c);
@@ -785,13 +794,14 @@ function viewEconomy() {
       <div class="stat"><div class="label">Per mil</div><div class="n">${eco.perMil != null ? fmt(eco.perMil, 2) : "–"} <small>kr</small></div></div>
       <div class="stat"><div class="label">Per månad</div><div class="n">${fmt(eco.perMonth)} <small>kr</small></div></div>
       <div class="stat"><div class="label">Körsträcka</div><div class="n">${eco.driven != null ? fmt(eco.driven) : "–"} <small>mil</small></div></div>
-      <div class="stat" style="grid-column:1/-1"><div class="label">Förbrukning</div><div class="n">${eco.consumption != null ? fmt(eco.consumption, 2) : "–"} <small>l/mil</small></div></div>
+      <div class="stat"><div class="label">Bränsle per mil</div><div class="n">${eco.fuelPerMil != null ? fmt(eco.fuelPerMil, 2) : "–"} <small>kr</small></div></div>
+      <div class="stat"><div class="label">Förbrukning</div><div class="n">${eco.consumption != null ? fmt(eco.consumption, 2) : "–"} <small>l/mil</small></div></div>
     </div></div>
     <div class="card"><h2>Fördelning</h2>
       ${cats.length ? `<div class="rows">${cats.map(([k, v]) => `<div class="dl"><div class="dl-ic">${icon(CAT_ICON[k] || "receipt", 20)}</div><div><div class="dl-t">${esc(k)}</div><div class="dl-s">${eco.total ? fmt((v / eco.total) * 100) : 0} %</div></div><span class="dl-v">${fmt(v)} kr</span></div>`).join("")}</div>`
         : `<p class="muted">Inga kostnader loggade de senaste 12 månaderna. Belopp från tankningar, service, däck och andra kostnader hamnar här.</p>`}
     </div>
-    <p class="hint" style="text-align:center">Kostnad per mil räknas på körsträckan mellan loggade mätarställningar.</p>`;
+    <p class="hint" style="text-align:center">Kostnad per mil räknas på körsträckan mellan loggade mätarställningar. Förbrukning i liter visas bara om ni fyller i liter under Fler detaljer.</p>`;
 }
 
 function viewCar() {
@@ -956,18 +966,26 @@ function entryForm(type, e = {}) {
     case "tank": {
       const fuels = fuelOptions(c);
       const unit = /kWh/.test(e.fuel || fuels[0]) ? "kWh" : "liter";
-      body = `${date}
-        <div class="row2">
-          ${field(`Mängd (${unit})`, `<input name="liters" id="ef-liters" inputmode="decimal" required value="${e.liters ?? ""}">`)}
-          ${field("Drivmedel", `<select name="fuel" id="ef-fuel">${fuels.map((f) => `<option${(e.fuel || pref.get("fuel." + c.id) || fuels[0]) === f ? " selected" : ""}>${esc(f)}</option>`).join("")}</select>`)}
-        </div>
-        <div class="row2">
-          ${field("Pris per enhet (kr)", `<input name="pricePerL" id="ef-price" inputmode="decimal" value="${e.pricePerL ?? ""}">`)}
-          ${field("Totalt (kr)", `<input name="amount" id="ef-amount" inputmode="decimal" value="${e.amount ?? ""}">`)}
-        </div>
+      const hasDetails = e.liters != null || e.pricePerL != null || e.station || e.photoId;
+      body = `${field("Totalt (kr)", `<input name="amount" id="ef-amount" inputmode="decimal" required value="${e.amount ?? ""}" placeholder="Till exempel 579" class="big-input">`,
+          "Läs av pumpen med kameran: tryck i fältet, välj <b>Skanna text</b> och peka på totalsumman.")}
+        <label class="check"><input type="checkbox" name="full" id="ef-full"${e.full === false ? "" : " checked"}> Tankade fullt</label>
         ${odo(false)}
-        ${field("Station", `<input name="station" id="ef-station" value="${v("station")}" placeholder="Valfritt">`)}
-        <label class="check"><input type="checkbox" name="full" id="ef-full"${e.full === false ? "" : " checked"}> Tankade fullt</label>`;
+        ${date}
+        <details class="more"${hasDetails ? " open" : ""}>
+          <summary>Fler detaljer (valfritt)</summary>
+          <div class="form">
+            <div class="row2">
+              ${field(`Mängd (${unit})`, `<input name="liters" id="ef-liters" inputmode="decimal" value="${e.liters ?? ""}">`)}
+              ${field("Drivmedel", `<select name="fuel" id="ef-fuel">${fuels.map((f) => `<option${(e.fuel || pref.get("fuel." + c.id) || fuels[0]) === f ? " selected" : ""}>${esc(f)}</option>`).join("")}</select>`)}
+            </div>
+            <div class="row2">
+              ${field("Pris per enhet (kr)", `<input name="pricePerL" id="ef-price" inputmode="decimal" value="${e.pricePerL ?? ""}">`)}
+              ${field("Station", `<input name="station" id="ef-station" value="${v("station")}">`)}
+            </div>
+            ${photo}
+          </div>
+        </details>`;
       break;
     }
     case "matare":
@@ -1007,7 +1025,7 @@ function entryForm(type, e = {}) {
       <button class="btn primary block" type="submit">Spara</button>
       ${type === "tank" && !isEdit ? `<p class="hint">Din sambo får en avisering när du sparar.</p>` : ""}
     </form>`, { back: isEdit ? null : "new-entry" });
-  if (type === "tank") $("#ef-liters")?.focus({ preventScroll: true });
+  if (type === "tank" && !isEdit) $("#ef-amount")?.focus({ preventScroll: true });
   if (type === "matare") $("#ef-odometer")?.focus({ preventScroll: true });
 }
 
@@ -1057,9 +1075,10 @@ async function saveEntry(form) {
       data.pricePerL = num(fd.get("pricePerL"));
       data.station = str("station") || null;
       data.full = fd.get("full") === "on";
-      if (data.liters == null || data.liters <= 0) return formError("Fyll i hur mycket du tankade.");
-      if (data.amount == null && data.pricePerL != null) data.amount = Math.round(data.liters * data.pricePerL * 100) / 100;
-      if (data.pricePerL == null && data.amount != null) data.pricePerL = Math.round((data.amount / data.liters) * 100) / 100;
+      if (data.liters != null && data.liters <= 0) data.liters = null;
+      if (data.amount == null && data.liters != null && data.pricePerL != null) data.amount = Math.round(data.liters * data.pricePerL * 100) / 100;
+      if (data.amount == null || data.amount <= 0) return formError("Fyll i vad tankningen kostade.");
+      if (data.pricePerL == null && data.liters != null) data.pricePerL = Math.round((data.amount / data.liters) * 100) / 100;
       pref.set("fuel." + c.id, data.fuel);
       break;
     }
