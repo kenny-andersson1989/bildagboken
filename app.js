@@ -348,6 +348,21 @@ function serviceDueEstimate(st, c) {
   return out[0] || null;
 }
 
+// Förslag på nästa sista dag för besiktning, räknat från dagen bilen besiktigades.
+// Personbil: första gången senast 3 år efter att den togs i trafik, sedan 2 år, därefter var 14:e månad.
+// Årsmodellen används som ungefärligt år i trafik. Datumet går alltid att ändra.
+function nextInspectionDate(dateStr, c) {
+  const d = parseDate(dateStr);
+  if (!d) return "";
+  const year = Number(c?.year);
+  const age = year > 1900 ? d.getFullYear() - year : 99;
+  const months = age <= 3 ? 24 : 14;
+  const y = d.getFullYear(), m = d.getMonth() + months;
+  // Samma dag i månaden, eller sista dagen om månaden är kortare (31 jan + 14 mån = 31 mars, 30 nov → 28 feb).
+  const last = new Date(y, m + 1, 0).getDate();
+  return ymd(new Date(y, m, Math.min(d.getDate(), last)));
+}
+
 function levelFromDays(d) {
   if (d == null) return "ok";
   if (d < 0) return "urgent";
@@ -381,9 +396,11 @@ function tireDeadline(c) {
 
 function deadlines(c) {
   const out = [tireDeadline(c)];
-  if (c.besiktning) {
+  // Sista dagen för besiktning. Är en tid redan bokad (före sista dagen) syns den i bokningen i stället.
+  const booked = (c.bookings || []).some((b) => b.kind === "besiktning" && b.date >= todayStr() && (!c.besiktning || b.date <= c.besiktning));
+  if (c.besiktning && !booked) {
     const d = parseDate(c.besiktning);
-    out.push({ key: "besiktning", date: d, calTitle: "Sista dag för besiktning", icon: "check", title: "Besiktning", sub: [`Senast ${fmtDate(d)}`, c.besiktningPlats].filter(Boolean).join(" · "), place: c.besiktningPlats || null, days: daysUntil(d) });
+    out.push({ key: "besiktning", date: d, calTitle: "Sista dag för besiktning", icon: "check", title: "Sista dag för besiktning", sub: [`Senast ${fmtDate(d)}`, c.besiktningPlats].filter(Boolean).join(" · "), place: c.besiktningPlats || null, days: daysUntil(d) });
   }
   if (c.forsakringDatum) {
     const d = parseDate(c.forsakringDatum);
@@ -421,12 +438,15 @@ function bookingRows(c) {
     const days = daysUntil(parseDate(b.date));
     const kind = BOOK_KINDS[b.kind] || "Bokning";
     const past = days < 0;
+    // En bokad besiktning efter sista dagen är för sent: visa det tydligt.
+    const late = b.kind === "besiktning" && c.besiktning && b.date > c.besiktning;
+    const lastDay = b.kind === "besiktning" && c.besiktning && !past ? (late ? `efter sista dagen ${fmtDateShort(c.besiktning)}!` : `sista dag ${fmtDateShort(c.besiktning)}`) : null;
     return {
       icon: "calendar",
       title: past ? `${kind}: blev det gjort?` : `${kind} bokad`,
-      sub: [bookingWhen(b), b.place].filter(Boolean).join(" · "),
+      sub: [bookingWhen(b), b.place, lastDay].filter(Boolean).join(" · "),
       days,
-      level: past || days <= 1 ? "urgent" : days <= 7 ? "soon" : "ok",
+      level: past || late || days <= 1 ? "urgent" : days <= 7 ? "soon" : "ok",
       label: past ? "Logga" : days === 0 ? "I dag" : days === 1 ? "I morgon" : daysText(days),
       act: "open-booking",
       id: b.id,
@@ -570,6 +590,14 @@ function render() {
   const views = { oversikt: viewOverview, logg: viewLog, ekonomi: viewEconomy, bilen: viewCar, aviseringar: viewNotifications, installningar: viewSettings };
   const fn = views[S.view] || viewOverview;
   setScreen("view-" + S.view, fn(), { showNav: true, keepForm: true });
+  // Antal nya aviseringar även i sidomenyn på datorn.
+  const n = unseenFromOthers().length;
+  const bell = nav.querySelector('[data-go="aviseringar"]');
+  if (bell) {
+    bell.querySelector(".badge")?.remove();
+    if (n) bell.insertAdjacentHTML("beforeend", `<span class="badge">${n > 9 ? "9+" : n}</span>`);
+    bell.setAttribute("aria-label", `Aviseringar${n ? `, ${n} nya` : ""}`);
+  }
   ensureCarImage(car());
 }
 
@@ -903,7 +931,11 @@ function viewOverview() {
       const center = ps.frac < 0
         ? `<div class="big">Dags</div><div class="unit">nu</div>`
         : ps.by === "mil" ? `<div class="big">${fmt(ps.remMil)}</div><div class="unit">mil kvar</div>`
-        : `<div class="big">${esc(daysText(ps.remDays))}</div><div class="unit">kvar</div>`;
+        : (() => {
+          // "12 mån" blir "12" stort och "mån kvar" under, så att texten ryms i ringen.
+          const [, n, u] = daysText(ps.remDays).match(/^([\d,]+)\s(.+)$/) || [null, daysText(ps.remDays), ""];
+          return `<div class="big">${esc(n)}</div><div class="unit">${esc(u ? `${u} kvar` : "kvar")}</div>`;
+        })();
       const lastE = ps.last;
       const chips = lastE ? [...itemNames(lastE, c), ...(lastE.parts || [])] : [];
       const due = [ps.item.mil && ps.lastMil != null ? `vid ${fmt(ps.lastMil + ps.item.mil)} mil` : "", ps.dueDate ? `senast ${MONTHS[ps.dueDate.getMonth()]} ${ps.dueDate.getFullYear()}` : ""].filter(Boolean).join(" eller ");
@@ -1181,7 +1213,9 @@ function viewSettings() {
 const sheet = $("#sheet");
 const scrim = $("#scrim");
 
+let sheetReturnFocus = null;
 function openSheet(title, body, { back = null, backId = null } = {}) {
+  if (sheet.hidden) sheetReturnFocus = document.activeElement;
   sheet.innerHTML = `<div class="grab"></div>
     <div class="sheet-head">
       ${back ? `<button class="icon-btn" type="button" data-act="${back}"${backId ? ` data-id="${esc(backId)}"` : ""} aria-label="Tillbaka">${icon("back", 18)}</button>` : ""}
@@ -1193,12 +1227,21 @@ function openSheet(title, body, { back = null, backId = null } = {}) {
   scrim.hidden = false;
   sheet.scrollTop = 0;
   document.body.style.overflow = "hidden";
+  // Flytta fokus in i rutan, så att tangentbord och skärmläsare hamnar rätt. Fält som fokuseras senare går före.
+  setTimeout(() => {
+    if (sheet.hidden || sheet.contains(document.activeElement)) return;
+    const h = $("#sheet-title");
+    if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+  }, 0);
 }
 function closeSheet() {
   sheet.hidden = true;
   scrim.hidden = true;
   sheet.innerHTML = "";
   document.body.style.overflow = "";
+  const back = sheetReturnFocus;
+  sheetReturnFocus = null;
+  if (back && document.contains(back) && back !== document.body) back.focus({ preventScroll: true });
 }
 
 /* Bekräftelseruta: frågar "Vill du verkligen …?" med Avbryt och Ta bort. Ger true om man trycker Ta bort. */
@@ -1383,15 +1426,25 @@ function deadlineSheet(key) {
   const x = deadlines(c).find((d) => d.key === key);
   if (!x) return;
   const section = key === "dack" ? "tires" : "dates";
+  const about = {
+    besiktning: "Det här är sista dagen bilen måste vara besiktigad. Datumet står i besiktningsprotokollet och hos Transportstyrelsen. När du har bokat en tid hos stationen, lägg in den som bokad tid, så visas den i stället.",
+    forsakring: "Dagen då försäkringen förnyas. Bra tillfälle att jämföra priser några veckor innan.",
+    skatt: "Månaden då fordonsskatten ska betalas.",
+    dack: "Räknas ut från årstiden och vilka däck som sitter på.",
+  }[key];
+  const removable = key === "besiktning" || key === "forsakring" || key === "skatt";
   openSheet(x.title, `
+    ${about ? `<p class="muted" style="margin:0 0 14px">${esc(about)}</p>` : ""}
     <dl class="detail-list">
       <div><dt>Datum</dt><dd>${esc(fmtDate(x.date))}</dd></div>
       <div><dt>Kvar</dt><dd>${esc(x.label)}</dd></div>
       ${x.sub ? `<div><dt>Info</dt><dd>${esc(x.sub)}</dd></div>` : ""}
     </dl>
     <div class="form" style="margin-top:18px">
-      <button class="btn primary block" type="button" data-act="deadline-calendar" data-id="${esc(key)}">${icon("calendar", 18)} Lägg till i kalendern</button>
+      ${key === "besiktning" ? `<button class="btn primary block" type="button" data-act="book-inspection">${icon("calendar", 18)} Lägg in bokad tid</button>` : ""}
+      <button class="btn ${key === "besiktning" ? "ghost" : "primary"} block" type="button" data-act="deadline-calendar" data-id="${esc(key)}">${icon("calendar", 18)} Lägg till i kalendern</button>
       <button class="btn ghost block" type="button" data-act="edit-car" data-section="${section}">Ändra datum</button>
+      ${removable ? `<button class="btn danger block" type="button" data-act="deadline-remove" data-id="${esc(key)}">Ta bort datumet</button>` : ""}
       <p class="hint">Kalendern påminner dig en vecka innan.</p>
     </div>`);
 }
@@ -1463,7 +1516,7 @@ function entryForm(type, e = {}, opts = {}) {
       body = `${field("Typ", `<select name="category" id="ef-category">${COST_CATS.map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
         ${field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
         ${amount("Belopp (kr)")}${date}
-        ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning">`, "Står på besiktningsprotokollet. Fyll i så flyttas påminnelsen till nästa gång.")}</div>` : ""}
+        ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(nextInspectionDate(e.date || todayStr(), c)) : ""}">`, "Uträknat från dagens besiktning. Kontrollera mot besiktningsprotokollet och ändra om det inte stämmer.")}</div>` : ""}
         ${note}${photo}`;
       break;
   }
@@ -1825,6 +1878,18 @@ const ACTIONS = {
       alarm: "-P6DT15H",
       fileName: `${x.title} ${ymd(x.date)}`,
     });
+  },
+  "book-inspection"() { bookingForm({ kind: "besiktning" }); },
+  async "deadline-remove"(el) {
+    const key = el.dataset.id;
+    const fields = { besiktning: { besiktning: null }, forsakring: { forsakringDatum: null }, skatt: { skattManad: null } }[key];
+    if (!fields) return;
+    const name = { besiktning: "sista dagen för besiktning", forsakring: "datumet för försäkringen", skatt: "månaden för skatten" }[key];
+    const ok = await confirmDialog({ title: `Ta bort ${name}?`, lines: ["Påminnelsen försvinner för er båda. Du kan lägga in det igen under Ändra datum."], warn: "" });
+    if (!ok) return;
+    updateDoc(ref("cars", S.carId), fields).catch(onWriteError);
+    closeSheet();
+    showToast("Datumet är borttaget");
   },
   "service-calendar"() {
     const c = car();
@@ -2229,6 +2294,12 @@ function onInput(ev) {
     const box = $("#ef-next-besikt");
     if (box) box.hidden = ev.target.value !== "Besiktning";
   }
+  // Föreslå nästa besiktning så länge man inte själv har ändrat datumet.
+  if (ev.target.id === "ef-nextBesiktning") ev.target.dataset.manual = "1";
+  if ((ev.target.id === "ef-category" || ev.target.id === "ef-date") && $("#ef-nextBesiktning")) {
+    const next = $("#ef-nextBesiktning");
+    if (next.dataset.manual !== "1" && $("#ef-category")?.value === "Besiktning") next.value = nextInspectionDate($("#ef-date")?.value || todayStr(), car());
+  }
   if (ev.target.id === "cf-tiresOn") {
     // Flytta "sitter på" till den däcksats som väljs.
     document.querySelectorAll(".tire-head").forEach((h) => { h.querySelector(".tire-on").hidden = h.dataset.tire !== ev.target.value; });
@@ -2421,6 +2492,8 @@ document.addEventListener("keydown", (ev) => {
   if (!$("#confirm").hidden) return closeConfirm(false);
   if (!sheet.hidden) closeSheet();
 });
+window.addEventListener("offline", () => showToast("Ingen kontakt med nätet. Det du sparar laddas upp när nätet är tillbaka.", 6000));
+window.addEventListener("online", () => showToast("Nätet är tillbaka"));
 window.addEventListener("hashchange", () => {
   const v = location.hash.slice(1);
   if (v && v !== S.view) { S.view = v; render(); }
