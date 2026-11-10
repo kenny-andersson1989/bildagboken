@@ -1248,7 +1248,9 @@ function entryMatches(e, q) {
 
 function logListHtml() {
   const q = (S.query || "").trim();
-  const ents = carEntries().filter((e) => (S.filter === "alla" || e.type === S.filter) && entryMatches(e, q));
+  // Filtret Mätarställning visar alla poster med mätarställning (även service, tankning och däck), inte bara manuella avläsningar.
+  const inFilter = (e) => S.filter === "alla" || (S.filter === "matare" ? e.odometer != null : e.type === S.filter);
+  const ents = carEntries().filter((e) => inFilter(e) && entryMatches(e, q));
   const groups = [];
   for (const e of ents) {
     const key = (e.date || "").slice(0, 7);
