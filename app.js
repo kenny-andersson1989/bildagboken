@@ -363,6 +363,19 @@ function nextInspectionDate(dateStr, c) {
   return ymd(new Date(y, m, Math.min(d.getDate(), last)));
 }
 
+// Fordonsskatten betalas i en månad som styrs av sista siffran i registreringsnumret
+// (slutar skylten på en bokstav gäller siffran före). Värden: månad 1–12.
+const TAX_MONTH_BY_DIGIT = { 0: 3, 1: 4, 2: 5, 3: 6, 4: 8, 5: 10, 6: 11, 7: 12, 8: 1, 9: 2 };
+function plateTaxMonth(plate) {
+  const digits = String(plate || "").replace(/[^0-9]/g, "");
+  return digits ? TAX_MONTH_BY_DIGIT[digits[digits.length - 1]] : null;
+}
+// Månaden som gäller: vald för hand, annars från registreringsnumret. "av" betyder ingen påminnelse.
+function taxMonth(c) {
+  if (c?.skattManad === "av") return null;
+  return Number(c?.skattManad) || plateTaxMonth(c?.plate) || null;
+}
+
 function levelFromDays(d) {
   if (d == null) return "ok";
   if (d < 0) return "urgent";
@@ -406,13 +419,18 @@ function deadlines(c) {
     const d = parseDate(c.forsakringDatum);
     out.push({ key: "forsakring", date: d, calTitle: `Försäkringen förnyas${c.forsakringBolag ? ` (${c.forsakringBolag})` : ""}`, icon: "calendar", title: "Försäkring förnyas", sub: [fmtDate(d), c.forsakringBolag].filter(Boolean).join(" · "), days: daysUntil(d) });
   }
-  if (c.skattManad) {
-    const m = Number(c.skattManad) - 1;
+  if (taxMonth(c)) {
     const t = today0();
-    let d = new Date(t.getFullYear(), m, 1);
-    if (t.getMonth() > m) d = new Date(t.getFullYear() + 1, m, 1);
-    const days = t.getMonth() === m ? 0 : daysUntil(d);
-    out.push({ key: "skatt", date: d, calTitle: `Fordonsskatt ska betalas${c.skattBelopp ? ` (${fmt(c.skattBelopp)} kr)` : ""}`, icon: "receipt", title: "Fordonsskatt", sub: `Betalas i ${MONTHS[m]}${c.skattBelopp ? ` · ${fmt(c.skattBelopp)} kr` : ""}`, days, label: days === 0 ? "Denna månad" : undefined });
+    // Över 3 600 kr per år betalas skatten tre gånger: var fjärde månad från grundmånaden.
+    const three = c.skattBelopp > 3600;
+    const base = taxMonth(c) - 1;
+    const months = three ? [base, (base + 4) % 12, (base + 8) % 12] : [base];
+    const next = months.map((m) => (m >= t.getMonth() ? new Date(t.getFullYear(), m, 1) : new Date(t.getFullYear() + 1, m, 1))).sort((a, b) => a - b)[0];
+    const m = next.getMonth();
+    const days = t.getMonth() === m ? 0 : daysUntil(next);
+    const amount = c.skattBelopp ? (three ? Math.round(c.skattBelopp / 3) : c.skattBelopp) : null;
+    const sub = `Betalas i ${MONTHS[m]}${amount ? ` · ${fmt(amount)} kr` : ""}${three ? " · en av tre gånger per år" : ""}`;
+    out.push({ key: "skatt", date: next, calTitle: `Fordonsskatt ska betalas${amount ? ` (${fmt(amount)} kr)` : ""}`, icon: "receipt", title: "Fordonsskatt", sub, days, label: days === 0 ? "Denna månad" : undefined });
   }
   for (const x of out) {
     if (!x.level) x.level = levelFromDays(x.days);
@@ -687,9 +705,14 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       ${inp("forsakringDatum", "Försäkringen förnyas", c.forsakringDatum, 'type="date"')}
     </div>
     <div class="row2">
-      <label class="field"><span>Skatt betalas i</span>${sel("skattManad", [["", "Vet inte"], ...MONTHS.map((m, i) => [String(i + 1), m])], c.skattManad || "")}</label>
+      <label class="field"><span>Skatt betalas i</span>${sel("skattManad", [
+        ["", plateTaxMonth(c.plate) ? `Efter reg.nr: ${MONTHS[plateTaxMonth(c.plate) - 1]}` : "Vet inte"],
+        ...MONTHS.map((m, i) => [String(i + 1), m]),
+        ["av", "Ingen påminnelse"],
+      ], c.skattManad || "")}</label>
       ${inp("skattBelopp", "Skatt per år (kr)", c.skattBelopp, 'inputmode="numeric"')}
-    </div>`;
+    </div>
+    <p class="hint">Månaden räknas ut från sista siffran i registreringsnumret. Välj en annan om den inte stämmer. Över 3 600 kr per år betalas skatten tre gånger.</p>`;
   // Varje däcksats får en egen rubrik, och tomma rutor står tomma (inga exempelvärden som ser ifyllda ut).
   const tireHead = (k, label) => `<p class="tire-head" data-tire="${k}">${label}<span class="tire-on"${(c.tiresOn || "sommar") === k ? "" : " hidden"}> · sitter på</span></p>`;
   parts.tires = `
@@ -966,7 +989,7 @@ function viewOverview() {
   parts.push(`<article class="card">
     <h2>Att hålla koll på <button class="link" type="button" data-act="edit-car" data-section="dates">Ändra datum</button></h2>
     <div class="rows">${[...bookingRows(c), ...soonItems, ...dls].map(rowHtml).join("")}</div>
-    ${!c.besiktning && !c.forsakringDatum && !c.skattManad ? `<p class="hint" style="margin-top:10px">Lägg till besiktning, försäkring och skatt under Ändra datum.</p>` : ""}
+    ${!c.besiktning && !c.forsakringDatum && !taxMonth(c) ? `<p class="hint" style="margin-top:10px">Lägg till besiktning, försäkring och skatt under Ändra datum.</p>` : ""}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
   </article>`);
 
@@ -1114,7 +1137,7 @@ function viewCar() {
     <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
     <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
-        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Besiktning senast", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", c.skattManad ? MONTHS[c.skattManad - 1] : ""].filter(Boolean).join(", ")]]
+        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Besiktning senast", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>`;
@@ -1429,7 +1452,7 @@ function deadlineSheet(key) {
   const about = {
     besiktning: "Det här är sista dagen bilen måste vara besiktigad. Datumet står i besiktningsprotokollet och hos Transportstyrelsen. När du har bokat en tid hos stationen, lägg in den som bokad tid, så visas den i stället.",
     forsakring: "Dagen då försäkringen förnyas. Bra tillfälle att jämföra priser några veckor innan.",
-    skatt: "Månaden då fordonsskatten ska betalas.",
+    skatt: "Månaden då fordonsskatten ska betalas, senast sista dagen i månaden. Den styrs av sista siffran i registreringsnumret, men går att ändra under Ändra datum.",
     dack: "Räknas ut från årstiden och vilka däck som sitter på.",
   }[key];
   const removable = key === "besiktning" || key === "forsakring" || key === "skatt";
@@ -1794,7 +1817,7 @@ function readCarForm(form) {
       besiktningPlats: str("besiktningPlats") || null,
       forsakringBolag: str("forsakringBolag") || null,
       forsakringDatum: str("forsakringDatum") || null,
-      skattManad: str("skattManad") ? Number(str("skattManad")) : null,
+      skattManad: str("skattManad") === "av" ? "av" : str("skattManad") ? Number(str("skattManad")) : null,
       skattBelopp: num(fd.get("skattBelopp")),
     });
   }
@@ -1882,7 +1905,7 @@ const ACTIONS = {
   "book-inspection"() { bookingForm({ kind: "besiktning" }); },
   async "deadline-remove"(el) {
     const key = el.dataset.id;
-    const fields = { besiktning: { besiktning: null }, forsakring: { forsakringDatum: null }, skatt: { skattManad: null } }[key];
+    const fields = { besiktning: { besiktning: null }, forsakring: { forsakringDatum: null }, skatt: { skattManad: "av" } }[key];
     if (!fields) return;
     const name = { besiktning: "sista dagen för besiktning", forsakring: "datumet för försäkringen", skatt: "månaden för skatten" }[key];
     const ok = await confirmDialog({ title: `Ta bort ${name}?`, lines: ["Påminnelsen försvinner för er båda. Du kan lägga in det igen under Ändra datum."], warn: "" });
