@@ -467,3 +467,5 @@ input[type="range"].fuel-range:focus-visible { outline: 2px solid var(--accent);
 /* Ingen nivå angiven: knoppen syns svagt tills man drar i den. */
 input[type="range"].fuel-range.unset::-webkit-slider-thumb { opacity: .35; }
 input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
+/* Blir det en ruta över på sista raden tar den hela bredden. */
+.eco .stat:last-of-type:nth-of-type(odd) { grid-column: 1 / -1; }
