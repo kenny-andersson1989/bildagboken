@@ -125,6 +125,7 @@ const TYPE = {
   service: { label: "Service", icon: "wrench" },
   eget: { label: "Eget jobb", icon: "hand" },
   dack: { label: "Däck", icon: "tire" },
+  tvatt: { label: "Tvätt", icon: "wash" },
   kostnad: { label: "Kostnad", icon: "receipt" },
 };
 const FUELS = ["Bensin", "Diesel", "Flexifuel (bensin/E85)", "Laddhybrid", "Hybrid", "El"];
@@ -229,6 +230,7 @@ function entryTitle(e) {
     case "service": return e.title || (e.workshop ? `Service · ${e.workshop}` : "Service");
     case "eget": return e.title || "Eget jobb";
     case "dack": return TIRE_ACTIONS[e.tireAction] || "Däck";
+    case "tvatt": return "Tvätt";
     case "kostnad": return e.title || e.category || "Kostnad";
     default: return "Logg";
   }
@@ -260,6 +262,7 @@ function entryDetail(e, c = car()) {
       if (e.note) bits.push(e.note);
       return bits.join(" · ");
     }
+    case "tvatt": return [e.place, e.note].filter(Boolean).join(" · ");
     case "kostnad": return e.title && e.category ? e.category : e.note || "";
     default: return "";
   }
@@ -275,6 +278,7 @@ function activityText(e) {
     case "service": return `${n} loggade service${e.workshop ? ` hos ${e.workshop}` : ""}${kr}`;
     case "eget": return `${n}: ${e.title || "eget jobb"}${kr}`;
     case "dack": return `${n}: ${(TIRE_ACTIONS[e.tireAction] || "däck").toLowerCase()}`;
+    case "tvatt": return `${n} tvättade bilen${e.place ? ` hos ${e.place}` : ""}${kr}`;
     case "kostnad": return `${n} lade till ${(e.title || e.category || "en kostnad").toLowerCase()}${kr}`;
     default: return `${n} loggade något`;
   }
@@ -379,6 +383,25 @@ function taxMonth(c) {
   return Number(c?.skattManad) || plateTaxMonth(c?.plate) || null;
 }
 
+// "Senast tvättad" på översikten. Påminner efter en månad, och efter tre veckor på vintern (vägsalt).
+function washRow(c) {
+  const last = S.entries.filter((e) => e.carId === c.id && (e.type === "tvatt" || (e.type === "kostnad" && e.category === "Tvätt")))
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
+  if (!last) return null;
+  const ago = Math.max(0, -daysUntil(parseDate(last.date)));
+  const winter = [10, 11, 0, 1, 2].includes(new Date().getMonth());
+  const due = ago >= (winter ? 21 : 30);
+  return {
+    icon: "wash",
+    title: due ? "Dags att tvätta?" : "Senast tvättad",
+    sub: [fmtDate(last.date), last.place, due && winter ? "vägsaltet sliter på lacken" : null].filter(Boolean).join(" · "),
+    level: due ? "soon" : "ok",
+    label: ago === 0 ? "I dag" : ago === 1 ? "I går" : `${daysText(ago)} sedan`,
+    act: "wash-new",
+    id: "",
+  };
+}
+
 function levelFromDays(d) {
   if (d == null) return "ok";
   if (d < 0) return "urgent";
@@ -479,11 +502,13 @@ function catOf(e) {
   if (e.type === "tank") return "Bränsle";
   if (e.type === "service" || e.type === "eget") return "Service och reparationer";
   if (e.type === "dack") return "Däck";
+  // Tvättar som loggats som kostnad förr hamnar också under Tvätt.
+  if (e.type === "tvatt" || e.category === "Tvätt") return "Tvätt";
   if (e.category === "Skatt" || e.category === "Besiktning") return "Skatt och besiktning";
   if (e.category === "Försäkring") return "Försäkring";
   return "Övrigt";
 }
-const CAT_ICON = { "Bränsle": "fuel", "Service och reparationer": "wrench", "Däck": "tire", "Skatt och besiktning": "check", "Försäkring": "calendar", "Övrigt": "receipt" };
+const CAT_ICON = { "Bränsle": "fuel", "Service och reparationer": "wrench", "Däck": "tire", "Skatt och besiktning": "check", "Försäkring": "calendar", "Tvätt": "wash", "Övrigt": "receipt" };
 
 function economy(ents, months = 12) {
   const since = addMonths(today0(), -months);
@@ -987,11 +1012,12 @@ function viewOverview() {
   }
 
   const dls = deadlines(c);
+  const wash = washRow(c);
   const soonItems = allItemStatus(c).filter((s) => !s.unknown && s !== ps && s.item.id !== ps?.item.id && (s.level === "urgent" || s.level === "soon"))
     .map((s) => ({ icon: "wrench", title: s.item.name, sub: [s.lastMil != null && s.item.mil ? `Vid ${fmt(s.lastMil + s.item.mil)} mil` : "", s.dueDate ? `senast ${fmtDate(s.dueDate)}` : ""].filter(Boolean).join(" eller ").replace(/^s/, "S"), level: s.level, label: s.label }));
   parts.push(`<article class="card">
     <h2>Att hålla koll på <button class="link" type="button" data-act="edit-car" data-section="dates">Ändra datum</button></h2>
-    <div class="rows">${[...bookingRows(c), ...soonItems, ...dls].map(rowHtml).join("")}</div>
+    <div class="rows">${[...bookingRows(c), ...soonItems, ...(wash ? [wash] : []), ...dls].map(rowHtml).join("")}</div>
     ${!c.besiktning && !c.forsakringDatum && !taxMonth(c) ? `<p class="hint" style="margin-top:10px">Lägg till besiktning, försäkring och skatt under Ändra datum.</p>` : ""}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
   </article>`);
@@ -1042,7 +1068,7 @@ function entryMatches(e, q) {
   if (!q) return true;
   const c = S.cars.find((x) => x.id === e.carId) || car();
   const hay = [
-    TYPE[e.type]?.label, entryTitle(e), entryDetail(e, c), e.note, e.workshop, e.station, e.category, e.fuel,
+    TYPE[e.type]?.label, entryTitle(e), entryDetail(e, c), e.note, e.workshop, e.station, e.place, e.category, e.fuel,
     (e.parts || []).join(" "), itemNames(e, c).join(" "), whoName(e.createdBy), memberName(e.createdBy),
     e.amount != null ? `${Math.round(e.amount)} ${fmt(e.amount)} kr` : "", e.odometer != null ? `${e.odometer} ${fmt(e.odometer)} mil` : "",
     fmtDate(e.date), e.date,
@@ -1075,7 +1101,7 @@ function logListHtml() {
 }
 
 function viewLog() {
-  const filters = [["alla", "Alla"], ["tank", "Tankning"], ["service", "Service"], ["eget", "Eget jobb"], ["dack", "Däck"], ["kostnad", "Kostnader"], ["matare", "Mätare"]];
+  const filters = [["alla", "Alla"], ["tank", "Tankning"], ["service", "Service"], ["eget", "Eget jobb"], ["dack", "Däck"], ["tvatt", "Tvätt"], ["kostnad", "Kostnader"], ["matare", "Mätare"]];
   return `${subHeader("Allt som hänt med bilen", "Logg")}
     <label class="search">${icon("search", 18)}
       <input type="search" id="log-search" placeholder="Sök i loggen, till exempel bromsar eller Mekonomen" value="${esc(S.query || "")}" autocomplete="off" enterkeyhint="search" aria-label="Sök i loggen">
@@ -1302,7 +1328,7 @@ $("#confirm-yes").addEventListener("click", () => closeConfirm(true));
 $("#confirm-no").addEventListener("click", () => closeConfirm(false));
 $("#confirm-scrim").addEventListener("click", () => closeConfirm(false));
 
-const TYPE_DEFINITE = { tank: "tankningen", matare: "mätarställningen", service: "servicen", eget: "jobbet", dack: "däckposten", kostnad: "kostnaden" };
+const TYPE_DEFINITE = { tank: "tankningen", matare: "mätarställningen", service: "servicen", eget: "jobbet", dack: "däckposten", tvatt: "tvätten", kostnad: "kostnaden" };
 
 function typePicker() {
   openSheet("Vad vill du logga?", `<div class="types">
@@ -1373,12 +1399,12 @@ function exportLog() {
     const t = typeof v === "number" ? String(v).replace(".", ",") : String(v);
     return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
   };
-  const head = ["Bil", "Reg.nr", "Datum", "Typ", "Vad", "Detaljer", "Belopp (kr)", "Mätarställning (mil)", "Mängd", "Drivmedel", "Verkstad", "Station", "Anteckning", "Loggad av"];
+  const head = ["Bil", "Reg.nr", "Datum", "Typ", "Vad", "Detaljer", "Belopp (kr)", "Mätarställning (mil)", "Mängd", "Drivmedel", "Verkstad", "Station eller plats", "Anteckning", "Loggad av"];
   const rows = [...S.entries].sort((a, b) => (a.date || "").localeCompare(b.date || "")).map((e) => {
     const c = S.cars.find((x) => x.id === e.carId);
     return [
       c ? carName(c) : "Borttagen bil", c?.plate, e.date, TYPE[e.type]?.label || e.type, entryTitle(e), entryDetail(e, c),
-      e.amount, e.odometer, e.liters, e.fuel, e.workshop, e.station, e.note, memberName(e.createdBy),
+      e.amount, e.odometer, e.liters, e.fuel, e.workshop, e.station || e.place, e.note, memberName(e.createdBy),
     ].map(cell).join(";");
   });
   const csv = "\ufeff" + [head.join(";"), ...rows].join("\r\n");
@@ -1515,7 +1541,7 @@ function entryForm(type, e = {}, opts = {}) {
           <div class="form">
             <div class="row2">
               ${field("Drivmedel", `<select name="fuel" id="ef-fuel">${fuels.map((f) => `<option${(e.fuel || pref.get("fuel." + c.id) || fuels[0]) === f ? " selected" : ""}>${esc(f)}</option>`).join("")}</select>`)}
-              ${field("Station", `<input name="station" id="ef-station" value="${v("station")}">`)}
+              ${field("Station", geoInput("station", "ef-station", e.station, "fuel", ""))}
             </div>
             ${photo}
           </div>
@@ -1545,8 +1571,13 @@ function entryForm(type, e = {}, opts = {}) {
         ${amount()}${odo(false)}${date}${note}${photo}`;
       break;
     }
+    case "tvatt":
+      body = `${field("Var", geoInput("place", "ef-place", e.place ?? (e.id ? "" : pref.get("wash." + c.id) || ""), "car_wash", "Till exempel Circle K Mölndal"))}
+        ${field("Kostnad (kr)", `<input name="amount" id="ef-amount" inputmode="decimal" value="${e.amount ?? ""}" placeholder="Till exempel 149">`)}
+        ${date}${note}${photo}`;
+      break;
     case "kostnad":
-      body = `${field("Typ", `<select name="category" id="ef-category">${COST_CATS.map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
+      body = `${field("Typ", `<select name="category" id="ef-category">${COST_CATS.filter((k) => k !== "Tvätt" || e.category === "Tvätt").map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
         ${field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
         ${amount("Belopp (kr)")}${date}
         ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(nextInspectionDate(e.date || todayStr(), c)) : ""}">`, "Uträknat från dagens besiktning. Kontrollera mot besiktningsprotokollet och ändra om det inte stämmer.")}</div>` : ""}
@@ -1563,6 +1594,58 @@ function entryForm(type, e = {}, opts = {}) {
     </form>`, { back: isEdit || opts.bookingId ? null : "new-entry" });
   if (type === "tank" && !isEdit) $("#ef-amount")?.focus({ preventScroll: true });
   if (type === "matare") $("#ef-odometer")?.focus({ preventScroll: true });
+}
+
+/* ----------------------------------------------------------- plats (GPS) */
+
+// Textfält med en knapp som fyller i närmaste tvätt eller mack utifrån telefonens position.
+function geoInput(name, id, value, kind, placeholder) {
+  return `<span class="geo-row"><input name="${name}" id="${id}" value="${esc(value ?? "")}" placeholder="${esc(placeholder)}" autocomplete="off">
+    <button class="geo-btn" type="button" data-act="geo-fill" data-kind="${kind}" data-target="${id}" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span>
+    <span class="geo-picks" id="${id}-picks" hidden></span>`;
+}
+
+const distM = (a, b) => {
+  const R = 6371000, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+};
+
+// Biltvättar eller mackar nära positionen, närmast först, från OpenStreetMap (Overpass).
+async function nearbyPlaces(kind, lat, lon, radius) {
+  const q = `[out:json][timeout:10];(node(around:${radius},${lat},${lon})[amenity=${kind}];way(around:${radius},${lat},${lon})[amenity=${kind}];);out center tags 20;`;
+  const res = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: "data=" + encodeURIComponent(q), headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+  if (!res.ok) throw new Error("overpass " + res.status);
+  const j = await res.json();
+  const seen = new Set();
+  return (j.elements || []).map((el) => {
+    const t = el.tags || {};
+    const p = el.center || el;
+    const base = t.name || t.brand || t.operator;
+    if (!base || p.lat == null) return null;
+    const city = t["addr:city"];
+    return { name: city && !base.includes(city) ? `${base} ${city}` : base, d: distM({ lat, lon }, { lat: p.lat, lon: p.lon }) };
+  }).filter(Boolean).sort((a, b) => a.d - b.d).map((x) => x.name).filter((n) => !seen.has(n) && seen.add(n));
+}
+
+// Gata och ort för positionen, om ingen tvätt eller mack hittas (Nominatim).
+async function reverseAddress(lat, lon) {
+  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=sv&lat=${lat}&lon=${lon}`);
+  if (!res.ok) throw new Error("nominatim " + res.status);
+  const j = await res.json();
+  const a = j.address || {};
+  const road = a.road || a.pedestrian || a.neighbourhood || "";
+  const area = a.town || a.city || a.village || a.suburb || a.municipality || "";
+  const named = j.name && j.name !== road ? j.name : "";
+  return [named || road, area].filter(Boolean).join(", ");
+}
+
+function currentPosition() {
+  return new Promise((resolve, reject) => {
+    if (!("geolocation" in navigator)) return reject({ code: "unsupported" });
+    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+  });
 }
 
 function formError(msg) {
@@ -1647,6 +1730,11 @@ async function saveEntry(form) {
       data.depth = num(fd.get("depth"));
       data.tireKind = str("tireKind") || (data.tireAction === "till_vinter" ? "vinter" : data.tireAction === "till_sommar" ? "sommar" : null);
       break;
+    case "tvatt":
+      data.place = str("place") || null;
+      if (data.amount != null && data.amount < 0) return formError("Kostnaden kan inte vara mindre än noll.");
+      if (data.place) pref.set("wash." + c.id, data.place);
+      break;
     case "kostnad":
       data.category = str("category");
       data.title = str("title") || null;
@@ -1723,6 +1811,7 @@ function openEntry(id, { fromCat = null } = {}) {
     e.pricePerL != null ? ["Pris", `${fmt(e.pricePerL, 2)} kr per enhet`] : null,
     e.type === "tank" ? ["Fulltankad", e.full ? "Ja" : "Nej"] : null,
     e.station ? ["Station", e.station] : null,
+    e.place ? ["Plats", e.place] : null,
     e.workshop ? ["Verkstad", e.workshop] : null,
     e.category && e.type === "kostnad" ? ["Typ", e.category] : null,
     e.depth != null ? ["Mönsterdjup", `${fmt(e.depth, 1)} mm`] : null,
@@ -1912,6 +2001,54 @@ const ACTIONS = {
       fileName: `${x.title} ${ymd(x.date)}`,
     });
   },
+  async "geo-fill"(el) {
+    const input = document.getElementById(el.dataset.target);
+    const picks = document.getElementById(el.dataset.target + "-picks");
+    if (!input || el.disabled) return;
+    const what = el.dataset.kind === "fuel" ? "mack" : "biltvätt";
+    el.disabled = true;
+    el.classList.add("busy");
+    try {
+      let pos;
+      try {
+        pos = await currentPosition();
+      } catch (err) {
+        const msg = err.code === 1 ? "Appen fick inte använda din plats. Tillåt plats för den här sidan i telefonens inställningar och försök igen."
+          : err.code === "unsupported" ? "Den här webbläsaren kan inte ange plats."
+          : "Kunde inte hitta din position. Försök igen, gärna utomhus.";
+        return showToast(msg, 7000);
+      }
+      const { latitude: lat, longitude: lon, accuracy } = pos.coords;
+      // Sök lite längre bort om positionen är osäker, men aldrig mer än en kilometer.
+      const radius = Math.round(Math.min(1000, Math.max(el.dataset.kind === "fuel" ? 250 : 300, (accuracy || 0) + 100)));
+      const names = await nearbyPlaces(el.dataset.kind, lat, lon, radius).catch(() => []);
+      if (names.length) {
+        input.value = names[0];
+        if (picks) {
+          picks.innerHTML = names.length > 1 ? names.slice(0, 5).map((n) => `<button type="button" class="chip-btn" data-act="geo-pick" data-target="${esc(el.dataset.target)}" data-v="${esc(n)}">${esc(n)}</button>`).join("") : "";
+          picks.hidden = names.length < 2;
+        }
+        showToast(names.length > 1 ? `Hittade ${names.length} ställen i närheten. Tryck på rätt om det inte är det första.` : `Närmaste ${what}: ${names[0]}`, 5000);
+      } else {
+        const addr = await reverseAddress(lat, lon).catch(() => "");
+        if (!addr) return showToast("Hittade ingen plats just nu. Skriv in den själv.", 5000);
+        input.value = addr;
+        if (picks) picks.hidden = true;
+        showToast(`Ingen ${what} hittades precis här, så adressen är ifylld. Ändra om det behövs.`, 6000);
+      }
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    } finally {
+      el.disabled = false;
+      el.classList.remove("busy");
+    }
+  },
+  "geo-pick"(el) {
+    const input = document.getElementById(el.dataset.target);
+    if (input) { input.value = el.dataset.v; input.dispatchEvent(new Event("input", { bubbles: true })); }
+    const picks = document.getElementById(el.dataset.target + "-picks");
+    if (picks) picks.hidden = true;
+  },
+  "wash-new"() { entryForm("tvatt"); },
   "book-inspection"() { bookingForm({ kind: "besiktning" }); },
   async "deadline-remove"(el) {
     const key = el.dataset.id;
