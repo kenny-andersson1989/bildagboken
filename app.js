@@ -1230,7 +1230,7 @@ function recentCard(c) {
 
 // Bokade tider överst i loggen. De följer filtret: service och reparation under Service,
 // däckbyte under Däck och besiktning under Kostnader.
-const BOOK_FILTER = { service: "service", reparation: "service", dack: "dack", besiktning: "kostnad", annat: null };
+const BOOK_FILTER = { service: "service", reparation: "service", dack: "dack", besiktning: "besiktning", annat: null };
 function upcomingHtml(q) {
   const c = car();
   const list = sortedBookings(c).filter((b) => {
@@ -1279,7 +1279,8 @@ function entryMatches(e, q) {
 function logListHtml() {
   const q = (S.query || "").trim();
   // Filtret Mätarställning visar alla poster med mätarställning (även service, tankning och däck), inte bara manuella avläsningar.
-  const inFilter = (e) => S.filter === "alla" || (S.filter === "matare" ? e.odometer != null : e.type === S.filter);
+  const isInspection = (e) => e.type === "kostnad" && e.category === "Besiktning";
+  const inFilter = (e) => S.filter === "alla" || (S.filter === "matare" ? e.odometer != null : S.filter === "besiktning" ? isInspection(e) : e.type === S.filter);
   const ents = carEntries().filter((e) => inFilter(e) && entryMatches(e, q));
   const groups = [];
   for (const e of ents) {
@@ -1306,7 +1307,7 @@ function logListHtml() {
 }
 
 function viewLog() {
-  const filters = [["alla", "Alla"], ["tank", "Tankning"], ["service", "Service"], ["eget", "Eget jobb"], ["dack", "Däck"], ["tvatt", "Tvätt"], ["parkering", "Parkering"], ["kostnad", "Kostnad"], ["matare", "Mätarställning"]];
+  const filters = [["alla", "Alla"], ["tank", "Tankning"], ["service", "Service"], ["eget", "Eget jobb"], ["dack", "Däck"], ["tvatt", "Tvätt"], ["parkering", "Parkering"], ["kostnad", "Kostnad"], ["besiktning", "Besiktning"], ["matare", "Mätarställning"]];
   return `${subHeader("Allt som hänt med bilen", "Logg")}
     <label class="search">${icon("search", 18)}
       <input type="search" id="log-search" placeholder="Sök i loggen, till exempel bromsar eller Mekonomen" value="${esc(S.query || "")}" autocomplete="off" enterkeyhint="search" aria-label="Sök i loggen">
@@ -1966,7 +1967,8 @@ function entryForm(type, e = {}, opts = {}) {
       body = `${field("Typ", `<select name="category" id="ef-category">${COST_CATS.filter((k) => !["Tvätt", "Parkering"].includes(k) || e.category === k).map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
         ${field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
         ${amount()}${date}
-        ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(suggestNextInspection(e.date || todayStr(), c)) : ""}">`, "Uträknat från besiktningens datum. Kontrollera mot protokollet. Loggar du en äldre besiktning kan rutan vara tom.")}</div>` : ""}
+        ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast (valfritt)", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(suggestNextInspection(e.date || todayStr(), c)) : ""}">`, "Uträknat från besiktningens datum. Kontrollera mot protokollet.")}</div>
+        <p class="hint" id="ef-old-besikt" hidden>Det här är en äldre besiktning, så nästa datum behövs inte. Den sparas bara i loggen.</p>` : ""}
         ${note}${photo}`;
       break;
   }
@@ -2275,7 +2277,7 @@ async function saveEntry(form) {
     case "kostnad":
       data.category = str("category");
       data.title = str("title") || null;
-      if (data.amount == null) return formError("Fyll i kostnaden.");
+      if (data.amount == null && data.category !== "Besiktning") return formError("Fyll i kostnaden.");
       if (data.category === "Besiktning" && str("nextBesiktning") && str("nextBesiktning") <= data.date) return formError("Nästa besiktning ska ligga efter den här.");
       break;
   }
@@ -3208,6 +3210,20 @@ function saveItems(form) {
 
 /* ---------------------------------------------------------- input helpers */
 
+// Rutan "Nästa besiktning senast" för en besiktning: förslag från datumet, och dold när besiktningen är äldre än två månader.
+function updateNextInspection() {
+  const next = $("#ef-nextBesiktning");
+  if (!next) return;
+  const isInsp = $("#ef-category")?.value === "Besiktning";
+  const dateVal = $("#ef-date")?.value || todayStr();
+  const old = isInsp && dateVal < ymd(addMonths(today0(), -2));
+  const box = $("#ef-next-besikt"), note = $("#ef-old-besikt");
+  if (box) box.hidden = !isInsp || old;
+  if (note) note.hidden = !old;
+  if (old) { next.value = ""; delete next.dataset.manual; return; }
+  if (next.dataset.manual !== "1" && isInsp) next.value = suggestNextInspection(dateVal, car());
+}
+
 function onInput(ev) {
   if (ev.target.id === "ef-recurring") {
     const b = $("#ef-rec-box"); if (b) b.hidden = !ev.target.checked;
@@ -3227,10 +3243,7 @@ function onInput(ev) {
   }
   // Föreslå nästa besiktning så länge man inte själv har ändrat datumet.
   if (ev.target.id === "ef-nextBesiktning") ev.target.dataset.manual = "1";
-  if ((ev.target.id === "ef-category" || ev.target.id === "ef-date") && $("#ef-nextBesiktning")) {
-    const next = $("#ef-nextBesiktning");
-    if (next.dataset.manual !== "1" && $("#ef-category")?.value === "Besiktning") next.value = suggestNextInspection($("#ef-date")?.value || todayStr(), car());
-  }
+  if ((ev.target.id === "ef-category" || ev.target.id === "ef-date") && $("#ef-nextBesiktning")) updateNextInspection();
   if (ev.target.id === "cf-tiresOn") {
     // Flytta "sitter på" till den däcksats som väljs.
     document.querySelectorAll(".tire-head").forEach((h) => { h.querySelector(".tire-on").hidden = h.dataset.tire !== ev.target.value; });
@@ -3269,6 +3282,7 @@ function onInput(ev) {
 }
 
 function onChange(ev) {
+  if ((ev.target.id === "ef-date" || ev.target.id === "ef-category") && $("#ef-nextBesiktning")) updateNextInspection();
   if (ev.target.id === "car-switch") {
     S.carId = ev.target.value;
     pref.set("car", S.carId);
