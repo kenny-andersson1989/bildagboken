@@ -1363,12 +1363,12 @@ function bookingForm(b = {}) {
         ${field("Datum", `<input type="date" name="date" id="bk-date" required value="${esc(b.date || "")}">`)}
         ${field("Tid", `<input type="time" name="time" id="bk-time" value="${esc(b.time || "")}">`)}
       </div>
-      ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Skriv företagets namn, till exempel Mölndals däckservice" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-suggest" aria-expanded="false">
-        <input type="hidden" name="placeAddr" id="bk-addr" value="${esc(b.addr || "")}">
+      ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Företagets namn, till exempel Mölndals däckservice" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-suggest" aria-expanded="false">
+        <span class="suggest" id="bk-suggest" role="listbox" hidden></span>`)}
+      ${field("Adress", `<input name="placeAddr" id="bk-addr" value="${esc(b.addr || "")}" placeholder="Till exempel Kråketorpsgatan 20, Mölndal" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-addr-suggest" aria-expanded="false">
         <input type="hidden" name="placeLat" id="bk-lat" value="${b.lat ?? ""}">
         <input type="hidden" name="placeLon" id="bk-lon" value="${b.lon ?? ""}">
-        <span class="suggest" id="bk-suggest" role="listbox" hidden></span>
-        <small id="bk-addr-show">${b.addr ? esc(b.addr) : "Välj ett förslag så kommer adressen med, och kartan fungerar i kalendern."}</small>`)}
+        <span class="suggest" id="bk-addr-suggest" role="listbox" hidden></span>`, "Med gatuadress hittar kartan rätt när bokningen ligger i kalendern.")}
       ${field("Anteckning", `<textarea name="note" id="bk-note" rows="2" placeholder="Till exempel lämna nyckeln i brevlådan">${esc(b.note || "")}</textarea>`)}
       <p class="err" id="form-err" hidden></p>
       <button class="btn ${isEdit ? "" : "primary "}block" type="submit">${isEdit ? "Spara ändringar" : "Spara bokningen"}</button>
@@ -1644,46 +1644,68 @@ function entryForm(type, e = {}, opts = {}) {
 
 /* ------------------------------------------------- sök företag och adress */
 
-// Förslag på företag och adresser medan man skriver, från Photon (byggd på OpenStreetMap).
-// Sökningen görs först efter en kort paus i skrivandet och bara inom Sverige.
+// Förslag medan man skriver, från Photon (byggd på OpenStreetMap), bara inom Sverige.
+// "Var" föreslår företag och platser, "Adress" föreslår gator. Kartan saknar ofta husnummer,
+// så det nummer man själv skriver behålls när man väljer en gata.
+const PLACE_FIELDS = {
+  poi: { input: "bk-place", box: "bk-suggest" },
+  addr: { input: "bk-addr", box: "bk-addr-suggest" },
+};
 let placeTimer = null, placeAbort = null;
-function placeSearchSoon(input) {
+function placeSearchSoon(kind) {
   clearTimeout(placeTimer);
-  const q = input.value.trim();
-  const box = $("#bk-suggest");
-  if (q.length < 3) { if (box) box.hidden = true; input.setAttribute("aria-expanded", "false"); return; }
-  placeTimer = setTimeout(() => placeSearch(q), 400);
+  const f = PLACE_FIELDS[kind];
+  const input = document.getElementById(f.input), box = document.getElementById(f.box);
+  const q = input?.value.trim() || "";
+  Object.values(PLACE_FIELDS).forEach((x) => { const b = document.getElementById(x.box); if (b && b !== box) b.hidden = true; });
+  if (q.length < 3) { if (box) box.hidden = true; input?.setAttribute("aria-expanded", "false"); return; }
+  placeTimer = setTimeout(() => placeSearch(kind, q), 400);
 }
 
-const placeLabel = (pr) => {
-  const street = [pr.street, pr.housenumber].filter(Boolean).join(" ");
-  const addr = [street, [pr.postcode, pr.city || pr.town || pr.village || pr.district].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-  return { name: pr.name || street || pr.city || "", addr };
-};
+const cityOf = (pr) => pr.city || pr.town || pr.village || pr.district || pr.locality || "";
+const isStreet = (pr) => pr.osm_key === "highway" || pr.type === "street";
+const isArea = (pr) => ["place", "boundary", "landuse"].includes(pr.osm_key) || ["city", "district", "county", "state", "country"].includes(pr.type);
 
-async function placeSearch(q) {
-  const box = $("#bk-suggest"), input = $("#bk-place");
+// Adressrad för ett förslag. Saknas husnummer används det man har skrivit.
+function addrOf(pr, typedNo = "") {
+  const street = isStreet(pr) ? pr.name : pr.street;
+  const no = pr.housenumber || (isStreet(pr) ? typedNo : "");
+  return [[street, no].filter(Boolean).join(" "), [pr.postcode, cityOf(pr)].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+}
+
+async function placeSearch(kind, q) {
+  const f = PLACE_FIELDS[kind];
+  const input = document.getElementById(f.input), box = document.getElementById(f.box);
   if (!box || !input) return;
   placeAbort?.abort();
   placeAbort = new AbortController();
+  const typedNo = (q.match(/\b(\d{1,4}[a-zA-Z]?)\b/) || [])[1] || "";
   try {
-    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&bbox=10.5,55.0,24.3,69.1`, { signal: placeAbort.signal });
+    // Kartan hittar inget om husnumret är med, så adresser söks utan nummer och numret läggs till efteråt.
+    const searchQ = kind === "addr" && typedNo ? q.replace(new RegExp(`\\b${typedNo}\\b`), " ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim() : q;
+    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(searchQ)}&limit=8&bbox=10.5,55.0,24.3,69.1`, { signal: placeAbort.signal });
     if (!res.ok) throw new Error("photon " + res.status);
     const j = await res.json();
     if (input.value.trim() !== q) return;
     const seen = new Set();
-    const list = (j.features || []).filter((f) => f.properties?.countrycode === "SE" || !f.properties?.countrycode).map((f) => {
-      const { name, addr } = placeLabel(f.properties || {});
-      const [lon, lat] = f.geometry?.coordinates || [];
-      return name ? { name, addr, lat, lon } : null;
-    }).filter((x) => x && !seen.has(x.name + x.addr) && seen.add(x.name + x.addr));
+    const list = (j.features || [])
+      .filter((x) => (x.properties?.countrycode || "SE") === "SE")
+      .filter((x) => (kind === "poi" ? !isStreet(x.properties) && !isArea(x.properties) && x.properties.name : !isArea(x.properties)))
+      .map((x) => {
+        const pr = x.properties;
+        const [lon, lat] = x.geometry?.coordinates || [];
+        const addr = addrOf(pr, typedNo);
+        return kind === "poi" ? { title: pr.name, sub: addr, name: pr.name, addr, lat, lon } : { title: addr.split(", ")[0], sub: addr.split(", ").slice(1).join(", "), name: "", addr, lat, lon };
+      })
+      .filter((x) => x.title && !seen.has(x.title + x.sub) && seen.add(x.title + x.sub))
+      .slice(0, 5);
     box.innerHTML = list.length
-      ? list.map((x) => `<button type="button" role="option" data-act="place-pick" data-name="${esc(x.name)}" data-addr="${esc(x.addr)}" data-lat="${x.lat ?? ""}" data-lon="${x.lon ?? ""}"><b>${esc(x.name)}</b>${x.addr ? `<span>${esc(x.addr)}</span>` : ""}</button>`).join("")
-      : `<p class="hint">Inga träffar. Du kan skriva platsen själv.</p>`;
+      ? list.map((x) => `<button type="button" role="option" data-act="place-pick" data-kind="${kind}" data-name="${esc(x.name)}" data-addr="${esc(x.addr)}" data-lat="${x.lat ?? ""}" data-lon="${x.lon ?? ""}"><b>${esc(x.title)}</b>${x.sub ? `<span>${esc(x.sub)}</span>` : ""}</button>`).join("")
+      : `<p class="hint">${kind === "poi" ? "Företaget finns inte i kartan. Skriv namnet själv och fyll i adressen nedanför." : "Hittade ingen gata. Skriv adressen själv, den kommer ändå med i kalendern."}</p>`;
     box.hidden = false;
     input.setAttribute("aria-expanded", "true");
   } catch (e) {
-    if (e.name !== "AbortError") { box.innerHTML = `<p class="hint">Sökningen fungerar inte just nu. Du kan skriva platsen själv.</p>`; box.hidden = false; }
+    if (e.name !== "AbortError") { box.innerHTML = `<p class="hint">Sökningen fungerar inte just nu. Du kan skriva själv.</p>`; box.hidden = false; }
   }
 }
 
@@ -2142,15 +2164,15 @@ const ACTIONS = {
   },
   "place-pick"(el) {
     const set = (id, v) => { const x = document.getElementById(id); if (x) x.value = v; };
-    set("bk-place", el.dataset.name);
-    set("bk-addr", el.dataset.addr);
+    if (el.dataset.kind === "poi") set("bk-place", el.dataset.name);
+    // Ett företag utan adress i kartan lämnar en adress man redan har skrivit orörd.
+    if (el.dataset.addr || el.dataset.kind === "addr") set("bk-addr", el.dataset.addr);
     set("bk-lat", el.dataset.lat);
     set("bk-lon", el.dataset.lon);
-    const show = $("#bk-addr-show");
-    if (show) show.textContent = el.dataset.addr || "Adressen saknas för den här platsen.";
-    const box = $("#bk-suggest");
-    if (box) box.hidden = true;
-    $("#bk-place")?.setAttribute("aria-expanded", "false");
+    Object.values(PLACE_FIELDS).forEach((x) => {
+      const b = document.getElementById(x.box); if (b) b.hidden = true;
+      document.getElementById(x.input)?.setAttribute("aria-expanded", "false");
+    });
   },
   "geo-pick"(el) {
     const input = document.getElementById(el.dataset.target);
@@ -2571,11 +2593,11 @@ function saveItems(form) {
 /* ---------------------------------------------------------- input helpers */
 
 function onInput(ev) {
-  if (ev.target.id === "bk-place") {
-    ["bk-addr", "bk-lat", "bk-lon"].forEach((id) => { const x = document.getElementById(id); if (x) x.value = ""; });
-    const show = $("#bk-addr-show");
-    if (show) show.textContent = "Välj ett förslag så kommer adressen med, och kartan fungerar i kalendern.";
-    placeSearchSoon(ev.target);
+  if (ev.target.id === "bk-place") placeSearchSoon("poi");
+  if (ev.target.id === "bk-addr") {
+    // Egen adress: positionen från ett tidigare förslag gäller inte längre.
+    ["bk-lat", "bk-lon"].forEach((id) => { const x = document.getElementById(id); if (x) x.value = ""; });
+    placeSearchSoon("addr");
   }
   if (ev.target.id === "ef-category") {
     const box = $("#ef-next-besikt");
