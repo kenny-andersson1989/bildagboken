@@ -973,9 +973,9 @@ function viewOverview() {
 
   const dls = deadlines(c);
   parts.push(`<article class="card">
-    <h2>Att hålla koll på <button class="link" type="button" data-act="edit-car" data-section="dates">Ändra datum</button></h2>
+    <h2>Att hålla koll på</h2>
     ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...dls])}
-    ${!c.besiktning && !c.forsakringDatum && !taxMonth(c) ? `<p class="hint" style="margin-top:10px">Lägg till besiktning, försäkring och skatt under Ändra datum.</p>` : ""}
+    ${!c.besiktning && !c.forsakringDatum ? `<div class="ask"><button class="btn-soft" type="button" data-act="edit-car" data-section="dates">Lägg till besiktning, försäkring och skatt</button></div>` : ""}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
   </article>`);
 
