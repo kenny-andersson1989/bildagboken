@@ -317,7 +317,9 @@ input, select, textarea {
   padding: 12px 14px; width: 100%; min-width: 0; -webkit-appearance: none; appearance: none;
 }
 select { background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%); background-position: calc(100% - 20px) 55%, calc(100% - 15px) 55%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 36px; }
-input[type="date"] { min-height: 48px; }
+/* Datum och tid: samma höjd som övriga fält även när de är tomma (iPhone krymper annars tomma fält). */
+input[type="date"], input[type="time"] { height: 46px; line-height: 1.2; }
+input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-date-and-time-value { text-align: left; min-height: 1.2em; }
 textarea { min-height: 84px; resize: vertical; }
 input::placeholder, textarea::placeholder { color: var(--ink-3); }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
