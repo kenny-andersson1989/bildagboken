@@ -307,7 +307,10 @@ function itemStatus(item, c, ents) {
   let level = "ok";
   if (frac < 0) level = "urgent";
   else if (frac < 0.12 || (remMil != null && remMil < 300) || (remDays != null && remDays < 45)) level = "soon";
-  const label = frac < 0 ? "Dags nu" : by === "mil" ? `${fmt(remMil)} mil` : daysText(remDays);
+  // Kvar till nästa byte, eller hur mycket det har gått över.
+  const label = frac < 0
+    ? (by === "mil" ? `${fmt(-remMil)} mil över` : `${daysText(-remDays)} över`)
+    : by === "mil" ? `${fmt(remMil)} mil kvar` : `${daysText(remDays)} kvar`;
   return { item, last, lastDate, lastMil, remMil, remDays, dueDate, frac, by, level, label };
 }
 
@@ -985,7 +988,7 @@ function viewOverview() {
 
   const dls = deadlines(c);
   const soonItems = allItemStatus(c).filter((s) => !s.unknown && s !== ps && s.item.id !== ps?.item.id && (s.level === "urgent" || s.level === "soon"))
-    .map((s) => ({ icon: "wrench", title: s.item.name, sub: s.dueDate ? `Senast ${fmtDate(s.dueDate)}` : s.lastMil != null && s.item.mil ? `Vid ${fmt(s.lastMil + s.item.mil)} mil` : "", level: s.level, label: s.label }));
+    .map((s) => ({ icon: "wrench", title: s.item.name, sub: [s.lastMil != null && s.item.mil ? `Vid ${fmt(s.lastMil + s.item.mil)} mil` : "", s.dueDate ? `senast ${fmtDate(s.dueDate)}` : ""].filter(Boolean).join(" eller ").replace(/^s/, "S"), level: s.level, label: s.label }));
   parts.push(`<article class="card">
     <h2>Att hålla koll på <button class="link" type="button" data-act="edit-car" data-section="dates">Ändra datum</button></h2>
     <div class="rows">${[...bookingRows(c), ...soonItems, ...dls].map(rowHtml).join("")}</div>
@@ -1103,6 +1106,13 @@ function viewEconomy() {
     <p class="hint" style="text-align:center">Kostnad per mil räknas på körsträckan mellan loggade mätarställningar.</p>`;
 }
 
+// Stapel som fylls på från förra bytet till nästa: tom när det är nybytt, full när det är dags.
+function wearBar(s) {
+  if (s.unknown || s.frac == null) return "";
+  const used = Math.max(0, Math.min(1, 1 - s.frac));
+  return `<div class="wear ${s.level}" role="img" aria-label="${Math.round(used * 100)} % av intervallet har gått"><i style="width:${(used * 100).toFixed(1)}%"></i></div>`;
+}
+
 function viewCar() {
   const c = car();
   const specs = (c.specsText || "").split("\n").map((l) => {
@@ -1131,7 +1141,7 @@ function viewCar() {
     <div class="card" id="underhall" style="scroll-margin-top:16px">
       <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
       <div class="rows">${st.map((s) => `<div class="dl"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc([
-        s.item.mil ? `var ${fmt(s.item.mil)} mil` : "", s.item.months ? `${s.item.months >= 24 && s.item.months % 12 === 0 ? `${s.item.months / 12} år` : `${s.item.months} mån`}` : ""].filter(Boolean).join(" eller ") + (s.noOdo ? " · mätarställning saknas" : s.unknown ? " · senaste byte okänt" : s.lastDate ? ` · senast ${fmtDateShort(s.lastDate)}` : ""))}</div></div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.unknown ? "Okänt" : s.label)}</span></div>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
+        s.item.mil ? `var ${fmt(s.item.mil)} mil` : "", s.item.months ? `${s.item.months >= 24 && s.item.months % 12 === 0 ? `${s.item.months / 12} år` : `${s.item.months} mån`}` : ""].filter(Boolean).join(" eller ") + (s.noOdo ? " · mätarställning saknas" : s.unknown ? " · senaste byte okänt" : s.lastDate ? ` · senast ${fmtDateShort(s.lastDate)}` : ""))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.unknown ? "Okänt" : s.label)}</span></div>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
     <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
