@@ -366,6 +366,13 @@ function milPerDay(c) {
 // Förslag på nästa sista dag för besiktning, räknat från dagen bilen besiktigades.
 // Personbil: första gången senast 3 år efter att den togs i trafik, sedan 2 år, därefter var 14:e månad.
 // Årsmodellen används som ungefärligt år i trafik. Datumet går alltid att ändra.
+// Förslaget visas bara om det ligger framåt i tiden. För en gammal besiktning lämnas rutan tom,
+// så att den riktiga sista dagen inte skrivs över av ett datum som redan har passerat.
+function suggestNextInspection(dateStr, c) {
+  const next = nextInspectionDate(dateStr, c);
+  return next && next >= todayStr() ? next : "";
+}
+
 function nextInspectionDate(dateStr, c) {
   const d = parseDate(dateStr);
   if (!d) return "";
@@ -1414,6 +1421,7 @@ const TYPE_DEFINITE = { tank: "tankningen", matare: "mätarställningen", servic
 function typePicker() {
   openSheet("Vad vill du logga?", `<div class="types">
     ${Object.entries(TYPE).map(([k, t]) => `<button type="button" data-act="new-entry" data-type="${k}">${icon(t.icon, 26)}${t.label}</button>`).join("")}
+    <button type="button" data-act="new-entry" data-type="kostnad" data-cat="Besiktning">${icon("check", 26)}Besiktning</button>
   </div>
   <button class="btn ghost block" type="button" data-act="new-booking" style="margin-top:12px">${icon("calendar", 18)} Lägg in bokad tid</button>
   <p class="hint" style="margin-top:14px">Det du sparar syns direkt hos din sambo.</p>`);
@@ -1732,12 +1740,13 @@ function entryForm(type, e = {}, opts = {}) {
       body = `${field("Typ", `<select name="category" id="ef-category">${COST_CATS.filter((k) => !["Tvätt", "Parkering"].includes(k) || e.category === k).map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
         ${field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
         ${amount()}${date}
-        ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(nextInspectionDate(e.date || todayStr(), c)) : ""}">`, "Uträknat från dagens besiktning. Kontrollera mot besiktningsprotokollet och ändra om det inte stämmer.")}</div>` : ""}
+        ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(suggestNextInspection(e.date || todayStr(), c)) : ""}">`, "Uträknat från besiktningens datum. Kontrollera mot protokollet. Loggar du en äldre besiktning kan rutan vara tom.")}</div>` : ""}
         ${note}${photo}`;
       break;
   }
   const isEdit = !!e.id;
-  openSheet(isEdit ? `Ändra ${TYPE[type].label.toLowerCase()}` : TYPE[type].label, `
+  const formTitle = type === "kostnad" && e.category === "Besiktning" ? "Besiktning" : TYPE[type].label;
+  openSheet(isEdit ? `Ändra ${formTitle.toLowerCase()}` : formTitle, `
     <form class="form" data-form="entry" data-type="${type}"${isEdit ? ` data-id="${esc(e.id)}"` : ""}${opts.bookingId ? ` data-booking="${esc(opts.bookingId)}"` : ""} novalidate>
       ${body}
       <p class="err" id="form-err" hidden></p>
@@ -2014,7 +2023,8 @@ async function saveEntry(form) {
     carUpdate.fuelLevel = { level: 8, by: uid(), at: serverTimestamp(), via: "tank" };
   }
   // Gjord besiktning: flytta "Besiktning senast" till nästa datum.
-  if (type === "kostnad" && data.category === "Besiktning" && str("nextBesiktning")) carUpdate.besiktning = str("nextBesiktning");
+  // Bara om det nya datumet är senare än det som redan finns, så att en gammal besiktning inte flyttar sista dagen bakåt.
+  if (type === "kostnad" && data.category === "Besiktning" && str("nextBesiktning") && str("nextBesiktning") > (carTarget.besiktning || "")) carUpdate.besiktning = str("nextBesiktning");
   if (form.dataset.booking) {
     carUpdate.bookings = (carTarget.bookings || []).filter((x) => x.id !== form.dataset.booking);
   }
@@ -2232,7 +2242,8 @@ const ACTIONS = {
   "close-sheet": closeSheet,
   "new-entry"(el) {
     const t = el.dataset.type;
-    if (t && TYPE[t]) entryForm(t);
+    // Besiktning är en kostnad av typen Besiktning, men har en egen knapp så att den är lätt att hitta.
+    if (t && TYPE[t]) entryForm(t, el.dataset.cat ? { category: el.dataset.cat } : {});
     else typePicker();
   },
   "open-entry"(el) { openEntry(el.dataset.id, { fromCat: el.dataset.cat || null }); },
@@ -2768,7 +2779,7 @@ function onInput(ev) {
   if (ev.target.id === "ef-nextBesiktning") ev.target.dataset.manual = "1";
   if ((ev.target.id === "ef-category" || ev.target.id === "ef-date") && $("#ef-nextBesiktning")) {
     const next = $("#ef-nextBesiktning");
-    if (next.dataset.manual !== "1" && $("#ef-category")?.value === "Besiktning") next.value = nextInspectionDate($("#ef-date")?.value || todayStr(), car());
+    if (next.dataset.manual !== "1" && $("#ef-category")?.value === "Besiktning") next.value = suggestNextInspection($("#ef-date")?.value || todayStr(), car());
   }
   if (ev.target.id === "cf-tiresOn") {
     // Flytta "sitter på" till den däcksats som väljs.
