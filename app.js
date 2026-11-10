@@ -273,7 +273,28 @@ function nameMatchesItem(text, item) {
 // Vad som gjordes vid en service eller ett eget jobb: [{ key, name, itemId, action, side }].
 // Äldre poster utan "work" byggs från items och parts, och allt räknas då som bytt.
 const WORK_ACTIONS = { bytt: "Bytt", pafyllt: "Fyllt på", rengjort: "Rengjort", kontrollerat: "Kontrollerat" };
-const POSITIONS = ["Fram", "Bak", "Vänster fram", "Höger fram", "Vänster bak", "Höger bak"];
+// Positioner som går att kombinera: hjulen för det mesta, fram och bak för torkarblad.
+const CORNERS = ["Vänster fram", "Höger fram", "Vänster bak", "Höger bak"];
+const ENDS = ["Fram", "Bak"];
+const positionsFor = (itemId) => (itemId === "torkare" ? ENDS : CORNERS);
+// Valda positioner för en rad. Äldre poster har en enda sida som text ("Fram", "Höger fram").
+function sidesOf(w) {
+  if (Array.isArray(w?.sides)) return w.sides;
+  if (!w?.side) return [];
+  if (w.side === "Fram" && w.itemId !== "torkare") return ["Vänster fram", "Höger fram"];
+  if (w.side === "Bak" && w.itemId !== "torkare") return ["Vänster bak", "Höger bak"];
+  return [w.side];
+}
+// Så kort text som möjligt: båda fram blir "fram", alla fyra "alla fyra".
+function sidesText(sides) {
+  const set = new Set(sides);
+  if (CORNERS.every((x) => set.has(x))) return "alla fyra";
+  const out = [];
+  if (set.has("Vänster fram") && set.has("Höger fram")) out.push("fram"); else CORNERS.slice(0, 2).forEach((x) => set.has(x) && out.push(x.toLowerCase()));
+  if (set.has("Vänster bak") && set.has("Höger bak")) out.push("bak"); else CORNERS.slice(2).forEach((x) => set.has(x) && out.push(x.toLowerCase()));
+  ENDS.forEach((x) => set.has(x) && out.push(x.toLowerCase()));
+  return out.join(", ");
+}
 // Punkter där sida eller position inte har betydelse.
 const NO_POSITION = ["olja", "luftfilter", "kupefilter", "bromsvatska", "kamrem", "tandstift"];
 function workOf(e, c = car()) {
@@ -281,14 +302,14 @@ function workOf(e, c = car()) {
   const items = c?.items || [];
   const out = (e.items || []).map((id) => {
     const i = items.find((x) => x.id === id);
-    return i ? { key: `item:${id}`, itemId: id, name: i.name, action: "bytt", side: null } : null;
+    return i ? { key: `item:${id}`, itemId: id, name: i.name, action: "bytt", sides: [] } : null;
   }).filter(Boolean);
-  for (const p of e.parts || []) if (p.trim()) out.push({ key: normWord(p), itemId: null, name: p.trim(), action: "bytt", side: null });
+  for (const p of e.parts || []) if (p.trim()) out.push({ key: normWord(p), itemId: null, name: p.trim(), action: "bytt", sides: [] });
   return out;
 }
 // "Bromsskivor (höger fram)", "Bromsvätska (fyllt på)".
 function workText(w) {
-  const extra = [w.side ? w.side.toLowerCase() : "", w.action && w.action !== "bytt" ? WORK_ACTIONS[w.action].toLowerCase() : ""].filter(Boolean);
+  const extra = [sidesText(sidesOf(w)), w.action && w.action !== "bytt" ? WORK_ACTIONS[w.action].toLowerCase() : ""].filter(Boolean);
   return `${w.name}${extra.length ? ` (${extra.join(", ")})` : ""}`;
 }
 // Gäller raden punkten? Antingen vald som punkt, eller skriven med punktens namn.
@@ -2045,7 +2066,7 @@ function workRowHtml(r, w, n) {
     <label class="check"><input type="checkbox" class="w-on"${w ? " checked" : ""}> ${esc(r.name)}</label>
     <div class="w-opts">
       <div class="w-act" role="radiogroup" aria-label="Vad gjordes med ${esc(r.name.toLowerCase())}">${Object.entries(WORK_ACTIONS).map(([k, l]) => `<label><input type="radio" name="wa${n}" value="${k}"${action === k ? " checked" : ""}><span>${l}</span></label>`).join("")}</div>
-      ${showPos ? `<select class="w-side" aria-label="Var på bilen"><option value="">Hela / ingen sida</option>${POSITIONS.map((pos) => `<option${w?.side === pos ? " selected" : ""}>${pos}</option>`).join("")}</select>` : ""}
+      ${showPos ? `<div class="w-sides${positionsFor(r.itemId) === CORNERS ? " corners" : ""}" role="group" aria-label="Var på bilen">${positionsFor(r.itemId).map((pos) => `<label><input type="checkbox" value="${pos}"${sidesOf(w).includes(pos) ? " checked" : ""}><span>${pos}</span></label>`).join("")}</div>` : ""}
     </div>
   </div>`;
 }
@@ -2164,7 +2185,7 @@ async function saveEntry(form) {
           itemId: row.dataset.item || null,
           name: row.dataset.name,
           action: row.querySelector(".w-act input:checked")?.value || "bytt",
-          side: row.querySelector(".w-side")?.value || null,
+          sides: [...row.querySelectorAll(".w-sides input:checked")].map((x) => x.value),
         })).filter((w) => !seen.has(w.key) && seen.add(w.key));
         data.items = data.work.filter((w) => w.action === "bytt" && w.itemId).map((w) => w.itemId);
         data.parts = data.work.filter((w) => w.action === "bytt" && !w.itemId).map((w) => w.name);
