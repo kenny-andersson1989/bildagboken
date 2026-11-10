@@ -557,3 +557,8 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 @media (min-width: 900px) and (prefers-reduced-motion: no-preference) {
   .sheet:not([hidden]) { animation: pop .2s ease-out; }
 }
+#sheet-title:focus { outline: none; }
+@media (min-width: 900px) {
+  .tab { position: relative; }
+  .tab .badge { position: static; margin-left: auto; border: 0; }
+}

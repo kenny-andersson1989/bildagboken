@@ -570,6 +570,14 @@ function render() {
   const views = { oversikt: viewOverview, logg: viewLog, ekonomi: viewEconomy, bilen: viewCar, aviseringar: viewNotifications, installningar: viewSettings };
   const fn = views[S.view] || viewOverview;
   setScreen("view-" + S.view, fn(), { showNav: true, keepForm: true });
+  // Antal nya aviseringar även i sidomenyn på datorn.
+  const n = unseenFromOthers().length;
+  const bell = nav.querySelector('[data-go="aviseringar"]');
+  if (bell) {
+    bell.querySelector(".badge")?.remove();
+    if (n) bell.insertAdjacentHTML("beforeend", `<span class="badge">${n > 9 ? "9+" : n}</span>`);
+    bell.setAttribute("aria-label", `Aviseringar${n ? `, ${n} nya` : ""}`);
+  }
   ensureCarImage(car());
 }
 
@@ -903,7 +911,11 @@ function viewOverview() {
       const center = ps.frac < 0
         ? `<div class="big">Dags</div><div class="unit">nu</div>`
         : ps.by === "mil" ? `<div class="big">${fmt(ps.remMil)}</div><div class="unit">mil kvar</div>`
-        : `<div class="big">${esc(daysText(ps.remDays))}</div><div class="unit">kvar</div>`;
+        : (() => {
+          // "12 mån" blir "12" stort och "mån kvar" under, så att texten ryms i ringen.
+          const [, n, u] = daysText(ps.remDays).match(/^([\d,]+)\s(.+)$/) || [null, daysText(ps.remDays), ""];
+          return `<div class="big">${esc(n)}</div><div class="unit">${esc(u ? `${u} kvar` : "kvar")}</div>`;
+        })();
       const lastE = ps.last;
       const chips = lastE ? [...itemNames(lastE, c), ...(lastE.parts || [])] : [];
       const due = [ps.item.mil && ps.lastMil != null ? `vid ${fmt(ps.lastMil + ps.item.mil)} mil` : "", ps.dueDate ? `senast ${MONTHS[ps.dueDate.getMonth()]} ${ps.dueDate.getFullYear()}` : ""].filter(Boolean).join(" eller ");
@@ -1181,7 +1193,9 @@ function viewSettings() {
 const sheet = $("#sheet");
 const scrim = $("#scrim");
 
+let sheetReturnFocus = null;
 function openSheet(title, body, { back = null, backId = null } = {}) {
+  if (sheet.hidden) sheetReturnFocus = document.activeElement;
   sheet.innerHTML = `<div class="grab"></div>
     <div class="sheet-head">
       ${back ? `<button class="icon-btn" type="button" data-act="${back}"${backId ? ` data-id="${esc(backId)}"` : ""} aria-label="Tillbaka">${icon("back", 18)}</button>` : ""}
@@ -1193,12 +1207,21 @@ function openSheet(title, body, { back = null, backId = null } = {}) {
   scrim.hidden = false;
   sheet.scrollTop = 0;
   document.body.style.overflow = "hidden";
+  // Flytta fokus in i rutan, så att tangentbord och skärmläsare hamnar rätt. Fält som fokuseras senare går före.
+  setTimeout(() => {
+    if (sheet.hidden || sheet.contains(document.activeElement)) return;
+    const h = $("#sheet-title");
+    if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+  }, 0);
 }
 function closeSheet() {
   sheet.hidden = true;
   scrim.hidden = true;
   sheet.innerHTML = "";
   document.body.style.overflow = "";
+  const back = sheetReturnFocus;
+  sheetReturnFocus = null;
+  if (back && document.contains(back) && back !== document.body) back.focus({ preventScroll: true });
 }
 
 /* Bekräftelseruta: frågar "Vill du verkligen …?" med Avbryt och Ta bort. Ger true om man trycker Ta bort. */
@@ -2421,6 +2444,8 @@ document.addEventListener("keydown", (ev) => {
   if (!$("#confirm").hidden) return closeConfirm(false);
   if (!sheet.hidden) closeSheet();
 });
+window.addEventListener("offline", () => showToast("Ingen kontakt med nätet. Det du sparar laddas upp när nätet är tillbaka.", 6000));
+window.addEventListener("online", () => showToast("Nätet är tillbaka"));
 window.addEventListener("hashchange", () => {
   const v = location.hash.slice(1);
   if (v && v !== S.view) { S.view = v; render(); }
