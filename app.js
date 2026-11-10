@@ -249,6 +249,28 @@ function entryTitle(e) {
   }
 }
 
+// Ord som räknas som ett byte av en underhållspunkt när de skrivs i "Annat som byttes".
+const ITEM_WORDS = {
+  olja: ["motorolja", "olja", "oljebyte", "oljefilter", "oljeservice"],
+  luftfilter: ["luftfilter", "luftfiltret", "luftfiltren"],
+  kupefilter: ["kupefilter", "kupefiltret", "pollenfilter", "pollenfiltret"],
+  tandstift: ["tändstift", "tändstiften"],
+  bromsvatska: ["bromsvätska", "bromsvätskan", "bromsolja"],
+  torkare: ["torkarblad", "torkarbladen", "torkare", "torkarna"],
+  kamrem: ["kamrem", "kamremmen", "kamremssats"],
+};
+const normWord = (t) => String(t || "").toLowerCase().replace(/é/g, "e").trim();
+
+// Räknas posten som ett byte av punkten? Antingen ikryssad, eller skriven i "Annat som byttes"
+// (som hela ord, så att till exempel "växellådsolja" inte räknas som motorolja).
+function entryCovers(e, item) {
+  if ((e.items || []).includes(item.id)) return true;
+  if (!e.parts?.length) return false;
+  const words = [...(ITEM_WORDS[item.id] || []), normWord(item.name)].map(normWord).filter(Boolean);
+  const text = e.parts.map(normWord).join(" , ");
+  return words.some((w) => new RegExp(`(^|[^a-zåäö])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-zåäö])`).test(text));
+}
+
 function itemNames(e, c) {
   const items = c?.items || [];
   return (e.items || []).map((id) => items.find((i) => i.id === id)?.name).filter(Boolean);
@@ -303,7 +325,7 @@ function activityText(e) {
 function itemStatus(item, c, ents) {
   let last = null;
   for (const e of ents) {
-    if (!(e.items || []).includes(item.id)) continue;
+    if (!entryCovers(e, item)) continue;
     if (!last || (e.date || "") > (last.date || "")) last = e;
   }
   let lastDate = last?.date ?? null;
@@ -1743,7 +1765,7 @@ function entryForm(type, e = {}, opts = {}) {
   const items = (c.items || []).length ? `<fieldset><legend>Det här gjordes</legend><div class="checks">
     ${c.items.map((i) => `<label class="check"><input type="checkbox" name="items" value="${esc(i.id)}"${(e.items || []).includes(i.id) ? " checked" : ""}> ${esc(i.name)}</label>`).join("")}
   </div></fieldset>` : "";
-  const parts = field("Annat som byttes", `<input name="parts" id="ef-parts" value="${esc((e.parts || []).join(", "))}" placeholder="Till exempel bromsklossar fram, glödlampa">`, "Skilj med kommatecken.");
+  const parts = field("Annat som byttes", `<input name="parts" id="ef-parts" value="${esc((e.parts || []).join(", "))}" placeholder="Till exempel bromsklossar fram, glödlampa">`, "Skilj med kommatecken. Står till exempel luftfilter eller bromsvätska här räknas underhållet om för den punkten, precis som om den var ikryssad.");
   let body = "";
   switch (type) {
     case "tank": {
