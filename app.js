@@ -263,12 +263,47 @@ const normWord = (t) => String(t || "").toLowerCase().replace(/é/g, "e").trim()
 
 // Räknas posten som ett byte av punkten? Antingen ikryssad, eller skriven i "Annat som byttes"
 // (som hela ord, så att till exempel "växellådsolja" inte räknas som motorolja).
-function entryCovers(e, item) {
-  if ((e.items || []).includes(item.id)) return true;
-  if (!e.parts?.length) return false;
+// Står punktens namn (eller ett vanligt ord för den) som hela ord i texten?
+function nameMatchesItem(text, item) {
   const words = [...(ITEM_WORDS[item.id] || []), normWord(item.name)].map(normWord).filter(Boolean);
-  const text = e.parts.map(normWord).join(" , ");
-  return words.some((w) => new RegExp(`(^|[^a-zåäö])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-zåäö])`).test(text));
+  const t = normWord(text);
+  return words.some((w) => new RegExp(`(^|[^a-zåäö])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-zåäö])`).test(t));
+}
+
+// Vad som gjordes vid en service eller ett eget jobb: [{ key, name, itemId, action, side }].
+// Äldre poster utan "work" byggs från items och parts, och allt räknas då som bytt.
+const WORK_ACTIONS = { bytt: "Bytt", pafyllt: "Fyllt på", rengjort: "Rengjort", kontrollerat: "Kontrollerat" };
+const POSITIONS = ["Fram", "Bak", "Vänster fram", "Höger fram", "Vänster bak", "Höger bak"];
+// Punkter där sida eller position inte har betydelse.
+const NO_POSITION = ["olja", "luftfilter", "kupefilter", "bromsvatska", "kamrem", "tandstift"];
+function workOf(e, c = car()) {
+  if (Array.isArray(e.work)) return e.work;
+  const items = c?.items || [];
+  const out = (e.items || []).map((id) => {
+    const i = items.find((x) => x.id === id);
+    return i ? { key: `item:${id}`, itemId: id, name: i.name, action: "bytt", side: null } : null;
+  }).filter(Boolean);
+  for (const p of e.parts || []) if (p.trim()) out.push({ key: normWord(p), itemId: null, name: p.trim(), action: "bytt", side: null });
+  return out;
+}
+// "Bromsskivor (höger fram)", "Bromsvätska (fyllt på)".
+function workText(w) {
+  const extra = [w.side ? w.side.toLowerCase() : "", w.action && w.action !== "bytt" ? WORK_ACTIONS[w.action].toLowerCase() : ""].filter(Boolean);
+  return `${w.name}${extra.length ? ` (${extra.join(", ")})` : ""}`;
+}
+// Gäller raden punkten? Antingen vald som punkt, eller skriven med punktens namn.
+const workIsItem = (w, item) => w.itemId === item.id || (!w.itemId && nameMatchesItem(w.name, item));
+
+// Räknas posten som ett byte av punkten? Bara åtgärden Bytt nollställer intervallet.
+function entryCovers(e, item) {
+  if (Array.isArray(e.work)) return e.work.some((w) => w.action === "bytt" && workIsItem(w, item));
+  if ((e.items || []).includes(item.id)) return true;
+  return (e.parts || []).some((p) => nameMatchesItem(p, item));
+}
+// Har punkten berörts alls (bytt, fyllt på, rengjort eller kontrollerat)? Används för historiken.
+function entryTouches(e, item) {
+  if (Array.isArray(e.work)) return e.work.some((w) => workIsItem(w, item));
+  return entryCovers(e, item);
 }
 
 // Delar som bara har skrivits i "Annat som byttes" (inte en underhållspunkt), en rad per del.
@@ -277,20 +312,24 @@ function extraParts(c) {
   const items = c?.items || [];
   const map = new Map();
   for (const e of S.entries) {
-    if (e.carId !== c.id || !e.parts?.length) continue;
-    for (const raw of e.parts) {
-      const key = normWord(raw);
-      if (!key || items.some((i) => entryCovers({ parts: [raw] }, i))) continue;
-      const x = map.get(key) || { key, name: raw.trim().replace(/^./, (ch) => ch.toUpperCase()), entries: [] };
-      x.entries.push(e);
+    if (e.carId !== c.id || !["service", "eget"].includes(e.type)) continue;
+    for (const w of workOf(e, c)) {
+      if (w.itemId) continue;
+      const key = normWord(w.name);
+      if (!key || items.some((i) => nameMatchesItem(w.name, i))) continue;
+      const x = map.get(key) || { key, name: w.name.trim().replace(/^./, (ch) => ch.toUpperCase()), entries: [] };
+      if (!x.entries.includes(e)) x.entries.push(e);
       map.set(key, x);
     }
   }
   const list = [...map.values()];
-  list.forEach((x) => x.entries.sort((a, b) => (b.date || "").localeCompare(a.date || "")));
+  list.forEach((x) => {
+    x.entries.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    x.lastAction = workOf(x.entries[0], c).find((w) => !w.itemId && normWord(w.name) === x.key)?.action || "bytt";
+  });
   return list.sort((a, b) => (b.entries[0].date || "").localeCompare(a.entries[0].date || ""));
 }
-const hasPart = (e, key) => (e.parts || []).some((p) => normWord(p) === key);
+const hasPart = (e, key) => workOf(e).some((w) => !w.itemId && normWord(w.name) === key);
 
 function itemNames(e, c) {
   const items = c?.items || [];
@@ -311,7 +350,7 @@ function entryDetail(e, c = car()) {
     }
     case "matare": return `${fmt(e.odometer)} mil`;
     case "service":
-    case "eget": return [...itemNames(e, c), ...(e.parts || [])].join(", ") || e.note || "";
+    case "eget": return workOf(e, c).map(workText).join(", ") || e.note || "";
     case "dack": {
       const bits = [];
       if (e.depth != null) bits.push(`${fmt(e.depth, 1)} mm`);
@@ -1179,7 +1218,7 @@ function entryMatches(e, q) {
   const c = S.cars.find((x) => x.id === e.carId) || car();
   const hay = [
     TYPE[e.type]?.label, entryTitle(e), entryDetail(e, c), e.note, e.workshop, e.station, e.place, e.category, e.fuel,
-    (e.parts || []).join(" "), itemNames(e, c).join(" "), whoName(e.createdBy), memberName(e.createdBy),
+    ["service", "eget"].includes(e.type) ? workOf(e, c).map(workText).join(" ") : "", whoName(e.createdBy), memberName(e.createdBy),
     e.amount != null ? `${Math.round(e.amount)} ${fmt(e.amount)} kr` : "", e.odometer != null ? `${e.odometer} ${fmt(e.odometer)} mil` : "",
     fmtDate(e.date), e.date,
   ].filter(Boolean).join(" ").toLowerCase();
@@ -1360,14 +1399,14 @@ function viewCar() {
     </div>
     <div class="card" id="underhall" style="scroll-margin-top:16px">
       <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
-      <div class="rows">${st.map((s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc([
+      <div class="rows">${st.filter((s) => s.item.mil || s.item.months || s.lastDate).map((s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc([
         [s.item.mil ? `var ${fmt(s.item.mil)} mil` : "", s.item.months ? `${s.item.months >= 24 && s.item.months % 12 === 0 ? `${s.item.months / 12} år` : `${s.item.months} mån`}` : ""].filter(Boolean).join(" eller ") || "inget intervall",
         s.noOdo ? "mätarställning saknas" : s.noInterval ? `senast ${fmtDateShort(s.lastDate)}` : s.unknown ? "senaste byte okänt" : s.lastDate ? `senast ${fmtDateShort(s.lastDate)}` : ""].filter(Boolean).join(" · "))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
       ${(() => {
         const extras = extraParts(c);
         if (!extras.length) return "";
-        const rows = extras.map((x) => `<button class="dl as-btn" type="button" data-act="open-part" data-id="${esc(x.key)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(x.name)}</div><div class="dl-s">${esc(`senast bytt ${fmtDateShort(x.entries[0].date)}${x.entries.length > 1 ? ` · ${x.entries.length} gånger` : ""}`)}</div></div><span></span></button>`).join("");
-        return `${S.partsAll ? `<p class="label" style="margin:14px 0 2px">Annat som har bytts</p><div class="rows">${rows}</div>` : ""}
+        const rows = extras.map((x) => `<button class="dl as-btn" type="button" data-act="open-part" data-id="${esc(x.key)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(x.name)}</div><div class="dl-s">${esc(`senast ${(WORK_ACTIONS[x.lastAction] || "Bytt").toLowerCase()} ${fmtDateShort(x.entries[0].date)}${x.entries.length > 1 ? ` · ${x.entries.length} gånger` : ""}`)}</div></div><span></span></button>`).join("");
+        return `${S.partsAll ? `<p class="label" style="margin:14px 0 2px">Annat som har gjorts</p><div class="rows">${rows}</div>` : ""}
           <button class="link" type="button" data-act="toggle-parts" style="margin-top:10px">${S.partsAll ? "Visa färre" : `Visa ${extras.length} till`}</button>`;
       })()}
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
@@ -1797,16 +1836,9 @@ function entryForm(type, e = {}, opts = {}) {
   const amount = (label = "Kostnad (kr)") => field(label, `<input name="amount" id="ef-amount" inputmode="decimal" value="${e.amount ?? ""}">`);
   const note = field("Anteckning", `<textarea name="note" id="ef-note" rows="2">${v("note")}</textarea>`);
   const photo = `<label class="photo-in">${icon("image", 22)}<span id="photo-label">${e.photoId ? "Bild bifogad. Välj en ny för att byta." : "Lägg till kvitto eller bild"}</span><input type="file" name="photo" id="ef-photo" accept="image/*"></label>`;
-  const items = (c.items || []).length ? `<fieldset><legend>Det här gjordes</legend><div class="checks">
-    ${c.items.map((i) => `<label class="check"><input type="checkbox" name="items" value="${esc(i.id)}"${(e.items || []).includes(i.id) ? " checked" : ""}> ${esc(i.name)}</label>`).join("")}
-  </div></fieldset>` : "";
-  // Delar som skrivits in tidigare finns som kryssrutor under "Fler delar", så att man slipper skriva dem igen.
-  const extras = ["service", "eget"].includes(type) ? extraParts(c) : [];
-  const extraKeys = new Set(extras.map((x) => x.key));
-  const typedParts = (e.parts || []).filter((p) => !extraKeys.has(normWord(p)));
-  const extraChecks = extras.length ? `<details class="more"${extras.some((x) => hasPart(e, x.key)) ? " open" : ""}><summary>Fler delar (${extras.length})</summary>
-    <div class="checks" style="margin-top:8px">${extras.map((x) => `<label class="check"><input type="checkbox" name="extraParts" value="${esc(x.name)}"${hasPart(e, x.key) ? " checked" : ""}> ${esc(x.name)}</label>`).join("")}</div></details>` : "";
-  const parts = extraChecks + field("Annat som byttes", `<input name="parts" id="ef-parts" value="${esc(typedParts.join(", "))}" placeholder="Till exempel bromsklossar fram, glödlampa">`, "Skilj med kommatecken. Står till exempel luftfilter eller bromsvätska här räknas underhållet om för den punkten, precis som om den var ikryssad.");
+  // "Det här gjordes": underhållspunkterna (som förut) och egna delar. Ikryssad rad visar åtgärd och, där det passar, position.
+  const workSection = ["service", "eget"].includes(type) ? workFormHtml(c, workOf(e, c)) : "";
+  const items = workSection, parts = "";
   let body = "";
   switch (type) {
     case "tank": {
@@ -2006,6 +2038,53 @@ function currentPosition() {
   });
 }
 
+function workRowHtml(r, w, n) {
+  const showPos = !(r.itemId && NO_POSITION.includes(r.itemId));
+  const action = w?.action || "bytt";
+  return `<div class="work-row" data-key="${esc(r.key)}" data-item="${esc(r.itemId || "")}" data-name="${esc(r.name)}">
+    <label class="check"><input type="checkbox" class="w-on"${w ? " checked" : ""}> ${esc(r.name)}</label>
+    <div class="w-opts">
+      <div class="w-act" role="radiogroup" aria-label="Vad gjordes med ${esc(r.name.toLowerCase())}">${Object.entries(WORK_ACTIONS).map(([k, l]) => `<label><input type="radio" name="wa${n}" value="${k}"${action === k ? " checked" : ""}><span>${l}</span></label>`).join("")}</div>
+      ${showPos ? `<select class="w-side" aria-label="Var på bilen"><option value="">Hela / ingen sida</option>${POSITIONS.map((pos) => `<option${w?.side === pos ? " selected" : ""}>${pos}</option>`).join("")}</select>` : ""}
+    </div>
+  </div>`;
+}
+
+let workRowSeq = 0;
+function workFormHtml(c, work) {
+  const byKey = new Map(work.map((w) => [w.itemId ? `item:${w.itemId}` : normWord(w.name), w]));
+  const rows = (c.items || []).map((i) => ({ key: `item:${i.id}`, itemId: i.id, name: i.name }));
+  // Egna delar som redan finns i posten (till exempel när man ändrar en service).
+  for (const w of work) if (!w.itemId) rows.push({ key: normWord(w.name), itemId: null, name: w.name });
+  return `<fieldset><legend>Det här gjordes</legend>
+    <div class="checks" id="work-rows">${rows.map((r) => workRowHtml(r, byKey.get(r.key), ++workRowSeq)).join("")}</div>
+    <div class="w-add">
+      <input id="w-search" placeholder="Sök eller lägg till en del, till exempel bromsskivor" autocomplete="off" aria-label="Sök eller lägg till en del">
+      <span class="suggest" id="w-suggest" role="listbox" hidden></span>
+    </div>
+    <p class="hint" style="margin-top:6px">Kryssa i det som gjordes. Bara <b>Bytt</b> räknas som nytt byte för underhållet. Fyllt på, rengjort och kontrollerat syns i historiken.</p>
+  </fieldset>`;
+}
+
+// Förslag i sökrutan: egna delar som använts förut och inte redan finns i listan, plus "Lägg till …".
+function workSuggest(q) {
+  const box = $("#w-suggest");
+  if (!box) return;
+  const t = normWord(q);
+  if (!t) { box.hidden = true; return; }
+  const present = new Set([...document.querySelectorAll("#work-rows .work-row")].map((r) => r.dataset.key));
+  const c = car();
+  const itemHit = (c.items || []).find((i) => normWord(i.name) === t || nameMatchesItem(q, i));
+  const known = extraParts(c).filter((x) => !present.has(x.key) && x.key.includes(t)).slice(0, 5);
+  const exact = known.some((x) => x.key === t) || itemHit;
+  box.innerHTML = [
+    ...known.map((x) => `<button type="button" data-act="w-add" data-name="${esc(x.name)}"><b>${esc(x.name)}</b><span>Använd förut</span></button>`),
+    itemHit ? `<button type="button" data-act="w-add" data-item="${esc(itemHit.id)}" data-name="${esc(itemHit.name)}"><b>${esc(itemHit.name)}</b><span>Finns i listan ovan, kryssa i den</span></button>` : "",
+    !exact ? `<button type="button" data-act="w-add" data-name="${esc(q.trim().replace(/^./, (x) => x.toUpperCase()))}"><b>Lägg till ”${esc(q.trim())}”</b><span>Ny del</span></button>` : "",
+  ].join("");
+  box.hidden = !box.innerHTML;
+}
+
 function formError(msg) {
   const el = $("#form-err");
   if (el) { el.textContent = msg; el.hidden = false; }
@@ -2077,11 +2156,18 @@ async function saveEntry(form) {
       break;
     case "service":
     case "eget":
-      data.items = fd.getAll("items").map(String);
       {
-        // Skrivna delar och ikryssade "Fler delar", utan dubbletter.
+        // Läs raderna i "Det här gjordes". items och parts sparas också (bara byten), så att äldre funktioner fungerar som förut.
         const seen = new Set();
-        data.parts = [...str("parts").split(","), ...fd.getAll("extraParts").map(String)].map((x) => x.trim()).filter((x) => x && !seen.has(normWord(x)) && seen.add(normWord(x)));
+        data.work = [...form.querySelectorAll(".work-row")].filter((row) => row.querySelector(".w-on")?.checked).map((row) => ({
+          key: row.dataset.key,
+          itemId: row.dataset.item || null,
+          name: row.dataset.name,
+          action: row.querySelector(".w-act input:checked")?.value || "bytt",
+          side: row.querySelector(".w-side")?.value || null,
+        })).filter((w) => !seen.has(w.key) && seen.add(w.key));
+        data.items = data.work.filter((w) => w.action === "bytt" && w.itemId).map((w) => w.itemId);
+        data.parts = data.work.filter((w) => w.action === "bytt" && !w.itemId).map((w) => w.name);
       }
       data.workshop = type === "service" ? str("workshop") || null : null;
       data.title = type === "eget" ? str("title") : null;
@@ -2184,8 +2270,7 @@ function openEntry(id, { fromCat = null } = {}) {
     e.workshop ? ["Verkstad", e.workshop] : null,
     e.category && e.type === "kostnad" ? ["Typ", e.category] : null,
     e.depth != null ? ["Mönsterdjup", `${fmt(e.depth, 1)} mm`] : null,
-    itemNames(e, c).length ? ["Gjordes", itemNames(e, c).join(", ")] : null,
-    e.parts?.length ? ["Annat", e.parts.join(", ")] : null,
+    ["service", "eget"].includes(e.type) && workOf(e, c).length ? ["Gjordes", workOf(e, c).map(workText).join(", ")] : null,
     e.note ? ["Anteckning", e.note] : null,
   ].filter(Boolean);
   openSheet(entryTitle(e), `
@@ -2210,7 +2295,7 @@ function itemSheet(id) {
   const item = (c.items || []).find((i) => i.id === id);
   if (!item) return;
   const st = itemStatus(item, c, carEntries());
-  const history = carEntries().filter((e) => entryCovers(e, item)).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const history = carEntries().filter((e) => entryTouches(e, item)).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const interval = [item.mil ? `var ${fmt(item.mil)} mil` : "", item.months ? (item.months >= 24 && item.months % 12 === 0 ? `${item.months / 12} år` : `${item.months} mån`) : ""].filter(Boolean).join(" eller ");
   const manual = item.baseDate && !history.some((e) => e.date >= item.baseDate);
   openSheet(item.name, `
@@ -2220,7 +2305,7 @@ function itemSheet(id) {
       ${!st.unknown ? `<div><dt>Nästa</dt><dd>${esc(dueText(st) || "–")}</dd></div><div><dt>Kvar</dt><dd>${esc(st.label)}</dd></div>` : ""}
     </dl>
     ${wearBar(st) ? `<div style="margin-top:12px">${wearBar(st)}</div>` : ""}
-    <h3 class="section-t" style="margin-top:20px">Byten i loggen</h3>
+    <h3 class="section-t" style="margin-top:20px">I loggen</h3>
     ${history.length
       ? `<div class="rows" style="margin-top:6px">${history.map((e) => entryRow(e, `item:${id}`)).join("")}</div>`
       : `<p class="muted" style="margin-top:6px">Inga loggade byten än. Kryssa i ${esc(item.name.toLowerCase())} när du loggar en service eller ett eget jobb, så hamnar det här.</p>`}
@@ -2237,10 +2322,10 @@ function partSheet(key) {
   if (!x) return;
   openSheet(x.name, `
     <dl class="detail-list">
-      <div><dt>Senast bytt</dt><dd>${esc(fmtDate(x.entries[0].date))}</dd></div>
-      <div><dt>Antal byten</dt><dd>${x.entries.length}</dd></div>
+      <div><dt>Senast</dt><dd>${esc(`${WORK_ACTIONS[x.lastAction] || "Bytt"} ${fmtDate(x.entries[0].date)}`)}</dd></div>
+      <div><dt>Antal gånger</dt><dd>${x.entries.length}</dd></div>
     </dl>
-    <h3 class="section-t" style="margin-top:20px">Byten i loggen</h3>
+    <h3 class="section-t" style="margin-top:20px">I loggen</h3>
     <div class="rows" style="margin-top:6px">${x.entries.map((e) => entryRow(e, `part:${key}`)).join("")}</div>
     <div class="form" style="margin-top:18px">
       <button class="btn primary block" type="button" data-act="log-part" data-id="${esc(x.name)}">Logga byte</button>
@@ -2631,6 +2716,21 @@ const ACTIONS = {
   "edit-item"(el) { itemSheet(el.dataset.id); },
   "edit-item-form"(el) { itemsSheet(el.dataset.id); },
   "log-item"(el) { entryForm("service", { items: [el.dataset.id] }); },
+  "w-add"(el) {
+    const list = $("#work-rows");
+    if (!list) return;
+    const itemId = el.dataset.item || null;
+    const key = itemId ? `item:${itemId}` : normWord(el.dataset.name);
+    let row = list.querySelector(`.work-row[data-key="${CSS.escape(key)}"]`);
+    if (!row) {
+      list.insertAdjacentHTML("beforeend", workRowHtml({ key, itemId, name: el.dataset.name }, { action: "bytt" }, ++workRowSeq));
+      row = list.lastElementChild;
+    }
+    row.querySelector(".w-on").checked = true;
+    row.scrollIntoView({ block: "nearest" });
+    const s = $("#w-search"); if (s) s.value = "";
+    const box = $("#w-suggest"); if (box) box.hidden = true;
+  },
   "toggle-parts"() { S.partsAll = !S.partsAll; render(); },
   "open-part"(el) { partSheet(el.dataset.id); },
   "log-part"(el) { entryForm("service", { parts: [el.dataset.id] }); },
@@ -2971,6 +3071,7 @@ function saveItems(form) {
 /* ---------------------------------------------------------- input helpers */
 
 function onInput(ev) {
+  if (ev.target.id === "w-search") workSuggest(ev.target.value);
   if (ev.target.id === "bk-place") placeSearchSoon("poi");
   if (ev.target.id === "bk-addr") {
     // Egen adress: positionen från ett tidigare förslag gäller inte längre.
@@ -3188,6 +3289,7 @@ document.addEventListener("click", (ev) => {
   const inSuggest = ev.target.closest(".suggest");
   const field = Object.values(PLACE_FIELDS).find((x) => ev.target.id === x.input);
   if (!inSuggest) hideSuggestions(field ? document.getElementById(field.box) : null);
+  if (!inSuggest && ev.target.id !== "w-search") { const wb = $("#w-suggest"); if (wb) wb.hidden = true; }
   const go = ev.target.closest("[data-go]");
   if (go) { ev.preventDefault(); closeSheet(); setView(go.dataset.go); return; }
   const a = ev.target.closest("[data-act]");
@@ -3201,6 +3303,12 @@ document.addEventListener("submit", onSubmit);
 document.addEventListener("input", onInput);
 document.addEventListener("change", onChange);
 document.addEventListener("keydown", (ev) => {
+  // Enter i sökrutan för delar lägger till första förslaget i stället för att spara formuläret.
+  if (ev.key === "Enter" && ev.target.id === "w-search") {
+    ev.preventDefault();
+    $("#w-suggest button")?.click();
+    return;
+  }
   // Piltangenter, Enter och Escape i förslagslistorna för Var och Adress.
   const field = Object.values(PLACE_FIELDS).find((x) => ev.target.id === x.input || ev.target.closest?.(`#${x.box}`));
   const box = field && document.getElementById(field.box);
