@@ -952,6 +952,8 @@ function viewOverview() {
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
   </article>`);
 
+  parts.push(recentCard(c));
+
   // Underhåll: de punkter som är närmast att bytas, med samma staplar som under Bilen.
   const st = allItemStatus(c);
   const known = st.filter((x) => !x.unknown).sort((a, b) => daysToDue(a, c) - daysToDue(b, c));
@@ -980,7 +982,6 @@ function viewOverview() {
   }
 
 
-  parts.push(recentCard(c));
 
   const eco = economy(carEntries());
   const maxBar = Math.max(1, ...eco.bars.map((b) => b.sum));
