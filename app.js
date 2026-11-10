@@ -387,23 +387,10 @@ function taxMonth(c) {
   return Number(c?.skattManad) || plateTaxMonth(c?.plate) || null;
 }
 
-// "Senast tvättad" på översikten. Påminner efter en månad, och efter tre veckor på vintern (vägsalt).
-function washRow(c) {
-  const last = S.entries.filter((e) => e.carId === c.id && (e.type === "tvatt" || (e.type === "kostnad" && e.category === "Tvätt")))
-    .sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
-  if (!last) return null;
-  const ago = Math.max(0, -daysUntil(parseDate(last.date)));
-  const winter = [10, 11, 0, 1, 2].includes(new Date().getMonth());
-  const due = ago >= (winter ? 21 : 30);
-  return {
-    icon: "wash",
-    title: due ? "Dags att tvätta?" : "Senast tvättad",
-    sub: [fmtDate(last.date), last.place, due && winter ? "vägsaltet sliter på lacken" : null].filter(Boolean).join(" · "),
-    level: due ? "soon" : "ok",
-    label: ago === 0 ? "I dag" : ago === 1 ? "I går" : `${daysText(ago)} sedan`,
-    act: "wash-new",
-    id: "",
-  };
+// Senaste tvätten, för raden "Senast tvättad" under Bilen → Uppgifter. Ingen påminnelse.
+function lastWash(c) {
+  return S.entries.filter((e) => e.carId === c.id && (e.type === "tvatt" || (e.type === "kostnad" && e.category === "Tvätt")))
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0] || null;
 }
 
 function levelFromDays(d) {
@@ -958,10 +945,9 @@ function viewOverview() {
   parts.push(fuelCard(c));
 
   const dls = deadlines(c);
-  const wash = washRow(c);
   parts.push(`<article class="card">
     <h2>Att hålla koll på <button class="link" type="button" data-act="edit-car" data-section="dates">Ändra datum</button></h2>
-    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...(wash ? [{ ...wash, always: true }] : []), ...dls])}
+    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...dls])}
     ${!c.besiktning && !c.forsakringDatum && !taxMonth(c) ? `<p class="hint" style="margin-top:10px">Lägg till besiktning, försäkring och skatt under Ändra datum.</p>` : ""}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
   </article>`);
@@ -1196,7 +1182,7 @@ function viewCar() {
     <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
     <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
-        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Besiktning senast", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
+        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Besiktning senast", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")], ["Senast tvättad", lastWash(c) ? [fmtDate(lastWash(c).date), lastWash(c).place].filter(Boolean).join(", ") : ""]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>`;
@@ -2087,7 +2073,6 @@ const ACTIONS = {
     const picks = document.getElementById(el.dataset.target + "-picks");
     if (picks) picks.hidden = true;
   },
-  "wash-new"() { entryForm("tvatt"); },
   "toggle-koll"() { S.kollAll = !S.kollAll; render(); },
   "hide-maint-hint"(el) { pref.set("maintHintHidden." + S.carId, el.dataset.n); render(); },
   "book-inspection"() { bookingForm({ kind: "besiktning" }); },
