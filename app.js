@@ -1416,8 +1416,7 @@ function entryForm(type, e = {}, opts = {}) {
   switch (type) {
     case "tank": {
       const fuels = fuelOptions(c);
-      const unit = /kWh/.test(e.fuel || fuels[0]) ? "kWh" : "liter";
-      const hasDetails = e.liters != null || e.pricePerL != null || e.station || e.photoId;
+      const hasDetails = e.station || e.photoId;
       body = `${field("Totalt (kr)", `<input name="amount" id="ef-amount" inputmode="decimal" required value="${e.amount ?? ""}" placeholder="Till exempel 579" class="big-input">`,
           "Läs av pumpen med kameran: tryck i fältet, välj <b>Skanna text</b> och peka på totalsumman.")}
         <label class="check"><input type="checkbox" name="full" id="ef-full"${e.full === false ? "" : " checked"}> Tankade fullt</label>
@@ -1427,11 +1426,7 @@ function entryForm(type, e = {}, opts = {}) {
           <summary>Fler detaljer (valfritt)</summary>
           <div class="form">
             <div class="row2">
-              ${field(`Mängd (${unit})`, `<input name="liters" id="ef-liters" inputmode="decimal" value="${e.liters ?? ""}">`)}
               ${field("Drivmedel", `<select name="fuel" id="ef-fuel">${fuels.map((f) => `<option${(e.fuel || pref.get("fuel." + c.id) || fuels[0]) === f ? " selected" : ""}>${esc(f)}</option>`).join("")}</select>`)}
-            </div>
-            <div class="row2">
-              ${field("Pris per enhet (kr)", `<input name="pricePerL" id="ef-price" inputmode="decimal" value="${e.pricePerL ?? ""}">`)}
               ${field("Station", `<input name="station" id="ef-station" value="${v("station")}">`)}
             </div>
             ${photo}
@@ -1524,7 +1519,8 @@ async function saveEntry(form) {
   // Varnar också om en äldre post får högre mätarställning än en senare.
   if (data.odometer != null && form.dataset.odoOk !== "1") {
     const odoEnts = S.entries.filter((e) => e.carId === data.carId && e.odometer != null && e.id !== id);
-    const before = odoEnts.filter((e) => (e.date || "") <= data.date && e.odometer > data.odometer).sort((a, b) => b.odometer - a.odometer)[0];
+    // Samma dag jämförs bara för nya poster, så att man kan ändra en äldre post från samma dag utan varning.
+    const before = odoEnts.filter((e) => ((e.date || "") < data.date || ((e.date || "") === data.date && !id)) && e.odometer > data.odometer).sort((a, b) => b.odometer - a.odometer)[0];
     const after = odoEnts.filter((e) => (e.date || "") > data.date && e.odometer < data.odometer).sort((a, b) => a.odometer - b.odometer)[0];
     if (before) {
       form.dataset.odoOk = "1";
@@ -1538,16 +1534,12 @@ async function saveEntry(form) {
 
   switch (type) {
     case "tank": {
-      data.liters = num(fd.get("liters"));
+      // Liter fylls inte i längre. Äldre tankningar som har liter behåller dem, och literpriset följer beloppet.
       data.fuel = str("fuel");
-      data.pricePerL = num(fd.get("pricePerL"));
       data.station = str("station") || null;
       data.full = fd.get("full") === "on";
-      if (data.liters != null && data.liters <= 0) data.liters = null;
-      if (data.amount == null && data.liters != null && data.pricePerL != null) data.amount = Math.round(data.liters * data.pricePerL * 100) / 100;
       if (data.amount == null || data.amount <= 0) return formError("Fyll i vad tankningen kostade.");
-      // Priset per liter följer alltid belopp och mängd, så att det stämmer även när man ändrar en tankning.
-      if (data.liters != null) data.pricePerL = Math.round((data.amount / data.liters) * 100) / 100;
+      if (existing?.liters > 0) data.pricePerL = Math.round((data.amount / existing.liters) * 100) / 100;
       pref.set("fuel." + c.id, data.fuel);
       break;
     }
@@ -1903,8 +1895,6 @@ const ACTIONS = {
   },
   "edit-entry"(el) {
     const e = S.entries.find((x) => x.id === el.dataset.id);
-    // Ett belopp som redan finns ska inte skrivas över när man ändrar mängden.
-    manualTotal = e?.amount != null;
     if (e) entryForm(e.type, e);
   },
   async "delete-entry"(el) {
@@ -2232,7 +2222,6 @@ function saveItems(form) {
 
 /* ---------------------------------------------------------- input helpers */
 
-let manualTotal = false;
 function onInput(ev) {
   if (ev.target.id === "ef-category") {
     const box = $("#ef-next-besikt");
@@ -2272,14 +2261,6 @@ function onInput(ev) {
   if (ev.target.name === "odometer" || ev.target.name === "date") {
     const f = ev.target.closest("form");
     if (f) delete f.dataset.odoOk;
-  }
-  const form = ev.target.closest('form[data-type="tank"]');
-  if (!form) return;
-  const name = ev.target.name;
-  if (name === "amount") { manualTotal = ev.target.value.trim() !== ""; return; }
-  if (name === "liters" || name === "pricePerL") {
-    const l = num(form.liters.value), p = num(form.pricePerL.value);
-    if (!manualTotal && l != null && p != null) form.amount.value = String(Math.round(l * p * 100) / 100).replace(".", ",");
   }
 }
 
@@ -2428,7 +2409,6 @@ document.addEventListener("click", (ev) => {
   const fn = ACTIONS[a.dataset.act];
   if (!fn) return;
   if (a.tagName !== "A") ev.preventDefault();
-  if (a.closest("#nav") || a.dataset.act === "new-entry") manualTotal = false;
   fn(a, ev);
 });
 document.addEventListener("submit", onSubmit);
