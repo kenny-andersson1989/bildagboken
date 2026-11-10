@@ -44,6 +44,8 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const nf = [0, 1, 2].map((d) => new Intl.NumberFormat("sv-SE", { minimumFractionDigits: d, maximumFractionDigits: d }));
 const fmt = (n, d = 0) => (n == null || Number.isNaN(n) ? "–" : nf[d].format(n));
+// Belopp i kronor: med ören bara när beloppet har ören (612,50 kr men 600 kr).
+const fmtKr = (n) => fmt(n, n != null && Math.round(n * 100) % 100 !== 0 ? 2 : 0);
 const num = (v) => {
   if (v == null) return null;
   const s = String(v).replace(/\s/g, "").replace(",", ".");
@@ -138,6 +140,15 @@ const TIRE_ACTIONS = {
   nya: "Köpte nya däck",
   forvaring: "Däckförvaring",
   ovrigt: "Övrigt",
+};
+// Hur däckposter beskrivs i Senaste och Aviseringar ("Du bytte till vinterdäck").
+const TIRE_ACTIVITY = {
+  till_vinter: "bytte till vinterdäck",
+  till_sommar: "bytte till sommardäck",
+  monster: "mätte mönsterdjupet",
+  nya: "köpte nya däck",
+  forvaring: "betalade för däckförvaring",
+  ovrigt: "loggade något om däcken",
 };
 const BOOK_KINDS = { service: "Service", reparation: "Reparation", besiktning: "Besiktning", dack: "Däckbyte", annat: "Annat" };
 const WEEKDAYS = ["söndag", "måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag"];
@@ -272,15 +283,16 @@ function entryDetail(e, c = car()) {
 }
 
 function activityText(e) {
+  if (e._booking) return bookingActivity(e._booking);
   const n = whoName(e.createdBy);
   const unit = /kWh/.test(e.fuel || "") ? "kWh" : "l";
-  const kr = e.amount != null ? ` för ${fmt(e.amount)} kr` : "";
+  const kr = e.amount != null ? ` för ${fmtKr(e.amount)} kr` : "";
   switch (e.type) {
     case "tank": return `${n} tankade${e.liters != null ? ` ${fmt(e.liters, 1)} ${unit} ${e.fuel || ""}`.trimEnd() : e.fuel ? ` ${e.fuel}` : ""}${kr}`;
     case "matare": return `${n} uppdaterade mätarställningen till ${fmt(e.odometer)} mil`;
     case "service": return `${n} loggade service${e.workshop ? ` hos ${e.workshop}` : ""}${kr}`;
-    case "eget": return `${n}: ${e.title || "eget jobb"}${kr}`;
-    case "dack": return `${n}: ${(TIRE_ACTIONS[e.tireAction] || "däck").toLowerCase()}`;
+    case "eget": return e.title ? `${n} ${e.title.replace(/^./, (x) => x.toLowerCase())}${kr}` : `${n} loggade ett eget jobb${kr}`;
+    case "dack": return `${n} ${TIRE_ACTIVITY[e.tireAction] || "loggade något om däcken"}${kr}`;
     case "tvatt": return `${n} tvättade bilen${e.place ? ` hos ${e.place}` : ""}${kr}`;
     case "parkering": return e.fine ? `${n} fick en p-bot${e.place ? ` vid ${e.place}` : ""}${kr}` : `${n} parkerade${e.place ? ` vid ${e.place}` : ""}${kr}`;
     case "kostnad": return `${n} lade till ${(e.title || e.category || "en kostnad").toLowerCase()}${kr}`;
@@ -296,6 +308,13 @@ function itemStatus(item, c, ents) {
   }
   let lastDate = last?.date ?? null;
   let lastMil = last?.odometer ?? null;
+  // Saknar posten mätarställning används den som var loggad närmast före (eller samma dag), annars närmast efter.
+  if (last && lastMil == null) {
+    const odos = ents.filter((e) => e.odometer != null && e.date);
+    const before = odos.filter((e) => e.date <= last.date).sort((a, b) => b.date.localeCompare(a.date) || b.odometer - a.odometer)[0];
+    const after = odos.filter((e) => e.date > last.date).sort((a, b) => a.date.localeCompare(b.date) || a.odometer - b.odometer)[0];
+    lastMil = (before || after)?.odometer ?? null;
+  }
   if (item.baseDate && (!lastDate || item.baseDate > lastDate)) { lastDate = item.baseDate; lastMil = item.baseMil ?? null; }
   if (!last && item.baseMil != null) lastMil = item.baseMil;
   if (!last && !item.baseDate && item.baseMil == null) return { item, unknown: true, level: "none" };
@@ -851,9 +870,14 @@ function fuelCard(c) {
   </article>`;
 }
 
+// Bokningar visas i flödet som poster av typen "bokning", så att de kan sorteras ihop med loggarna.
+function bookingFeed() {
+  return S.cars.flatMap((c) => (c.bookings || []).filter((b) => b.createdAt).map((b) => ({ id: b.id, carId: c.id, createdBy: b.createdBy, createdAt: b.createdAt, date: b.date, _booking: b })));
+}
+
 function unseenFromOthers() {
   const seen = lastSeenMs();
-  return S.entries.filter((e) => e.createdBy !== uid() && tsMs(e.createdAt) > seen);
+  return [...S.entries, ...bookingFeed()].filter((e) => e.createdBy !== uid() && tsMs(e.createdAt) > seen);
 }
 
 function headerMain() {
@@ -952,6 +976,8 @@ function viewOverview() {
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
   </article>`);
 
+  parts.push(recentCard(c));
+
   // Underhåll: de punkter som är närmast att bytas, med samma staplar som under Bilen.
   const st = allItemStatus(c);
   const known = st.filter((x) => !x.unknown).sort((a, b) => daysToDue(a, c) - daysToDue(b, c));
@@ -980,7 +1006,6 @@ function viewOverview() {
   }
 
 
-  parts.push(recentCard(c));
 
   const eco = economy(carEntries());
   const maxBar = Math.max(1, ...eco.bars.map((b) => b.sum));
@@ -1087,7 +1112,7 @@ function entryRow(e, fromCat = null) {
     <span class="dl-ic">${icon(TYPE[e.type]?.icon || "list", 20)}</span>
     <span><span class="t">${esc(entryTitle(e))}</span>${d ? `<span class="d">${esc(d)}</span>` : ""}
       <span class="m"><span class="who${mine ? " me" : ""}">${esc(whoName(e.createdBy))}</span>${esc(fmtDateShort(e.date))}${e.odometer != null && e.type !== "matare" ? ` · ${fmt(e.odometer)} mil` : ""}${e.photoId ? " · bild" : ""}</span></span>
-    <span class="amt">${e.amount != null ? `${fmt(e.amount)} kr` : ""}</span>
+    <span class="amt">${e.amount != null ? `${fmtKr(e.amount)} kr` : ""}</span>
   </button>`;
 }
 
@@ -1234,7 +1259,7 @@ function viewNotifications() {
     ...deadlines(c).filter((d) => d.level === "urgent"),
     ...allItemStatus(c).filter((s) => !s.unknown && s.level === "urgent").map((s) => ({ title: `Dags för ${s.item.name.toLowerCase()}`, sub: s.label })),
   ];
-  const feed = [...S.entries].sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt)).slice(0, 40);
+  const feed = [...S.entries, ...bookingFeed()].sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt)).slice(0, 40);
   const perm = "Notification" in window ? Notification.permission : "unsupported";
   return `${subHeader("Det ni gjort med bilen", "Aviseringar", true)}
     ${perm === "default" ? `<div class="card"><h2>Få notiser i telefonen</h2><p class="muted">Då ser du när din sambo loggar något. Notiserna kommer när appen är öppen eller nyss har använts.</p><div class="ask"><button class="btn-soft" type="button" data-act="enable-notif">Slå på notiser</button></div></div>` : ""}
@@ -1244,7 +1269,7 @@ function viewNotifications() {
         const mine = e.createdBy === uid();
         const isNew = !mine && tsMs(e.createdAt) > seen;
         const otherCar = S.cars.length > 1 ? carName(S.cars.find((x) => x.id === e.carId)) : "";
-        return `<button class="entry" type="button" data-act="open-entry" data-id="${esc(e.id)}">
+        return `<button class="entry" type="button" data-act="${e._booking ? "open-booking" : "open-entry"}" data-id="${esc(e.id)}" data-car="${esc(e.carId)}">
           <span class="avatar${mine ? " me" : ""}">${esc((mine ? myName() : memberName(e.createdBy)).slice(0, 1).toUpperCase())}</span>
           <span><span class="t">${esc(activityText(e))}</span><span class="m">${esc(timeAgo(tsMs(e.createdAt)))}${otherCar ? ` · ${esc(otherCar)}` : ""}</span></span>
           <span>${isNew ? `<span class="new-pill">Ny</span>` : ""}</span>
@@ -1301,8 +1326,9 @@ function viewSettings() {
     </div>
     <div class="card">
       <h2>Säkerhetskopia</h2>
-      <p class="muted">Ladda ner hela loggen för alla bilar som ett kalkylark. Bra att spara, eller att ha med vid försäljning av bilen.</p>
-      <div class="ask"><button class="btn-soft" type="button" data-act="export-log">Ladda ner loggen</button></div>
+      <p class="muted"><b>Loggen</b> som kalkylark, med bokade tider, för Excel eller Numbers. Bra att ha med vid försäljning av bilen.</p>
+      <p class="muted"><b>Allt</b> i en fil: uppgifter, datum, däck, underhåll, Bra att ha, bokningar och hela loggen. Bilder kommer inte med.</p>
+      <div class="ask"><button class="btn-soft" type="button" data-act="export-log">Ladda ner loggen</button><button class="btn-soft" type="button" data-act="export-all">Ladda ner allt</button></div>
     </div>
     <div class="card">
       <h2>Konto</h2>
@@ -1450,8 +1476,21 @@ function saveBooking(form, wantCalendar = false) {
 /* ---------------------------------------------------------- säkerhetskopia */
 
 // Hela loggen som en CSV-fil som Excel, Numbers och Google Kalkylark öppnar direkt (semikolon och decimalkomma).
+function downloadFile(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// Loggen och de bokade tiderna som kalkylark (semikolon och decimalkomma, som Excel och Numbers öppnar direkt).
 function exportLog() {
-  if (!S.entries.length) return showToast("Det finns inget loggat att ladda ner än.");
+  const bookings = S.cars.flatMap((c) => (c.bookings || []).map((b) => ({ c, b })));
+  if (!S.entries.length && !bookings.length) return showToast("Det finns inget loggat att ladda ner än.");
   const cell = (v) => {
     if (v == null || v === "") return "";
     const t = typeof v === "number" ? String(v).replace(".", ",") : String(v);
@@ -1465,16 +1504,32 @@ function exportLog() {
       e.amount, e.odometer, e.liters, e.fuel, e.workshop, e.station || e.place, e.note, memberName(e.createdBy),
     ].map(cell).join(";");
   });
-  const csv = "\ufeff" + [head.join(";"), ...rows].join("\r\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `Bildagboken ${todayStr()}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-  showToast(`Loggen är nedladdad (${S.entries.length} poster).`);
+  const bookRows = bookings.sort((x, y) => (x.b.date || "").localeCompare(y.b.date || "")).map(({ c, b }) => [
+    carName(c), c.plate, b.date, "Bokad tid", BOOK_KINDS[b.kind] || "Bokning", [b.time ? `kl ${b.time}` : "", b.addr].filter(Boolean).join(" · "),
+    "", "", "", "", "", b.place, b.note, memberName(b.createdBy),
+  ].map(cell).join(";"));
+  downloadFile(`Bildagboken ${todayStr()}.csv`, "﻿" + [head.join(";"), ...rows, ...bookRows].join("\r\n"), "text/csv;charset=utf-8");
+  showToast(`Loggen är nedladdad (${S.entries.length} poster${bookings.length ? ` och ${bookings.length} bokade tider` : ""}).`);
+}
+
+// Allt om bilarna i en fil: uppgifter, datum, däck, underhåll, Bra att ha, bokningar och hela loggen.
+// Bilder tas inte med, de skulle göra filen för stor.
+function exportAll() {
+  const plain = (v) => {
+    if (v && typeof v.toMillis === "function") return new Date(v.toMillis()).toISOString();
+    if (Array.isArray(v)) return v.map(plain);
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)]));
+    return v;
+  };
+  const data = {
+    app: "Bildagboken", version: VERSION, exported: new Date().toISOString(),
+    household: S.house?.name || null,
+    members: Object.fromEntries((S.house?.members || []).map((m) => [m, memberName(m)])),
+    cars: S.cars.map((c) => plain({ ...c, imageUrl: undefined, imageFallback: undefined, imageCredit: undefined, imageChecked: undefined })),
+    entries: S.entries.map((e) => plain(e)),
+  };
+  downloadFile(`Bildagboken säkerhetskopia ${todayStr()}.json`, JSON.stringify(data, null, 2), "application/json");
+  showToast(`Säkerhetskopian är nedladdad (${S.cars.length} ${S.cars.length === 1 ? "bil" : "bilar"}, ${S.entries.length} poster).`);
 }
 
 /* ------------------------------------------------------------- kalender */
@@ -2267,6 +2322,8 @@ const ACTIONS = {
     document.getElementById("underhall")?.scrollIntoView({ block: "start" });
   },
   "open-booking"(el) {
+    // Från aviseringarna kan bokningen gälla en annan bil än den som är vald.
+    if (el.dataset.car && el.dataset.car !== S.carId && S.cars.some((x) => x.id === el.dataset.car)) { S.carId = el.dataset.car; pref.set("car", S.carId); }
     const b = (car()?.bookings || []).find((x) => x.id === el.dataset.id);
     if (b) bookingForm(b);
   },
@@ -2313,7 +2370,7 @@ const ACTIONS = {
     const ok = await confirmDialog({
       title: `Ta bort ${TYPE_DEFINITE[e.type] || "posten"}?`,
       lines: [
-        [fmtDate(e.date), e.amount != null ? `${fmt(e.amount)} kr` : null, `loggad av ${whoName(e.createdBy).replace(/^Du$/, "dig")}`].filter(Boolean).join(" · "),
+        [fmtDate(e.date), e.amount != null ? `${fmtKr(e.amount)} kr` : null, `loggad av ${whoName(e.createdBy).replace(/^Du$/, "dig")}`].filter(Boolean).join(" · "),
         e.type === "eget" || e.type === "kostnad" ? entryTitle(e) : detail,
       ],
     });
@@ -2428,6 +2485,7 @@ const ACTIONS = {
     } catch (e) { onWriteError(e); }
   },
   "export-log"() { exportLog(); },
+  "export-all"() { exportAll(); },
   "dismiss-install"() { pref.set("installDismissed", "1"); render(); },
 };
 
@@ -2746,6 +2804,20 @@ function checkFuelChanges(cars, first) {
   }
 }
 
+// När någon annan bokar en tid får de andra en avisering, precis som för nya loggar.
+const bookingsSeen = new Set();
+function checkNewBookings(cars, first) {
+  for (const c of cars) {
+    for (const b of c.bookings || []) {
+      const key = `${c.id}/${b.id}`;
+      if (bookingsSeen.has(key)) continue;
+      bookingsSeen.add(key);
+      if (first || b.createdBy === uid()) continue;
+      notify(`${bookingActivity(b)}${S.cars.length > 1 ? ` (${carName(c)})` : ""}`, `booking-${b.id}`);
+    }
+  }
+}
+
 /* ------------------------------------------------------------ data wiring */
 
 function cleanup() {
@@ -2787,6 +2859,7 @@ function subscribe(hid) {
       S.carId = S.cars.find((c) => c.id === saved)?.id || S.cars[0]?.id || null;
     }
     checkFuelChanges(S.cars, !S.loaded.cars);
+    checkNewBookings(S.cars, !S.loaded.cars);
     S.loaded.cars = true;
     render();
   }, onListenError));
@@ -2822,7 +2895,18 @@ ACTIONS.retry = loadHousehold;
 
 /* ------------------------------------------------------------------- boot */
 
+function hideSuggestions(except = null) {
+  Object.values(PLACE_FIELDS).forEach((x) => {
+    const b = document.getElementById(x.box);
+    if (b && b !== except) { b.hidden = true; document.getElementById(x.input)?.setAttribute("aria-expanded", "false"); }
+  });
+}
+
 document.addEventListener("click", (ev) => {
+  // Tryck utanför en förslagslista stänger den.
+  const inSuggest = ev.target.closest(".suggest");
+  const field = Object.values(PLACE_FIELDS).find((x) => ev.target.id === x.input);
+  if (!inSuggest) hideSuggestions(field ? document.getElementById(field.box) : null);
   const go = ev.target.closest("[data-go]");
   if (go) { ev.preventDefault(); closeSheet(); setView(go.dataset.go); return; }
   const a = ev.target.closest("[data-act]");
@@ -2836,6 +2920,17 @@ document.addEventListener("submit", onSubmit);
 document.addEventListener("input", onInput);
 document.addEventListener("change", onChange);
 document.addEventListener("keydown", (ev) => {
+  // Piltangenter, Enter och Escape i förslagslistorna för Var och Adress.
+  const field = Object.values(PLACE_FIELDS).find((x) => ev.target.id === x.input || ev.target.closest?.(`#${x.box}`));
+  const box = field && document.getElementById(field.box);
+  if (box && !box.hidden) {
+    const opts = [...box.querySelectorAll("button")];
+    const i = opts.indexOf(document.activeElement);
+    if (ev.key === "ArrowDown" && opts.length) { ev.preventDefault(); opts[Math.min(opts.length - 1, i + 1)].focus(); return; }
+    if (ev.key === "ArrowUp" && opts.length) { ev.preventDefault(); if (i <= 0) document.getElementById(field.input).focus(); else opts[i - 1].focus(); return; }
+    if (ev.key === "Enter" && ev.target.id === field.input && opts.length) { ev.preventDefault(); opts[0].click(); return; }
+    if (ev.key === "Escape") { ev.preventDefault(); hideSuggestions(); document.getElementById(field.input).focus(); return; }
+  }
   if (ev.key !== "Escape") return;
   if (!$("#confirm").hidden) return closeConfirm(false);
   if (!sheet.hidden) closeSheet();
