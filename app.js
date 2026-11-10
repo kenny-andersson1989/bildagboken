@@ -225,7 +225,34 @@ function odoOf(c) {
   const best = latestOdoEntry(c.id);
   return best ? best.odometer : c.odometer ?? null;
 }
-const carEntries = () => S.entries.filter((e) => e.carId === S.carId);
+const carEntries = () => {
+  const c = car();
+  const own = S.entries.filter((e) => e.carId === S.carId);
+  return c?.recurring?.length ? sortEntries([...own, ...recurringEntries(c)]) : own;
+};
+
+// Återkommande kostnader (till exempel en hyrd parkeringsplats) sparas som en regel på bilen.
+// Varje betalning fram till i dag (eller slutdatumet) räknas fram som en post, så att den syns i loggen och Ekonomi.
+const PERIODS = { 1: "Varje månad", 3: "Var tredje månad", 12: "Varje år" };
+function addMonthsKeepDay(d, m) {
+  const y = d.getFullYear(), mm = d.getMonth() + m;
+  const last = new Date(y, mm + 1, 0).getDate();
+  return new Date(y, mm, Math.min(d.getDate(), last));
+}
+function recurringEntries(c) {
+  const out = [];
+  const today = todayStr();
+  for (const r of c?.recurring || []) {
+    const start = parseDate(r.start);
+    if (!start || !r.period) continue;
+    for (let i = 0; i < 1200; i++) {
+      const ds = ymd(addMonthsKeepDay(start, i * r.period));
+      if (ds > today || (r.end && ds > r.end)) break;
+      out.push({ id: `rec:${r.id}:${ds}`, carId: c.id, type: r.type || "parkering", date: ds, amount: r.amount, place: r.place || null, note: r.note || null, createdBy: r.createdBy, createdAt: 0, recurringId: r.id });
+    }
+  }
+  return out;
+}
 const memberName = (u) => S.house?.memberInfo?.[u]?.name || "Någon";
 const whoName = (u) => (u === uid() ? "Du" : memberName(u));
 const myName = () => memberName(uid());
@@ -243,7 +270,7 @@ function entryTitle(e) {
     case "eget": return e.title || "Eget jobb";
     case "dack": return TIRE_ACTIONS[e.tireAction] || "Däck";
     case "tvatt": return "Tvätt";
-    case "parkering": return e.fine ? "P-bot" : "Parkering";
+    case "parkering": return e.fine ? "P-bot" : e.recurringId ? "Parkering, hyrd plats" : "Parkering";
     case "kostnad": return e.title || e.category || "Kostnad";
     default: return "Logg";
   }
@@ -378,8 +405,11 @@ function entryDetail(e, c = car()) {
       if (e.note) bits.push(e.note);
       return bits.join(" · ");
     }
-    case "tvatt":
-    case "parkering": return [e.place, e.note].filter(Boolean).join(" · ");
+    case "tvatt": return [e.place, e.note].filter(Boolean).join(" · ");
+    case "parkering": {
+      const rule = e.recurringId ? (c?.recurring || []).find((x) => x.id === e.recurringId) : null;
+      return [e.place, rule ? `återkommande, ${PERIODS[rule.period]?.toLowerCase()}` : "", e.note].filter(Boolean).join(" · ");
+    }
     case "kostnad": return e.title && e.category ? e.category : e.note || "";
     default: return "";
   }
@@ -1434,6 +1464,12 @@ function viewCar() {
       })()}
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
+    ${(c.recurring || []).length ? `<div class="card"><h2>Återkommande kostnader</h2><div class="rows">${c.recurring.map((r) => {
+      const ended = r.end && r.end <= todayStr();
+      return `<button class="dl as-btn" type="button" data-act="open-rec" data-id="${esc(r.id)}"><span class="dl-ic">${icon("parking", 20)}</span>
+        <span><span class="dl-t">${esc(r.place || "Parkering")}</span><span class="dl-s">${esc(`${fmtKr(r.amount)} kr ${PERIODS[r.period]?.toLowerCase()} · ${ended ? `slutade ${fmtDateShort(r.end)}` : `sedan ${fmtDateShort(r.start)}`}`)}</span></span>
+        <span class="pill ${ended ? "none" : "ok"}">${ended ? "Avslutad" : "Pågår"}</span></button>`;
+    }).join("")}</div></div>` : ""}
     <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
     <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
@@ -1698,7 +1734,7 @@ function exportLog() {
     return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
   };
   const head = ["Bil", "Reg.nr", "Datum", "Typ", "Vad", "Detaljer", "Belopp (kr)", "Mätarställning (mil)", "Mängd", "Drivmedel", "Verkstad", "Station eller plats", "Anteckning", "Loggad av"];
-  const rows = [...S.entries].sort((a, b) => (a.date || "").localeCompare(b.date || "")).map((e) => {
+  const rows = [...S.entries, ...S.cars.flatMap((x) => recurringEntries(x))].sort((a, b) => (a.date || "").localeCompare(b.date || "")).map((e) => {
     const c = S.cars.find((x) => x.id === e.carId);
     return [
       c ? carName(c) : "Borttagen bil", c?.plate, e.date, TYPE[e.type]?.label || e.type, entryTitle(e), entryDetail(e, c),
@@ -1916,6 +1952,14 @@ function entryForm(type, e = {}, opts = {}) {
       body = `${field("Var", geoInput("place", "ef-place", e.place, "parking", "Till exempel Kungsgatan, Göteborg"))}
         ${field("Kostnad (kr)", `<input name="amount" id="ef-amount" inputmode="decimal" value="${e.amount ?? ""}" placeholder="Till exempel 45">`)}
         <label class="check"><input type="checkbox" name="fine" id="ef-fine"${e.fine ? " checked" : ""}> P-bot eller felparkeringsavgift</label>
+        ${!e.id ? `<label class="check"><input type="checkbox" name="recurring" id="ef-recurring"${opts.recurringId ? " checked" : ""}> Återkommande (hyrd plats)</label>
+        <div id="ef-rec-box"${opts.recurringId ? "" : " hidden"}>
+          <div class="row2">
+            ${field("Hur ofta", `<select name="period" id="ef-period">${Object.entries(PERIODS).map(([k, l]) => `<option value="${k}"${String(e.period || 1) === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
+            ${field("Slutar", `<input type="date" name="endDate" id="ef-endDate" value="${esc(e.end || "")}">`, "Lämna tom om den fortsätter.")}
+          </div>
+          <p class="hint">Kostnaden ovan gäller per gång, och Datum är första betalningen. Den räknas in i Ekonomi och loggen varje gång, utan att du behöver logga den igen.</p>
+        </div>` : ""}
         ${date}${note}${photo}`;
       break;
     case "kostnad":
@@ -1929,12 +1973,13 @@ function entryForm(type, e = {}, opts = {}) {
   const isEdit = !!e.id;
   const formTitle = type === "kostnad" && e.category === "Besiktning" ? "Besiktning" : TYPE[type].label;
   openSheet(isEdit ? `Ändra ${formTitle.toLowerCase()}` : formTitle, `
-    <form class="form" data-form="entry" data-type="${type}"${isEdit ? ` data-id="${esc(e.id)}"` : ""}${opts.bookingId ? ` data-booking="${esc(opts.bookingId)}"` : ""} novalidate>
+    <form class="form" data-form="entry" data-type="${type}"${isEdit ? ` data-id="${esc(e.id)}"` : ""}${opts.recurringId ? ` data-rec="${esc(opts.recurringId)}"` : ""}${opts.bookingId ? ` data-booking="${esc(opts.bookingId)}"` : ""} novalidate>
       ${body}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
       ${type === "tank" && !isEdit ? `<p class="hint">Din sambo får en avisering när du sparar.</p>` : ""}
     </form>`, { back: isEdit || opts.bookingId ? null : "new-entry" });
+  if (opts.recurringId) { const lab = $("#ef-date")?.closest("label")?.querySelector("span"); if (lab) lab.textContent = "Första betalningen"; }
   // Sätt markören i första fältet bara på dator. På telefon öppnar det tangentbordet direkt och döljer formuläret.
   if (!window.matchMedia("(pointer: coarse)").matches) {
     if (type === "tank" && !isEdit) $("#ef-amount")?.focus({ preventScroll: true });
@@ -2210,6 +2255,22 @@ async function saveEntry(form) {
       data.place = str("place") || null;
       data.fine = fd.get("fine") === "on";
       if (data.amount != null && data.amount < 0) return formError("Kostnaden kan inte vara mindre än noll.");
+      // Återkommande: spara som regel på bilen i stället för en enskild post.
+      if (fd.get("recurring") === "on" && !existing) {
+        if (!data.amount) return formError("Fyll i vad platsen kostar per gång.");
+        const end = str("endDate") || null;
+        if (end && end < data.date) return formError("Slutdatumet ska ligga efter första betalningen.");
+        const rid = form.dataset.rec || "r" + randomId(8);
+        const prev = (c.recurring || []).find((x) => x.id === rid);
+        const rule = clean({ id: rid, type: "parkering", place: data.place, amount: data.amount, period: Number(str("period")) || 1, start: data.date, end, note: data.note, createdBy: prev?.createdBy || uid(), createdAt: prev?.createdAt || Date.now() });
+        const list = [...(c.recurring || []).filter((x) => x.id !== rid), rule];
+        updateDoc(ref("cars", c.id), { recurring: list }).catch(onWriteError);
+        c.recurring = list;
+        closeSheet();
+        showToast(prev ? "Den återkommande parkeringen är ändrad" : `Återkommande parkering inlagd: ${fmtKr(rule.amount)} kr ${PERIODS[rule.period].toLowerCase()}`, 5000);
+        render();
+        return;
+      }
       break;
     case "kostnad":
       data.category = str("category");
@@ -2336,6 +2397,29 @@ function itemSheet(id) {
     <div class="form" style="margin-top:18px">
       <button class="btn primary block" type="button" data-act="log-item" data-id="${esc(id)}">Logga byte</button>
       <button class="btn ghost block" type="button" data-act="edit-item-form" data-id="${esc(id)}">Ändra intervall eller senaste byte</button>
+    </div>`);
+}
+
+function recurringSheet(rid) {
+  const c = car();
+  const r = (c.recurring || []).find((x) => x.id === rid);
+  if (!r) return;
+  const paid = recurringEntries({ ...c, recurring: [r] });
+  const sum = paid.reduce((a, e) => a + (e.amount || 0), 0);
+  const ended = r.end && r.end <= todayStr();
+  openSheet(r.place ? `Parkering · ${r.place}` : "Återkommande parkering", `
+    <dl class="detail-list">
+      <div><dt>Kostnad</dt><dd>${esc(`${fmtKr(r.amount)} kr, ${PERIODS[r.period]?.toLowerCase()}`)}</dd></div>
+      <div><dt>Började</dt><dd>${esc(fmtDate(r.start))}</dd></div>
+      <div><dt>Slutar</dt><dd>${esc(r.end ? fmtDate(r.end) : "Pågår")}</dd></div>
+      <div><dt>Betalt hittills</dt><dd>${esc(`${fmtKr(sum)} kr · ${paid.length} ${paid.length === 1 ? "gång" : "gånger"}`)}</dd></div>
+      ${r.note ? `<div><dt>Anteckning</dt><dd>${esc(r.note)}</dd></div>` : ""}
+    </dl>
+    <div class="form" style="margin-top:18px">
+      <button class="btn primary block" type="button" data-act="edit-rec" data-id="${esc(r.id)}">Ändra</button>
+      ${!ended ? `<button class="btn ghost block" type="button" data-act="end-rec" data-id="${esc(r.id)}">Avsluta från i dag</button>` : ""}
+      <button class="btn danger block" type="button" data-act="delete-rec" data-id="${esc(r.id)}">Ta bort</button>
+      <p class="hint">Betalningarna räknas fram automatiskt. Säger du upp platsen, välj Avsluta så finns det som har betalats kvar. Höjs priset: avsluta den här och lägg in en ny från det datumet, så stämmer de tidigare betalningarna. Ändrar du beloppet här gäller det alla betalningar.</p>
     </div>`);
 }
 
@@ -2530,7 +2614,38 @@ const ACTIONS = {
     if (t && TYPE[t]) entryForm(t, el.dataset.cat ? { category: el.dataset.cat } : {});
     else typePicker();
   },
-  "open-entry"(el) { openEntry(el.dataset.id, { fromCat: el.dataset.cat || null }); },
+  "open-entry"(el) {
+    // Uträknade betalningar för en återkommande kostnad öppnar regeln.
+    if (el.dataset.id.startsWith("rec:")) return recurringSheet(el.dataset.id.split(":")[1]);
+    openEntry(el.dataset.id, { fromCat: el.dataset.cat || null });
+  },
+  "open-rec"(el) { recurringSheet(el.dataset.id); },
+  "edit-rec"(el) {
+    const r = (car().recurring || []).find((x) => x.id === el.dataset.id);
+    if (r) entryForm("parkering", { place: r.place, amount: r.amount, date: r.start, period: r.period, end: r.end, note: r.note }, { recurringId: r.id });
+  },
+  async "end-rec"(el) {
+    const c = car();
+    const r = (c.recurring || []).find((x) => x.id === el.dataset.id);
+    if (!r) return;
+    const ok = await confirmDialog({ title: "Avsluta den återkommande parkeringen?", lines: ["Inga fler betalningar räknas efter i dag. Det som redan har betalats finns kvar i loggen och Ekonomi."], okLabel: "Avsluta", warn: "" });
+    if (!ok) return;
+    const list = (c.recurring || []).map((x) => (x.id === r.id ? { ...x, end: todayStr() } : x));
+    updateDoc(ref("cars", c.id), { recurring: list }).catch(onWriteError);
+    c.recurring = list;
+    closeSheet(); render(); showToast("Avslutad från och med i dag");
+  },
+  async "delete-rec"(el) {
+    const c = car();
+    const r = (c.recurring || []).find((x) => x.id === el.dataset.id);
+    if (!r) return;
+    const ok = await confirmDialog({ title: "Ta bort den återkommande parkeringen?", lines: ["Alla dess betalningar försvinner ur loggen och Ekonomi, även de som har varit. Vill du bara sluta betala, välj Avsluta i stället."] });
+    if (!ok) return;
+    const list = (c.recurring || []).filter((x) => x.id !== r.id);
+    updateDoc(ref("cars", c.id), { recurring: list }).catch(onWriteError);
+    c.recurring = list;
+    closeSheet(); render(); showToast("Borttagen");
+  },
   "new-booking"() { bookingForm(); },
   "booking-calendar"(el) {
     const c = car();
@@ -3094,6 +3209,11 @@ function saveItems(form) {
 /* ---------------------------------------------------------- input helpers */
 
 function onInput(ev) {
+  if (ev.target.id === "ef-recurring") {
+    const b = $("#ef-rec-box"); if (b) b.hidden = !ev.target.checked;
+    const lab = $("#ef-date")?.closest("label")?.querySelector("span");
+    if (lab) lab.textContent = ev.target.checked ? "Första betalningen" : "Datum";
+  }
   if (ev.target.id === "w-search") workSuggest(ev.target.value);
   if (ev.target.id === "bk-place") placeSearchSoon("poi");
   if (ev.target.id === "bk-addr") {
