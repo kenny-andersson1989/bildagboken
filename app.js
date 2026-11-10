@@ -639,7 +639,7 @@ function renderOnboarding(error = "") {
 const CAR_SECTIONS = {
   basic: "Uppgifter om bilen",
   photo: "Bild på bilen",
-  dates: "Datum och kostnader",
+  dates: "Besiktning, försäkring och skatt",
   tires: "Däck",
   specs: "Bra att ha",
 };
