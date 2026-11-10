@@ -469,3 +469,91 @@ input[type="range"].fuel-range.unset::-webkit-slider-thumb { opacity: .35; }
 input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 /* Blir det en ruta över på sista raden tar den hela bredden. */
 .eco .stat:last-of-type:nth-of-type(odd) { grid-column: 1 / -1; }
+
+/* ---------------------------------------------------------------- dator */
+/* Telefonlayouten ovan gäller överallt. På breda skärmar flyttar menyn till vänster
+   och korten läggs i två kolumner, så att sidan använder bredden. */
+.fab-label, .nav-logo, .tab-wide { display: none; }
+
+@media (min-width: 900px) {
+  :root { --side: 232px; }
+
+  /* Sidomeny */
+  .nav {
+    top: 0; bottom: 0; right: auto; width: var(--side);
+    padding: calc(24px + env(safe-area-inset-top, 0px)) 16px 24px 20px;
+    align-items: flex-start;
+  }
+  .nav-inner {
+    display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+    max-width: none; padding: 10px; border-radius: 24px;
+  }
+  .tab {
+    flex-direction: row; justify-content: flex-start; gap: 12px;
+    font-size: 15px; padding: 11px 14px; border-radius: 14px;
+  }
+  .tab:hover { background: var(--accent-soft); color: var(--ink); }
+  .tab[aria-current="page"] { background: var(--accent-soft); }
+  .fab {
+    order: -1; width: 100%; height: 48px; border-radius: 16px; margin: 0 0 8px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    font: 600 15px var(--f-body); box-shadow: 0 8px 20px -10px var(--accent);
+  }
+  .fab svg { width: 20px; height: 20px; }
+  .fab-label { display: inline; }
+  .nav-logo { display: block; order: -2; width: 150px; height: auto; margin: 6px auto 12px; }
+  .tab-wide { display: flex; }
+  .tab-sep { margin-top: 10px; position: relative; }
+  .tab-sep::before { content: ""; position: absolute; left: 8px; right: 8px; top: -6px; border-top: 1px solid var(--line); }
+
+  /* Innehållet: centrerat i ytan till höger om menyn */
+  .app:not(.no-nav) {
+    max-width: 1080px;
+    margin-left: calc(var(--side) + max(0px, (100vw - var(--side) - 1080px) / 2));
+    margin-right: 0;
+    padding: 28px 28px 48px;
+    gap: 16px;
+  }
+  .hello h1 { font-size: 30px; }
+
+  /* Översikt, Bilen och Inställningar: korten i två kolumner */
+  .app[data-screen="view-oversikt"],
+  .app[data-screen="view-bilen"],
+  .app[data-screen="view-installningar"] {
+    display: block; columns: 2; column-gap: 16px;
+  }
+  .app[data-screen="view-oversikt"] > *,
+  .app[data-screen="view-bilen"] > *,
+  .app[data-screen="view-installningar"] > * {
+    break-inside: avoid; margin: 0 0 16px;
+  }
+  .app[data-screen] > .top,
+  .app[data-screen] > .car-chips,
+  .app[data-screen] > .card.toast,
+  .app[data-screen] > p.hint { column-span: all; }
+
+  /* Ekonomi: siffrorna och fördelningen bredvid varandra */
+  .app[data-screen="view-ekonomi"] { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+  .app[data-screen="view-ekonomi"] > .top,
+  .app[data-screen="view-ekonomi"] > .hint { grid-column: 1 / -1; }
+
+  /* Logg och aviseringar är listor och läses bäst lagom breda */
+  .app[data-screen="view-logg"],
+  .app[data-screen="view-aviseringar"] { max-width: 760px; }
+
+  /* Formulär öppnas som en ruta mitt på skärmen i stället för underifrån */
+  .sheet {
+    top: 50%; bottom: auto; left: calc(50% + var(--side) / 2); right: auto;
+    transform: translate(-50%, -50%); width: min(540px, calc(100vw - var(--side) - 48px));
+    max-width: none; max-height: 86vh; border-radius: 26px; box-shadow: var(--shadow);
+    padding-bottom: 24px;
+  }
+  .sheet .grab { display: none; }
+  .sheet { padding-top: 0; }
+  .sheet-head { top: 0; padding-top: 14px; }
+  .confirm { left: calc(50% + var(--side) / 2); }
+  .toast-msg { left: calc(50% + var(--side) / 2); }
+}
+@media (min-width: 900px) and (prefers-reduced-motion: no-preference) {
+  .sheet:not([hidden]) { animation: pop .2s ease-out; }
+}
