@@ -363,21 +363,6 @@ function milPerDay(c) {
   return days >= 14 && mil > 0 ? mil / days : null;
 }
 
-// Ungefärligt datum när servicen behövs: det som kommer först av tiden och milen (med hur mycket ni brukar köra).
-function serviceDueEstimate(st, c) {
-  if (!st || st.unknown) return null;
-  const out = [];
-  if (st.dueDate) out.push({ date: st.dueDate, by: "time" });
-  const rate = st.remMil != null ? milPerDay(c) : null;
-  if (rate) {
-    const d = today0();
-    d.setDate(d.getDate() + Math.max(0, Math.round(st.remMil / rate)));
-    out.push({ date: d, by: "mil" });
-  }
-  out.sort((a, b) => a.date - b.date);
-  return out[0] || null;
-}
-
 // Förslag på nästa sista dag för besiktning, räknat från dagen bilen besiktigades.
 // Personbil: första gången senast 3 år efter att den togs i trafik, sedan 2 år, därefter var 14:e månad.
 // Årsmodellen används som ungefärligt år i trafik. Datumet går alltid att ändra.
@@ -1010,7 +995,6 @@ function viewOverview() {
         <div class="ask"><button class="btn-soft" type="button" data-act="edit-items">Ange senaste byte</button></div></article>`);
   } else if (known.length) {
     const top = known.slice(0, 3);
-    const first = top[0];
     parts.push(`<article class="card">
       <h2>Underhåll <button class="link" type="button" data-act="goto-maintenance">Visa alla</button></h2>
       <div class="rows">${top.map((x) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(x.item.id)}">
@@ -1018,7 +1002,6 @@ function viewOverview() {
         <span><span class="dl-t">${esc(x.item.name)}</span><span class="dl-s">${esc(dueText(x))}</span>${wearBar(x)}</span>
         <span class="pill ${x.level}">${esc(x.label)}</span></button>`).join("")}</div>
       ${unknownCount && pref.get("maintHintHidden." + c.id) !== String(unknownCount) ? `<div class="ask"><button class="btn-soft" type="button" data-act="edit-items">Fyll i underhåll (${unknownCount} kvar)</button><button class="link" type="button" data-act="hide-maint-hint" data-n="${unknownCount}">Dölj</button></div>` : ""}
-      ${serviceDueEstimate(first, c) ? `<div class="ask"><button class="btn-soft" type="button" data-act="service-calendar" data-id="${esc(first.item.id)}">${icon("calendar", 16)} Påminn mig i kalendern</button><small>Gäller ${esc(first.item.name.toLowerCase())}.</small></div>` : ""}
     </article>`);
   }
 
@@ -2324,26 +2307,6 @@ const ACTIONS = {
     updateDoc(ref("cars", S.carId), fields).catch(onWriteError);
     closeSheet();
     showToast("Datumet är borttaget");
-  },
-  "service-calendar"(el) {
-    const c = car();
-    const ps = (el?.dataset.id && allItemStatus(c).find((x) => x.item.id === el.dataset.id)) || primaryService(c);
-    const est = serviceDueEstimate(ps, c);
-    if (!est) return showToast("Det går inte att räkna ut när servicen behövs än.");
-    const due = [ps.item.mil && ps.lastMil != null ? `vid ${fmt(ps.lastMil + ps.item.mil)} mil` : "", ps.dueDate ? `senast ${fmtDate(ps.dueDate)}` : ""].filter(Boolean).join(" eller ");
-    addToCalendar({
-      uid: `${c.id}-service-${ps.item.id}-${ps.lastDate || "x"}`,
-      title: `Dags för ${ps.item.name.toLowerCase()}: ${carName(c)}`,
-      date: est.date,
-      description: [
-        due ? `Nästa ${due}.` : null,
-        est.by === "mil" ? "Datumet är uppskattat utifrån hur mycket ni brukar köra." : null,
-        c.plate ? `Reg.nr ${c.plate}` : null,
-        "Inlagd från Bildagboken",
-      ].filter(Boolean).join("\n"),
-      alarm: "-P6DT15H",
-      fileName: `Service ${ymd(est.date)}`,
-    });
   },
   "open-cat"(el) {
     const cat = el.dataset.id;
