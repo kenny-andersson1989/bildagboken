@@ -381,9 +381,11 @@ function tireDeadline(c) {
 
 function deadlines(c) {
   const out = [tireDeadline(c)];
-  if (c.besiktning) {
+  // Sista dagen för besiktning. Är en tid redan bokad (före sista dagen) syns den i bokningen i stället.
+  const booked = (c.bookings || []).some((b) => b.kind === "besiktning" && b.date >= todayStr() && (!c.besiktning || b.date <= c.besiktning));
+  if (c.besiktning && !booked) {
     const d = parseDate(c.besiktning);
-    out.push({ key: "besiktning", date: d, calTitle: "Sista dag för besiktning", icon: "check", title: "Besiktning", sub: [`Senast ${fmtDate(d)}`, c.besiktningPlats].filter(Boolean).join(" · "), place: c.besiktningPlats || null, days: daysUntil(d) });
+    out.push({ key: "besiktning", date: d, calTitle: "Sista dag för besiktning", icon: "check", title: "Sista dag för besiktning", sub: [`Senast ${fmtDate(d)}`, c.besiktningPlats].filter(Boolean).join(" · "), place: c.besiktningPlats || null, days: daysUntil(d) });
   }
   if (c.forsakringDatum) {
     const d = parseDate(c.forsakringDatum);
@@ -421,12 +423,15 @@ function bookingRows(c) {
     const days = daysUntil(parseDate(b.date));
     const kind = BOOK_KINDS[b.kind] || "Bokning";
     const past = days < 0;
+    // En bokad besiktning efter sista dagen är för sent: visa det tydligt.
+    const late = b.kind === "besiktning" && c.besiktning && b.date > c.besiktning;
+    const lastDay = b.kind === "besiktning" && c.besiktning && !past ? (late ? `efter sista dagen ${fmtDateShort(c.besiktning)}!` : `sista dag ${fmtDateShort(c.besiktning)}`) : null;
     return {
       icon: "calendar",
       title: past ? `${kind}: blev det gjort?` : `${kind} bokad`,
-      sub: [bookingWhen(b), b.place].filter(Boolean).join(" · "),
+      sub: [bookingWhen(b), b.place, lastDay].filter(Boolean).join(" · "),
       days,
-      level: past || days <= 1 ? "urgent" : days <= 7 ? "soon" : "ok",
+      level: past || late || days <= 1 ? "urgent" : days <= 7 ? "soon" : "ok",
       label: past ? "Logga" : days === 0 ? "I dag" : days === 1 ? "I morgon" : daysText(days),
       act: "open-booking",
       id: b.id,
@@ -1406,15 +1411,25 @@ function deadlineSheet(key) {
   const x = deadlines(c).find((d) => d.key === key);
   if (!x) return;
   const section = key === "dack" ? "tires" : "dates";
+  const about = {
+    besiktning: "Det här är sista dagen bilen måste vara besiktigad. Datumet står i besiktningsprotokollet och hos Transportstyrelsen. När du har bokat en tid hos stationen, lägg in den som bokad tid, så visas den i stället.",
+    forsakring: "Dagen då försäkringen förnyas. Bra tillfälle att jämföra priser några veckor innan.",
+    skatt: "Månaden då fordonsskatten ska betalas.",
+    dack: "Räknas ut från årstiden och vilka däck som sitter på.",
+  }[key];
+  const removable = key === "besiktning" || key === "forsakring" || key === "skatt";
   openSheet(x.title, `
+    ${about ? `<p class="muted" style="margin:0 0 14px">${esc(about)}</p>` : ""}
     <dl class="detail-list">
       <div><dt>Datum</dt><dd>${esc(fmtDate(x.date))}</dd></div>
       <div><dt>Kvar</dt><dd>${esc(x.label)}</dd></div>
       ${x.sub ? `<div><dt>Info</dt><dd>${esc(x.sub)}</dd></div>` : ""}
     </dl>
     <div class="form" style="margin-top:18px">
-      <button class="btn primary block" type="button" data-act="deadline-calendar" data-id="${esc(key)}">${icon("calendar", 18)} Lägg till i kalendern</button>
+      ${key === "besiktning" ? `<button class="btn primary block" type="button" data-act="book-inspection">${icon("calendar", 18)} Lägg in bokad tid</button>` : ""}
+      <button class="btn ${key === "besiktning" ? "ghost" : "primary"} block" type="button" data-act="deadline-calendar" data-id="${esc(key)}">${icon("calendar", 18)} Lägg till i kalendern</button>
       <button class="btn ghost block" type="button" data-act="edit-car" data-section="${section}">Ändra datum</button>
+      ${removable ? `<button class="btn danger block" type="button" data-act="deadline-remove" data-id="${esc(key)}">Ta bort datumet</button>` : ""}
       <p class="hint">Kalendern påminner dig en vecka innan.</p>
     </div>`);
 }
@@ -1848,6 +1863,18 @@ const ACTIONS = {
       alarm: "-P6DT15H",
       fileName: `${x.title} ${ymd(x.date)}`,
     });
+  },
+  "book-inspection"() { bookingForm({ kind: "besiktning" }); },
+  async "deadline-remove"(el) {
+    const key = el.dataset.id;
+    const fields = { besiktning: { besiktning: null }, forsakring: { forsakringDatum: null }, skatt: { skattManad: null } }[key];
+    if (!fields) return;
+    const name = { besiktning: "sista dagen för besiktning", forsakring: "datumet för försäkringen", skatt: "månaden för skatten" }[key];
+    const ok = await confirmDialog({ title: `Ta bort ${name}?`, lines: ["Påminnelsen försvinner för er båda. Du kan lägga in det igen under Ändra datum."], warn: "" });
+    if (!ok) return;
+    updateDoc(ref("cars", S.carId), fields).catch(onWriteError);
+    closeSheet();
+    showToast("Datumet är borttaget");
   },
   "service-calendar"() {
     const c = car();
