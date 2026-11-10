@@ -1,5 +1,5 @@
 // Service worker: gör att appen startar även utan nät och kan visa notiser.
-const CACHE = "bildagboken-v17";
+const CACHE = "bildagboken-v18";
 const SHELL = [
   "./",
   "./index.html",
@@ -49,8 +49,11 @@ self.addEventListener("fetch", (event) => {
   if (url.host === "www.gstatic.com") {
     event.respondWith(
       caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy));
+        // Spara bara lyckade svar, annars fastnar ett tillfälligt fel i cachen.
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy));
+        }
         return res;
       }))
     );
