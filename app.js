@@ -474,7 +474,6 @@ function economy(ents, months = 12) {
   };
   const fuelTanks = inPeriod.filter((e) => e.type === "tank" && e.odometer != null);
   const fuelPerMil = fullToFull(fuelTanks.filter((e) => e.amount > 0), (e) => e.amount);
-  const consumption = fullToFull(fuelTanks.filter((e) => e.liters > 0 && !/kWh/.test(e.fuel || "")), (e) => e.liters);
   const bars = [];
   const now = new Date();
   for (let i = 5; i >= 0; i--) {
@@ -484,7 +483,7 @@ function economy(ents, months = 12) {
     bars.push({ label: MONTHS_SHORT[d.getMonth()], sum, now: i === 0 });
   }
   const thisMonth = bars[5].sum, lastMonth = bars[4].sum;
-  return { total, cats, catCount, driven, perMonth: total / monthsSpan, perMil: driven ? total / driven : null, consumption, fuelPerMil, bars, thisMonth, lastMonth, count: paid.length };
+  return { total, cats, catCount, driven, perMonth: total / monthsSpan, perMil: driven ? total / driven : null, fuelPerMil, bars, thisMonth, lastMonth, count: paid.length };
 }
 
 function tipsFor(c) {
@@ -1038,14 +1037,13 @@ function viewEconomy() {
       <div class="stat"><div class="label">Per månad</div><div class="n">${eco.total > 0 ? fmt(eco.perMonth) : "–"} <small>kr</small></div></div>
       <div class="stat"><div class="label">Körsträcka</div><div class="n">${eco.driven != null ? fmt(eco.driven) : "–"} <small>mil</small></div></div>
       <div class="stat"><div class="label">Bränsle per mil</div><div class="n">${eco.fuelPerMil != null ? fmt(eco.fuelPerMil, 2) : "–"} <small>kr</small></div></div>
-      <div class="stat"><div class="label">Förbrukning</div><div class="n">${eco.consumption != null ? fmt(eco.consumption, 2) : "–"} <small>l/mil</small></div></div>
     </div></div>
     <div class="card"><h2>Fördelning</h2>
       ${cats.length ? `<div class="rows">${cats.map(([k, v]) => `<button class="dl as-btn" type="button" data-act="open-cat" data-id="${esc(k)}"><span class="dl-ic">${icon(CAT_ICON[k] || "receipt", 20)}</span><span><span class="dl-t">${esc(k)}</span><span class="dl-s">${eco.total ? fmt((v / eco.total) * 100) : 0} % · ${eco.catCount[k]} st</span></span><span class="dl-v">${fmt(v)} kr ›</span></button>`).join("")}</div>
         <p class="hint" style="margin-top:10px">Tryck på en rad för att se vad som ingår.</p>`
         : `<p class="muted">Inga kostnader loggade de senaste 12 månaderna. Belopp från tankningar, service, däck och andra kostnader hamnar här.</p>`}
     </div>
-    <p class="hint" style="text-align:center">Kostnad per mil räknas på körsträckan mellan loggade mätarställningar. Förbrukning i liter visas bara om ni fyller i liter under Fler detaljer.</p>`;
+    <p class="hint" style="text-align:center">Kostnad per mil räknas på körsträckan mellan loggade mätarställningar.</p>`;
 }
 
 function viewCar() {
