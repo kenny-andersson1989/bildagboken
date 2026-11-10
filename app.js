@@ -126,6 +126,7 @@ const TYPE = {
   eget: { label: "Eget jobb", icon: "hand" },
   dack: { label: "Däck", icon: "tire" },
   tvatt: { label: "Tvätt", icon: "wash" },
+  parkering: { label: "Parkering", icon: "parking" },
   kostnad: { label: "Kostnad", icon: "receipt" },
 };
 const FUELS = ["Bensin", "Diesel", "Flexifuel (bensin/E85)", "Laddhybrid", "Hybrid", "El"];
@@ -231,6 +232,7 @@ function entryTitle(e) {
     case "eget": return e.title || "Eget jobb";
     case "dack": return TIRE_ACTIONS[e.tireAction] || "Däck";
     case "tvatt": return "Tvätt";
+    case "parkering": return e.fine ? "P-bot" : "Parkering";
     case "kostnad": return e.title || e.category || "Kostnad";
     default: return "Logg";
   }
@@ -262,7 +264,8 @@ function entryDetail(e, c = car()) {
       if (e.note) bits.push(e.note);
       return bits.join(" · ");
     }
-    case "tvatt": return [e.place, e.note].filter(Boolean).join(" · ");
+    case "tvatt":
+    case "parkering": return [e.place, e.note].filter(Boolean).join(" · ");
     case "kostnad": return e.title && e.category ? e.category : e.note || "";
     default: return "";
   }
@@ -279,6 +282,7 @@ function activityText(e) {
     case "eget": return `${n}: ${e.title || "eget jobb"}${kr}`;
     case "dack": return `${n}: ${(TIRE_ACTIONS[e.tireAction] || "däck").toLowerCase()}`;
     case "tvatt": return `${n} tvättade bilen${e.place ? ` hos ${e.place}` : ""}${kr}`;
+    case "parkering": return e.fine ? `${n} fick en p-bot${e.place ? ` vid ${e.place}` : ""}${kr}` : `${n} parkerade${e.place ? ` vid ${e.place}` : ""}${kr}`;
     case "kostnad": return `${n} lade till ${(e.title || e.category || "en kostnad").toLowerCase()}${kr}`;
     default: return `${n} loggade något`;
   }
@@ -504,11 +508,14 @@ function catOf(e) {
   if (e.type === "dack") return "Däck";
   // Tvättar som loggats som kostnad förr hamnar också under Tvätt.
   if (e.type === "tvatt" || e.category === "Tvätt") return "Tvätt";
+  // P-böter visas för sig, så att de inte döljs bland vanliga parkeringar.
+  if (e.type === "parkering") return e.fine ? "P-böter" : "Parkering";
+  if (e.category === "Parkering") return "Parkering";
   if (e.category === "Skatt" || e.category === "Besiktning") return "Skatt och besiktning";
   if (e.category === "Försäkring") return "Försäkring";
   return "Övrigt";
 }
-const CAT_ICON = { "Bränsle": "fuel", "Service och reparationer": "wrench", "Däck": "tire", "Skatt och besiktning": "check", "Försäkring": "calendar", "Tvätt": "wash", "Övrigt": "receipt" };
+const CAT_ICON = { "Bränsle": "fuel", "Service och reparationer": "wrench", "Däck": "tire", "Skatt och besiktning": "check", "Försäkring": "calendar", "Tvätt": "wash", "Parkering": "parking", "P-böter": "parking", "Övrigt": "receipt" };
 
 function economy(ents, months = 12) {
   const since = addMonths(today0(), -months);
@@ -852,7 +859,7 @@ function fuelCard(c) {
   return `<article class="card fuel-card">
     <div class="fuel-head"><h2>Bränsle</h2><div class="fuel-now ${level != null ? fuelClass(level) : ""}" id="fuel-now">${fuelNowHtml(level)}</div></div>
     <input type="range" class="fuel-range${level == null ? " unset" : ""}" id="fuel-range" min="0" max="8" step="1" value="${level ?? 4}" aria-label="Bränsle kvar i tanken" aria-valuetext="${esc(level != null ? fuelText(level) : "Inte angivet")}">
-    <div class="fuel-ticks" aria-hidden="true"><span>Tom</span><span>¼</span><span>½</span><span>¾</span><span>Full</span></div>
+    <div class="fuel-ticks" aria-hidden="true">${FUEL_LABELS.map((l, i) => `<span${i % 2 ? ' class="minor"' : ""}>${l}</span>`).join("")}</div>
     <p class="fuel-meta" id="fuel-meta">${esc(meta)}</p>
   </article>`;
 }
@@ -951,58 +958,38 @@ function viewOverview() {
   parts.push(fuelCard(c));
   parts.push(inviteCard());
 
+  // Underhåll: de punkter som är närmast att bytas, med samma staplar som under Bilen.
+  const st = allItemStatus(c);
+  const known = st.filter((x) => !x.unknown).sort((a, b) => daysToDue(a, c) - daysToDue(b, c));
+  const unknownCount = st.length - known.length;
   const ps = primaryService(c);
-  if (ps) {
-    if (ps.noOdo) {
-      parts.push(`<article class="card"><h2>Nästa service</h2>
-        <p class="muted">Fyll i bilens mätarställning, så räknar appen ut hur många mil det är kvar till ${esc(ps.item.name.toLowerCase())}.</p>
-        <div class="ask"><button class="btn-soft" type="button" data-act="new-entry" data-type="matare">Fyll i mätarställning</button></div></article>`);
-    } else if (ps.unknown) {
-      parts.push(`<article class="card"><h2>Nästa service</h2>
-        <p class="muted">Ange när ${esc(ps.item.name.toLowerCase())} byttes senast, så räknar appen ut när det är dags igen.</p>
+  if (!known.length && st.length) {
+    parts.push(ps?.noOdo
+      ? `<article class="card"><h2>Underhåll</h2>
+        <p class="muted">Fyll i bilens mätarställning, så räknar appen ut hur många mil det är kvar till nästa byte.</p>
+        <div class="ask"><button class="btn-soft" type="button" data-act="new-entry" data-type="matare">Fyll i mätarställning</button></div></article>`
+      : `<article class="card"><h2>Underhåll</h2>
+        <p class="muted">Ange när olja, filter och liknande byttes senast, så räknar appen ut när det är dags igen.</p>
         <div class="ask"><button class="btn-soft" type="button" data-act="goto-maintenance">Ange senaste byte</button></div></article>`);
-    } else {
-      const C = 2 * Math.PI * 50;
-      const remainFrac = Math.max(0, Math.min(1, ps.frac));
-      const center = ps.frac < 0
-        ? `<div class="big">Dags</div><div class="unit">nu</div>`
-        : ps.by === "mil" ? `<div class="big">${fmt(ps.remMil)}</div><div class="unit">mil kvar</div>`
-        : (() => {
-          // "12 mån" blir "12" stort och "mån kvar" under, så att texten ryms i ringen.
-          const [, n, u] = daysText(ps.remDays).match(/^([\d,]+)\s(.+)$/) || [null, daysText(ps.remDays), ""];
-          return `<div class="big">${esc(n)}</div><div class="unit">${esc(u ? `${u} kvar` : "kvar")}</div>`;
-        })();
-      const lastE = ps.last;
-      const chips = lastE ? [...itemNames(lastE, c), ...(lastE.parts || [])] : [];
-      const due = [ps.item.mil && ps.lastMil != null ? `vid ${fmt(ps.lastMil + ps.item.mil)} mil` : "", ps.dueDate ? `senast ${MONTHS[ps.dueDate.getMonth()]} ${ps.dueDate.getFullYear()}` : ""].filter(Boolean).join(" eller ");
-      parts.push(`<article class="card">
-        <h2>Nästa service <button class="link" type="button" data-go="bilen">Underhåll</button></h2>
-        <div class="gauge-row">
-          <div class="gauge">
-            <svg viewBox="0 0 120 120" aria-hidden="true">
-              <circle cx="60" cy="60" r="50" fill="none" stroke="var(--track)" stroke-width="11"/>
-              <circle class="val" cx="60" cy="60" r="50" fill="none" stroke="var(--accent)" stroke-width="11" stroke-linecap="round" stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${(C * (1 - remainFrac)).toFixed(2)}"/>
-            </svg>
-            <div class="center">${center}</div>
-          </div>
-          <div class="facts">
-            <div class="fact"><div class="label">Senast</div><div class="v">${ps.lastDate ? fmtDate(ps.lastDate) : "–"}</div><div class="s">${[ps.lastMil != null ? `vid ${fmt(ps.lastMil)} mil` : "", lastE?.workshop].filter(Boolean).map(esc).join(" · ")}</div></div>
-            ${chips.length ? `<div class="fact"><div class="label">Byttes</div><div class="parts">${chips.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}</div></div>` : ""}
-            ${due ? `<div class="fact"><div class="s">Nästa ${esc(due)}.</div></div>` : ""}
-          </div>
-        </div>
-        ${serviceDueEstimate(ps, c) ? `<div class="ask"><button class="btn-soft" type="button" data-act="service-calendar">${icon("calendar", 16)} Påminn mig i kalendern</button></div>` : ""}
-      </article>`);
-    }
+  } else if (known.length) {
+    const top = known.slice(0, 3);
+    const first = top[0];
+    parts.push(`<article class="card">
+      <h2>Underhåll <button class="link" type="button" data-act="goto-maintenance">Alla ${st.length}</button></h2>
+      <div class="rows">${top.map((x) => `<button class="dl as-btn" type="button" data-act="goto-maintenance">
+        <span class="dl-ic">${icon("wrench", 20)}</span>
+        <span><span class="dl-t">${esc(x.item.name)}</span><span class="dl-s">${esc(dueText(x))}</span>${wearBar(x)}</span>
+        <span class="pill ${x.level}">${esc(x.label)}</span></button>`).join("")}</div>
+      ${unknownCount ? `<p class="hint" style="margin-top:10px">${unknownCount === 1 ? "1 punkt saknar" : `${unknownCount} punkter saknar`} senaste byte. Fyll i under Bilen → Underhåll.</p>` : ""}
+      ${serviceDueEstimate(first, c) ? `<div class="ask"><button class="btn-soft" type="button" data-act="service-calendar" data-id="${esc(first.item.id)}">${icon("calendar", 16)} Påminn mig i kalendern</button><small>Gäller ${esc(first.item.name.toLowerCase())}.</small></div>` : ""}
+    </article>`);
   }
 
   const dls = deadlines(c);
   const wash = washRow(c);
-  const soonItems = allItemStatus(c).filter((s) => !s.unknown && s !== ps && s.item.id !== ps?.item.id && (s.level === "urgent" || s.level === "soon"))
-    .map((s) => ({ icon: "wrench", title: s.item.name, sub: [s.lastMil != null && s.item.mil ? `Vid ${fmt(s.lastMil + s.item.mil)} mil` : "", s.dueDate ? `senast ${fmtDate(s.dueDate)}` : ""].filter(Boolean).join(" eller ").replace(/^s/, "S"), level: s.level, label: s.label }));
   parts.push(`<article class="card">
     <h2>Att hålla koll på <button class="link" type="button" data-act="edit-car" data-section="dates">Ändra datum</button></h2>
-    <div class="rows">${[...bookingRows(c), ...soonItems, ...(wash ? [wash] : []), ...dls].map(rowHtml).join("")}</div>
+    <div class="rows">${[...bookingRows(c), ...(wash ? [wash] : []), ...dls].map(rowHtml).join("")}</div>
     ${!c.besiktning && !c.forsakringDatum && !taxMonth(c) ? `<p class="hint" style="margin-top:10px">Lägg till besiktning, försäkring och skatt under Ändra datum.</p>` : ""}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
   </article>`);
@@ -1086,7 +1073,7 @@ function logListHtml() {
 }
 
 function viewLog() {
-  const filters = [["alla", "Alla"], ["tank", "Tankning"], ["service", "Service"], ["eget", "Eget jobb"], ["dack", "Däck"], ["tvatt", "Tvätt"], ["kostnad", "Kostnader"], ["matare", "Mätare"]];
+  const filters = [["alla", "Alla"], ["tank", "Tankning"], ["service", "Service"], ["eget", "Eget jobb"], ["dack", "Däck"], ["tvatt", "Tvätt"], ["parkering", "Parkering"], ["kostnad", "Kostnader"], ["matare", "Mätare"]];
   return `${subHeader("Allt som hänt med bilen", "Logg")}
     <label class="search">${icon("search", 18)}
       <input type="search" id="log-search" placeholder="Sök i loggen, till exempel bromsar eller Mekonomen" value="${esc(S.query || "")}" autocomplete="off" enterkeyhint="search" aria-label="Sök i loggen">
@@ -1117,10 +1104,25 @@ function viewEconomy() {
 }
 
 // Stapel som fylls på från förra bytet till nästa: tom när det är nybytt, full när det är dags.
+// Ungefär hur många dagar det är kvar till ett byte, så att punkterna kan sorteras efter vad som kommer först.
+// Mil räknas om till dagar med hur mycket bilen brukar köras (annars 1 500 mil per år). Försenade kommer först.
+function daysToDue(s, c) {
+  if (s.frac < 0) return -1e6 + s.frac * 1000;
+  const rate = milPerDay(c) || 1500 / 365;
+  const ds = [s.remDays, s.remMil != null ? s.remMil / rate : null].filter((x) => x != null);
+  return ds.length ? Math.min(...ds) : 1e6;
+}
+
+// Nästa gräns i text: "Vid 23 700 mil eller senast juli 2027".
+function dueText(s) {
+  return [s.item.mil && s.lastMil != null ? `Vid ${fmt(s.lastMil + s.item.mil)} mil` : "", s.dueDate ? `senast ${MONTHS[s.dueDate.getMonth()]} ${s.dueDate.getFullYear()}` : ""]
+    .filter(Boolean).join(" eller ").replace(/^s/, "S");
+}
+
 function wearBar(s) {
   if (s.unknown || s.frac == null) return "";
   const used = Math.max(0, Math.min(1, 1 - s.frac));
-  return `<div class="wear ${s.level}" role="img" aria-label="${Math.round(used * 100)} % av intervallet har gått"><i style="width:${(used * 100).toFixed(1)}%"></i></div>`;
+  return `<span class="wear ${s.level}" role="img" aria-label="${Math.round(used * 100)} % av intervallet har gått"><i style="width:${(used * 100).toFixed(1)}%"></i></span>`;
 }
 
 function viewCar() {
@@ -1312,7 +1314,7 @@ $("#confirm-yes").addEventListener("click", () => closeConfirm(true));
 $("#confirm-no").addEventListener("click", () => closeConfirm(false));
 $("#confirm-scrim").addEventListener("click", () => closeConfirm(false));
 
-const TYPE_DEFINITE = { tank: "tankningen", matare: "mätarställningen", service: "servicen", eget: "jobbet", dack: "däckposten", tvatt: "tvätten", kostnad: "kostnaden" };
+const TYPE_DEFINITE = { tank: "tankningen", matare: "mätarställningen", service: "servicen", eget: "jobbet", dack: "däckposten", tvatt: "tvätten", parkering: "parkeringen", kostnad: "kostnaden" };
 
 function typePicker() {
   openSheet("Vad vill du logga?", `<div class="types">
@@ -1560,8 +1562,14 @@ function entryForm(type, e = {}, opts = {}) {
         ${field("Kostnad (kr)", `<input name="amount" id="ef-amount" inputmode="decimal" value="${e.amount ?? ""}" placeholder="Till exempel 149">`)}
         ${date}${note}${photo}`;
       break;
+    case "parkering":
+      body = `${field("Var", geoInput("place", "ef-place", e.place, "parking", "Till exempel Kungsgatan, Göteborg"))}
+        ${field("Kostnad (kr)", `<input name="amount" id="ef-amount" inputmode="decimal" value="${e.amount ?? ""}" placeholder="Till exempel 45">`)}
+        <label class="check"><input type="checkbox" name="fine" id="ef-fine"${e.fine ? " checked" : ""}> P-bot eller felparkeringsavgift</label>
+        ${date}${note}${photo}`;
+      break;
     case "kostnad":
-      body = `${field("Typ", `<select name="category" id="ef-category">${COST_CATS.filter((k) => k !== "Tvätt" || e.category === "Tvätt").map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
+      body = `${field("Typ", `<select name="category" id="ef-category">${COST_CATS.filter((k) => !["Tvätt", "Parkering"].includes(k) || e.category === k).map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
         ${field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
         ${amount("Belopp (kr)")}${date}
         ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(nextInspectionDate(e.date || todayStr(), c)) : ""}">`, "Uträknat från dagens besiktning. Kontrollera mot besiktningsprotokollet och ändra om det inte stämmer.")}</div>` : ""}
@@ -1719,6 +1727,11 @@ async function saveEntry(form) {
       if (data.amount != null && data.amount < 0) return formError("Kostnaden kan inte vara mindre än noll.");
       if (data.place) pref.set("wash." + c.id, data.place);
       break;
+    case "parkering":
+      data.place = str("place") || null;
+      data.fine = fd.get("fine") === "on";
+      if (data.amount != null && data.amount < 0) return formError("Kostnaden kan inte vara mindre än noll.");
+      break;
     case "kostnad":
       data.category = str("category");
       data.title = str("title") || null;
@@ -1796,6 +1809,7 @@ function openEntry(id, { fromCat = null } = {}) {
     e.type === "tank" ? ["Fulltankad", e.full ? "Ja" : "Nej"] : null,
     e.station ? ["Station", e.station] : null,
     e.place ? ["Plats", e.place] : null,
+    e.type === "parkering" && e.fine ? ["Typ", "P-bot eller felparkeringsavgift"] : null,
     e.workshop ? ["Verkstad", e.workshop] : null,
     e.category && e.type === "kostnad" ? ["Typ", e.category] : null,
     e.depth != null ? ["Mönsterdjup", `${fmt(e.depth, 1)} mm`] : null,
@@ -1989,7 +2003,7 @@ const ACTIONS = {
     const input = document.getElementById(el.dataset.target);
     const picks = document.getElementById(el.dataset.target + "-picks");
     if (!input || el.disabled) return;
-    const what = el.dataset.kind === "fuel" ? "mack" : "biltvätt";
+    const what = { fuel: "mack", parking: "parkering" }[el.dataset.kind] || "biltvätt";
     el.disabled = true;
     el.classList.add("busy");
     try {
@@ -2004,7 +2018,8 @@ const ACTIONS = {
       }
       const { latitude: lat, longitude: lon, accuracy } = pos.coords;
       // Sök lite längre bort om positionen är osäker, men aldrig mer än en kilometer.
-      const radius = Math.round(Math.min(1000, Math.max(el.dataset.kind === "fuel" ? 250 : 300, (accuracy || 0) + 100)));
+      const base = { fuel: 250, parking: 150 }[el.dataset.kind] || 300;
+      const radius = Math.round(Math.min(1000, Math.max(base, (accuracy || 0) + 100)));
       const names = await nearbyPlaces(el.dataset.kind, lat, lon, radius).catch(() => []);
       if (names.length) {
         input.value = names[0];
@@ -2018,7 +2033,7 @@ const ACTIONS = {
         if (!addr) return showToast("Hittade ingen plats just nu. Skriv in den själv.", 5000);
         input.value = addr;
         if (picks) picks.hidden = true;
-        showToast(`Ingen ${what} hittades precis här, så adressen är ifylld. Ändra om det behövs.`, 6000);
+        showToast(`Ingen ${what} med namn hittades precis här, så adressen är ifylld. Ändra om det behövs.`, 6000);
       }
       input.dispatchEvent(new Event("input", { bubbles: true }));
     } finally {
@@ -2045,9 +2060,9 @@ const ACTIONS = {
     closeSheet();
     showToast("Datumet är borttaget");
   },
-  "service-calendar"() {
+  "service-calendar"(el) {
     const c = car();
-    const ps = primaryService(c);
+    const ps = (el?.dataset.id && allItemStatus(c).find((x) => x.item.id === el.dataset.id)) || primaryService(c);
     const est = serviceDueEstimate(ps, c);
     if (!est) return showToast("Det går inte att räkna ut när servicen behövs än.");
     const due = [ps.item.mil && ps.lastMil != null ? `vid ${fmt(ps.lastMil + ps.item.mil)} mil` : "", ps.dueDate ? `senast ${fmtDate(ps.dueDate)}` : ""].filter(Boolean).join(" eller ");
