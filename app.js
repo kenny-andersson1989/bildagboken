@@ -355,7 +355,7 @@ function deadlines(c) {
   const out = [tireDeadline(c)];
   if (c.besiktning) {
     const d = parseDate(c.besiktning);
-    out.push({ key: "besiktning", date: d, calTitle: "Sista dag för besiktning", icon: "check", title: "Besiktning", sub: `Senast ${fmtDate(d)}`, days: daysUntil(d) });
+    out.push({ key: "besiktning", date: d, calTitle: "Sista dag för besiktning", icon: "check", title: "Besiktning", sub: [`Senast ${fmtDate(d)}`, c.besiktningPlats].filter(Boolean).join(" · "), place: c.besiktningPlats || null, days: daysUntil(d) });
   }
   if (c.forsakringDatum) {
     const d = parseDate(c.forsakringDatum);
@@ -620,7 +620,10 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
     ${c.photoId ? `<label class="check"><input type="checkbox" name="removePhoto" id="cf-removePhoto"> Ta bort eget foto och använd bild från Wikipedia</label>`
       : `<p class="hint">Utan eget foto hämtas en bild på modellen från Wikipedia.</p>`}`;
   parts.dates = `
-    ${inp("besiktning", "Besiktning senast", c.besiktning, 'type="date"')}
+    <div class="row2">
+      ${inp("besiktning", "Besiktning senast", c.besiktning, 'type="date"')}
+      ${inp("besiktningPlats", "Besiktningsstation", c.besiktningPlats, 'placeholder="Bilprovningen Kungsbacka"')}
+    </div>
     <div class="row2">
       ${inp("forsakringBolag", "Försäkringsbolag", c.forsakringBolag, 'placeholder="If, Folksam …"')}
       ${inp("forsakringDatum", "Försäkringen förnyas", c.forsakringDatum, 'type="date"')}
@@ -1040,7 +1043,7 @@ function viewCar() {
     <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
     <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
-        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Besiktning senast", c.besiktning ? fmtDate(c.besiktning) : ""], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", c.skattManad ? MONTHS[c.skattManad - 1] : ""].filter(Boolean).join(", ")]]
+        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Besiktning senast", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", c.skattManad ? MONTHS[c.skattManad - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>`;
@@ -1188,6 +1191,7 @@ function field(label, input, hint = "") {
 
 function bookingForm(b = {}) {
   const isEdit = !!b.id;
+  const station = car()?.besiktningPlats || "";
   const kinds = Object.entries(BOOK_KINDS);
   openSheet(isEdit ? `${BOOK_KINDS[b.kind] || "Bokning"} ${fmtDateShort(b.date)}` : "Bokad tid", `
     <form class="form" data-form="booking"${isEdit ? ` data-id="${esc(b.id)}"` : ""} novalidate>
@@ -1207,6 +1211,13 @@ function bookingForm(b = {}) {
         : `<button class="btn ghost block" type="submit" name="cal" value="1">${icon("calendar", 18)} Spara och lägg till i kalendern</button>`}
       <p class="hint">Bokningen syns för er båda under Att hålla koll på och bland påminnelserna dagen innan. Lägger du den i kalendern påminner telefonen dig också.</p>
     </form>`, { back: isEdit ? null : "new-entry" });
+  // Väljer man Besiktning och inte skrivit någon plats fylls bilens besiktningsstation i.
+  const kindSel = $("#bk-kind"), placeIn = $("#bk-place");
+  if (station && kindSel && placeIn) {
+    const fill = () => { if (kindSel.value === "besiktning" && !placeIn.value.trim()) placeIn.value = station; };
+    kindSel.addEventListener("change", fill);
+    fill();
+  }
 }
 
 function saveBooking(form, wantCalendar = false) {
@@ -1639,6 +1650,7 @@ function readCarForm(form) {
   if (has("besiktning")) {
     Object.assign(data, {
       besiktning: str("besiktning") || null,
+      besiktningPlats: str("besiktningPlats") || null,
       forsakringBolag: str("forsakringBolag") || null,
       forsakringDatum: str("forsakringDatum") || null,
       skattManad: str("skattManad") ? Number(str("skattManad")) : null,
@@ -1719,6 +1731,7 @@ const ACTIONS = {
       uid: `${c.id}-${x.key}-${ymd(x.date)}`,
       title: `${x.calTitle}: ${carName(c)}`,
       date: x.date,
+      location: x.place,
       description: [x.sub, c.plate ? `Reg.nr ${c.plate}` : null, "Inlagd från Bildagboken"].filter(Boolean).join("\n"),
       alarm: "-P6DT15H",
       fileName: `${x.title} ${ymd(x.date)}`,
