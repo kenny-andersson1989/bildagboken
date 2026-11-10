@@ -1032,19 +1032,52 @@ function kollRowsHtml(rows) {
 }
 
 // De tre senaste loggarna, för båda, så att man ser vad den andra har gjort.
+function bookingActivity(b) {
+  const n = whoName(b.createdBy);
+  const kind = (BOOK_KINDS[b.kind] || "en tid").toLowerCase();
+  return `${n} bokade ${kind} till ${fmtDateShort(b.date)}${b.time ? ` kl ${b.time}` : ""}${b.place ? ` hos ${b.place}` : ""}`;
+}
+
 function recentCard(c) {
-  const list = [...S.entries].filter((e) => e.carId === c.id).sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt)).slice(0, 3);
-  if (!list.length) return "";
+  const items = [
+    ...S.entries.filter((e) => e.carId === c.id).map((e) => ({ ts: tsMs(e.createdAt), who: e.createdBy, text: activityText(e), act: "open-entry", id: e.id, date: e.date })),
+    ...(c.bookings || []).filter((b) => b.createdAt).map((b) => ({ ts: tsMs(b.createdAt), who: b.createdBy, text: bookingActivity(b), act: "open-booking", id: b.id, date: b.date })),
+  ].sort((a, b) => b.ts - a.ts).slice(0, 3);
+  if (!items.length) return "";
   return `<article class="card">
     <h2>Senaste <button class="link" type="button" data-go="logg">Logg</button></h2>
-    <div class="rows">${list.map((e) => {
-      const mine = e.createdBy === uid();
-      return `<button class="dl as-btn" type="button" data-act="open-entry" data-id="${esc(e.id)}">
-        <span class="avatar${mine ? " me" : ""}">${esc((mine ? myName() : memberName(e.createdBy)).slice(0, 1).toUpperCase())}</span>
-        <span><span class="dl-t">${esc(activityText(e))}</span><span class="dl-s">${esc(timeAgo(tsMs(e.createdAt)) || fmtDateShort(e.date))}</span></span>
+    <div class="rows">${items.map((x) => {
+      const mine = x.who === uid();
+      return `<button class="dl as-btn" type="button" data-act="${x.act}" data-id="${esc(x.id)}">
+        <span class="avatar${mine ? " me" : ""}">${esc((mine ? myName() : memberName(x.who)).slice(0, 1).toUpperCase())}</span>
+        <span><span class="dl-t">${esc(x.text)}</span><span class="dl-s">${esc(timeAgo(x.ts) || fmtDateShort(x.date))}</span></span>
         <span></span></button>`;
     }).join("")}</div>
   </article>`;
+}
+
+// Bokade tider överst i loggen. De följer filtret: service och reparation under Service,
+// däckbyte under Däck och besiktning under Kostnader.
+const BOOK_FILTER = { service: "service", reparation: "service", dack: "dack", besiktning: "kostnad", annat: null };
+function upcomingHtml(q) {
+  const c = car();
+  const list = sortedBookings(c).filter((b) => {
+    if (S.filter !== "alla" && BOOK_FILTER[b.kind] !== S.filter) return false;
+    if (!q) return true;
+    const hay = [BOOK_KINDS[b.kind], b.place, b.addr, b.note, bookingWhen(b), b.date].filter(Boolean).join(" ").toLowerCase();
+    return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+  });
+  if (!list.length) return { html: "", n: 0 };
+  return { n: list.length, html: `<div class="month">Kommande</div><div class="card">${list.map((b) => {
+    const past = daysUntil(parseDate(b.date)) < 0;
+    const kind = BOOK_KINDS[b.kind] || "Bokning";
+    return `<button class="entry" type="button" data-act="open-booking" data-id="${esc(b.id)}">
+      <span class="dl-ic">${icon("calendar", 20)}</span>
+      <span><span class="t">${esc(past ? `${kind}: blev det gjort?` : `${kind} bokad`)}</span>${b.place || b.addr ? `<span class="d">${esc([b.place, b.addr].filter(Boolean).join(" · "))}</span>` : ""}
+        <span class="m">${esc(bookingWhen(b))}</span></span>
+      <span class="amt"></span>
+    </button>`;
+  }).join("")}</div>` };
 }
 
 function entryRow(e, fromCat = null) {
@@ -1086,13 +1119,16 @@ function logListHtml() {
     const name = MONTHS[m - 1].replace(/^./, (x) => x.toUpperCase());
     return y === new Date().getFullYear() ? name : `${name} ${y}`;
   };
-  const count = q ? `<p class="hint" style="margin:0 4px">${ents.length === 1 ? "1 träff" : `${ents.length} träffar`} för ”${esc(q)}”</p>` : "";
+  const { html: upcoming, n: nUpcoming } = upcomingHtml(q);
+  const hits = ents.length + nUpcoming;
+  const count = q ? `<p class="hint" style="margin:0 4px">${hits === 1 ? "1 träff" : `${hits} träffar`} för ”${esc(q)}”</p>` : "";
+  if (!groups.length && upcoming) return count + upcoming;
   if (!groups.length) {
     return q
       ? `${count}<div class="card empty"><b>Inga träffar</b>Prova ett annat ord, till exempel verkstad, del eller belopp.</div>`
       : `<div class="card empty"><b>${S.filter === "alla" ? "Inget loggat än" : "Inget här än"}</b>Tryck på plusknappen för att logga en tankning, service eller något du gjort själv.</div>`;
   }
-  return count + groups.map((g) => `<div class="month">${esc(monthLabel(g.key))}</div><div class="card">${g.items.map((e) => entryRow(e)).join("")}</div>`).join("");
+  return count + upcoming + groups.map((g) => `<div class="month">${esc(monthLabel(g.key))}</div><div class="card">${g.items.map((e) => entryRow(e)).join("")}</div>`).join("");
 }
 
 function viewLog() {
@@ -1395,10 +1431,13 @@ function saveBooking(form, wantCalendar = false) {
   if (!date) return formError("Välj vilket datum som är bokat.");
   const id = form.dataset.id || "b" + randomId(8);
   const lat = num(fd.get("placeLat")), lon = num(fd.get("placeLon"));
+  const prev = (c.bookings || []).find((x) => x.id === id);
   const b = clean({
     id, kind: str("kind") || "service", date, time: str("time") || null, place: str("place") || null,
     addr: str("placeAddr") || null, lat: lat ?? null, lon: lon ?? null,
-    note: str("note") || null, createdBy: uid(),
+    note: str("note") || null,
+    // Vem som bokade och när behålls när bokningen ändras (visas under Senaste).
+    createdBy: prev?.createdBy || uid(), createdAt: prev?.createdAt || Date.now(),
   });
   const list = (c.bookings || []).filter((x) => x.id !== id);
   list.push(b);
