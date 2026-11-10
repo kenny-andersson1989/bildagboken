@@ -956,7 +956,6 @@ function viewOverview() {
   </article>`);
 
   parts.push(fuelCard(c));
-  parts.push(quickActions());
 
   const dls = deadlines(c);
   const wash = washRow(c);
@@ -1035,13 +1034,6 @@ function odoAgeHtml(c) {
   const ago = Math.max(0, -daysUntil(parseDate(last.date)));
   const when = ago === 0 ? "i dag" : ago === 1 ? "i går" : ago < 14 ? `för ${ago} dagar sedan` : ago < 60 ? `för ${Math.round(ago / 7)} veckor sedan` : `för ${daysText(ago)} sedan`;
   return `<div class="odo-age${ago >= 30 ? " old" : ""}">Uppdaterad ${esc(when)}${ago >= 30 ? " · dags att uppdatera" : ""}</div>`;
-}
-
-// Snabbknappar för det man loggar oftast.
-function quickActions() {
-  return `<div class="quick" role="group" aria-label="Logga snabbt">
-    ${["tank", "tvatt", "parkering", "kostnad"].map((t) => `<button type="button" data-act="new-entry" data-type="${t}">${icon(TYPE[t].icon, 22)}<span>${TYPE[t].label}</span></button>`).join("")}
-  </div>`;
 }
 
 // Att hålla koll på: bokningar, tvätt, brådskande och det som händer inom tre månader. Resten bakom "Visa fler".
