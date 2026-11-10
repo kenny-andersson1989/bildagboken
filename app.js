@@ -752,6 +752,10 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       ${inp("s_year", "Tillverkningsår", summer.year, 'inputmode="numeric" autocomplete="off"')}
       ${inp("s_depth", "Mönsterdjup (mm)", summer.depth, 'inputmode="decimal" autocomplete="off"')}
     </div>
+    <div class="row2">
+      ${inp("s_pf", "Lufttryck fram (bar)", summer.pressureFront != null ? fmt(summer.pressureFront, 1) : "", 'inputmode="decimal" autocomplete="off"')}
+      ${inp("s_pr", "Lufttryck bak (bar)", summer.pressureRear != null ? fmt(summer.pressureRear, 1) : "", 'inputmode="decimal" autocomplete="off"')}
+    </div>
     ${tireHead("vinter", "Vinterdäck")}
     <div class="row2">
       ${inp("w_brand", "Märke", winter.brand)}
@@ -761,8 +765,12 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       ${inp("w_year", "Tillverkningsår", winter.year, 'inputmode="numeric" autocomplete="off"')}
       ${inp("w_depth", "Mönsterdjup (mm)", winter.depth, 'inputmode="decimal" autocomplete="off"')}
     </div>
+    <div class="row2">
+      ${inp("w_pf", "Lufttryck fram (bar)", winter.pressureFront != null ? fmt(winter.pressureFront, 1) : "", 'inputmode="decimal" autocomplete="off"')}
+      ${inp("w_pr", "Lufttryck bak (bar)", winter.pressureRear != null ? fmt(winter.pressureRear, 1) : "", 'inputmode="decimal" autocomplete="off"')}
+    </div>
     <label class="check"><input type="checkbox" name="w_studded" id="cf-w_studded"${winter.studded ? " checked" : ""}> Vinterdäcken är dubbade</label>
-    <p class="hint">Dimensionen står på däckets sida, till exempel 205/55 R16. Sommar- och vinterdäcken sparas var för sig.</p>`;
+    <p class="hint">Dimensionen står på däckets sida, till exempel 205/55 R16. Rätt lufttryck står oftast på en dekal i förardörren eller i tanklocket. Sommar- och vinterdäcken sparas var för sig.</p>`;
   parts.specs = `
     <label class="field"><span>En sak per rad, till exempel "Motorolja: 5W-30"</span><textarea name="specsText" id="cf-specsText" rows="9">${esc(c.specsText ?? SPEC_TEMPLATE)}</textarea></label>
     <p class="hint">Fusklapp för butiken: oljetyp, däckdimension, lufttryck, torkarblad, glödlampor och liknande.</p>`;
@@ -1219,7 +1227,10 @@ function viewCar() {
   const tires = ["sommar", "vinter"].map((k) => {
     const t = (c.tires || []).find((x) => x.kind === k) || {};
     const on = (c.tiresOn || "sommar") === k;
-    const sub = [t.brand, t.size, t.year, t.depth != null && t.depth !== "" ? `${fmt(num(t.depth), 1)} mm` : "", k === "vinter" && t.studded ? "dubbade" : ""].filter(Boolean).join(" · ");
+    const pressure = t.pressureFront != null || t.pressureRear != null
+      ? `${t.pressureFront != null ? fmt(t.pressureFront, 1) : "–"} / ${t.pressureRear != null ? fmt(t.pressureRear, 1) : "–"} bar`
+      : "";
+    const sub = [t.brand, t.size, t.year, t.depth != null && t.depth !== "" ? `${fmt(num(t.depth), 1)} mm` : "", pressure, k === "vinter" && t.studded ? "dubbade" : ""].filter(Boolean).join(" · ");
     const depth = num(t.depth);
     const low = depth != null && depth < (k === "vinter" ? 4 : 3);
     return `<div class="dl"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div></div><span class="pill ${low ? "soon" : on ? "ok" : "none"}">${low ? "Slitna" : on ? "På" : "Förråd"}</span></div>`;
@@ -2137,8 +2148,8 @@ function readCarForm(form) {
     Object.assign(data, {
       tiresOn: str("tiresOn") || "sommar",
       tires: [
-        clean({ kind: "sommar", brand: str("s_brand") || null, size: str("s_size") || null, year: str("s_year") || null, depth: num(fd.get("s_depth")) }),
-        clean({ kind: "vinter", brand: str("w_brand") || null, size: str("w_size") || null, year: str("w_year") || null, depth: num(fd.get("w_depth")), studded: fd.get("w_studded") === "on" }),
+        clean({ kind: "sommar", brand: str("s_brand") || null, size: str("s_size") || null, year: str("s_year") || null, depth: num(fd.get("s_depth")), pressureFront: num(fd.get("s_pf")), pressureRear: num(fd.get("s_pr")) }),
+        clean({ kind: "vinter", brand: str("w_brand") || null, size: str("w_size") || null, year: str("w_year") || null, depth: num(fd.get("w_depth")), pressureFront: num(fd.get("w_pf")), pressureRear: num(fd.get("w_pr")), studded: fd.get("w_studded") === "on" }),
       ],
     });
   }
