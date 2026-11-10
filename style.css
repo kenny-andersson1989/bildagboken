@@ -478,6 +478,26 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
    och korten läggs i två kolumner, så att sidan använder bredden. */
 .fab-label, .nav-logo, .tab-wide { display: none; }
 
+/* Surfplatta på höjden: menyn ligger kvar längst ner, men korten får två kolumner. */
+@media (min-width: 760px) and (max-width: 899px) {
+  .app:not(.no-nav) { max-width: 880px; gap: 14px; }
+  .app[data-screen="view-oversikt"],
+  .app[data-screen="view-bilen"],
+  .app[data-screen="view-installningar"] { display: block; columns: 2; column-gap: 14px; }
+  .app[data-screen="view-oversikt"] > *,
+  .app[data-screen="view-bilen"] > *,
+  .app[data-screen="view-installningar"] > * { break-inside: avoid; margin: 0 0 14px; }
+  .app[data-screen] > .top,
+  .app[data-screen] > .car-chips,
+  .app[data-screen] > .card.toast,
+  .app[data-screen] > p.hint { column-span: all; }
+  .app[data-screen="view-ekonomi"] { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+  .app[data-screen="view-ekonomi"] > .top,
+  .app[data-screen="view-ekonomi"] > .hint { grid-column: 1 / -1; }
+  .app[data-screen="view-logg"],
+  .app[data-screen="view-aviseringar"] { max-width: 680px; }
+}
+
 @media (min-width: 900px) {
   :root { --side: 232px; }
 
@@ -584,7 +604,7 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .odo-age.old { color: var(--accent); font-weight: 600; }
 
 /* Mindre bild på bilen i mobilen, så att mer syns direkt */
-@media (max-width: 899px) {
+@media (max-width: 759px) {
   .hero .car { max-height: 110px; width: auto; margin: 2px auto 0; }
   .hero .car-photo { aspect-ratio: 21 / 9; }
   .hero .car-fig { margin: 8px 0 6px; }
