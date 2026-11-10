@@ -348,6 +348,21 @@ function serviceDueEstimate(st, c) {
   return out[0] || null;
 }
 
+// Förslag på nästa sista dag för besiktning, räknat från dagen bilen besiktigades.
+// Personbil: första gången senast 3 år efter att den togs i trafik, sedan 2 år, därefter var 14:e månad.
+// Årsmodellen används som ungefärligt år i trafik. Datumet går alltid att ändra.
+function nextInspectionDate(dateStr, c) {
+  const d = parseDate(dateStr);
+  if (!d) return "";
+  const year = Number(c?.year);
+  const age = year > 1900 ? d.getFullYear() - year : 99;
+  const months = age <= 3 ? 24 : 14;
+  const y = d.getFullYear(), m = d.getMonth() + months;
+  // Samma dag i månaden, eller sista dagen om månaden är kortare (31 jan + 14 mån = 31 mars, 30 nov → 28 feb).
+  const last = new Date(y, m + 1, 0).getDate();
+  return ymd(new Date(y, m, Math.min(d.getDate(), last)));
+}
+
 function levelFromDays(d) {
   if (d == null) return "ok";
   if (d < 0) return "urgent";
@@ -1501,7 +1516,7 @@ function entryForm(type, e = {}, opts = {}) {
       body = `${field("Typ", `<select name="category" id="ef-category">${COST_CATS.map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
         ${field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
         ${amount("Belopp (kr)")}${date}
-        ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning">`, "Står på besiktningsprotokollet. Fyll i så flyttas påminnelsen till nästa gång.")}</div>` : ""}
+        ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(nextInspectionDate(e.date || todayStr(), c)) : ""}">`, "Uträknat från dagens besiktning. Kontrollera mot besiktningsprotokollet och ändra om det inte stämmer.")}</div>` : ""}
         ${note}${photo}`;
       break;
   }
@@ -2278,6 +2293,12 @@ function onInput(ev) {
   if (ev.target.id === "ef-category") {
     const box = $("#ef-next-besikt");
     if (box) box.hidden = ev.target.value !== "Besiktning";
+  }
+  // Föreslå nästa besiktning så länge man inte själv har ändrat datumet.
+  if (ev.target.id === "ef-nextBesiktning") ev.target.dataset.manual = "1";
+  if ((ev.target.id === "ef-category" || ev.target.id === "ef-date") && $("#ef-nextBesiktning")) {
+    const next = $("#ef-nextBesiktning");
+    if (next.dataset.manual !== "1" && $("#ef-category")?.value === "Besiktning") next.value = nextInspectionDate($("#ef-date")?.value || todayStr(), car());
   }
   if (ev.target.id === "cf-tiresOn") {
     // Flytta "sitter på" till den däcksats som väljs.
