@@ -460,3 +460,5 @@ input[type="range"].fuel-range:focus-visible { outline: 2px solid var(--accent);
   @keyframes up { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
   @keyframes drop { from { transform: translate(-50%, -10px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
 }
+.tire-head { font-weight: 700; font-size: 14.5px; margin: 10px 0 -4px; padding-top: 12px; border-top: 1px solid var(--line); }
+.tire-head .tire-on { color: var(--accent); font-weight: 600; }
