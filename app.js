@@ -525,21 +525,6 @@ function economy(ents, months = 12) {
     const f = parseDate(first), t = new Date();
     monthsSpan = Math.max(1, Math.min(months, (t.getFullYear() - f.getFullYear()) * 12 + t.getMonth() - f.getMonth() + 1));
   }
-  // Räknas från fulltankning till fulltankning: allt som tankats däremellan delas med sträckan.
-  // Tankningar som inte var fulla räknas in i nästa fulla, men kan inte avsluta en sträcka själva.
-  const fullToFull = (list, val) => {
-    const sorted = list.sort((a, b) => a.odometer - b.odometer);
-    let start = null, acc = 0, sum = 0, dist = 0;
-    for (const e of sorted) {
-      const full = e.full !== false;
-      if (start == null) { if (full) start = e.odometer; continue; }
-      acc += val(e);
-      if (full && e.odometer > start) { sum += acc; dist += e.odometer - start; start = e.odometer; acc = 0; }
-    }
-    return dist > 0 ? sum / dist : null;
-  };
-  const fuelTanks = inPeriod.filter((e) => e.type === "tank" && e.odometer != null);
-  const fuelPerMil = fullToFull(fuelTanks.filter((e) => e.amount > 0), (e) => e.amount);
   const bars = [];
   const now = new Date();
   for (let i = 5; i >= 0; i--) {
@@ -549,7 +534,7 @@ function economy(ents, months = 12) {
     bars.push({ label: MONTHS_SHORT[d.getMonth()], sum, now: i === 0 });
   }
   const thisMonth = bars[5].sum, lastMonth = bars[4].sum;
-  return { total, cats, catCount, driven, perMonth: total / monthsSpan, perMil: driven ? total / driven : null, fuelPerMil, bars, thisMonth, lastMonth, count: paid.length };
+  return { total, cats, catCount, driven, perMonth: total / monthsSpan, perMil: driven ? total / driven : null, bars, thisMonth, lastMonth, count: paid.length };
 }
 
 function tipsFor(c) {
@@ -1029,12 +1014,12 @@ function viewOverview() {
     <h2>Ekonomi <button class="link" type="button" data-go="ekonomi">Mer</button></h2>
     ${hasCosts ? `<div class="eco">
       <div class="stat"><div class="label">${MONTHS[new Date().getMonth()].replace(/^./, (x) => x.toUpperCase())}</div><div class="n">${fmt(eco.thisMonth)} <small>kr</small></div></div>
-      <div class="stat"><div class="label">Bränsle per mil</div><div class="n">${eco.fuelPerMil != null ? fmt(eco.fuelPerMil, 2) : "–"} <small>kr</small></div></div>
+      <div class="stat"><div class="label">Snitt per månad</div><div class="n">${eco.total > 0 ? fmt(eco.perMonth) : "–"} <small>kr</small></div></div>
       <div class="bars" aria-label="Kostnad per månad de senaste sex månaderna">
         ${eco.bars.map((b) => `<div class="bar${b.now ? " now" : ""}">${b.sum ? `<b>${fmt(b.sum / 1000, 1)}k</b>` : ""}<i style="height:${Math.round((b.sum / maxBar) * 70)}%"></i><span>${b.label}</span></div>`).join("")}
       </div>
     </div>
-    ${eco.fuelPerMil == null ? `<p class="hint" style="margin-top:10px">Bränsle per mil räknas ut när ni har loggat två fulltankningar med mätarställning. Tankningar som inte var fulla räknas in i nästa fulla.</p>` : ""}`
+`
     : `<p class="muted">Här ser ni vad bilen kostar per månad när ni har loggat er första tankning eller kostnad.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="new-entry" data-type="tank">${icon("fuel", 16)} Logga en tankning</button></div>`}
   </article>`);
@@ -1122,7 +1107,6 @@ function viewEconomy() {
       <div class="stat"><div class="label">Per mil</div><div class="n">${eco.perMil != null && eco.total > 0 ? fmt(eco.perMil, 2) : "–"} <small>kr</small></div></div>
       <div class="stat"><div class="label">Per månad</div><div class="n">${eco.total > 0 ? fmt(eco.perMonth) : "–"} <small>kr</small></div></div>
       <div class="stat"><div class="label">Körsträcka</div><div class="n">${eco.driven != null ? fmt(eco.driven) : "–"} <small>mil</small></div></div>
-      <div class="stat"><div class="label">Bränsle per mil</div><div class="n">${eco.fuelPerMil != null ? fmt(eco.fuelPerMil, 2) : "–"} <small>kr</small></div></div>
     </div></div>
     <div class="card"><h2>Fördelning</h2>
       ${cats.length ? `<div class="rows">${cats.map(([k, v]) => `<button class="dl as-btn" type="button" data-act="open-cat" data-id="${esc(k)}"><span class="dl-ic">${icon(CAT_ICON[k] || "receipt", 20)}</span><span><span class="dl-t">${esc(k)}</span><span class="dl-s">${eco.total ? fmt((v / eco.total) * 100) : 0} % · ${eco.catCount[k]} st</span></span><span class="dl-v">${fmt(v)} kr ›</span></button>`).join("")}</div>
