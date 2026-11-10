@@ -618,3 +618,11 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .suggest button:hover, .suggest button:focus-visible { background: var(--accent-soft); }
 .suggest button span { font-size: 12.5px; color: var(--ink-3); }
 .suggest .hint { padding: 10px 14px; }
+
+/* Tillbaka-pilen i vyernas rubrik: samma knapp som i formulären, till vänster om rubriken. */
+.top.has-back { justify-content: flex-start; }
+.top .back-btn { width: 38px; height: 38px; align-self: flex-end; margin-bottom: 2px; }
+@media (min-width: 900px) { .top .back-btn { display: none; } }
+
+/* Underhållspunkten man tryckte på */
+.item-row.focus { outline: 2px solid var(--accent); outline-offset: 2px; }
