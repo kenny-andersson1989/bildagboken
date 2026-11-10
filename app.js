@@ -271,6 +271,27 @@ function entryCovers(e, item) {
   return words.some((w) => new RegExp(`(^|[^a-zåäö])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-zåäö])`).test(text));
 }
 
+// Delar som bara har skrivits i "Annat som byttes" (inte en underhållspunkt), en rad per del.
+// Nyckeln är delens namn i gemener; namnet visas som det skrevs första gången, med stor bokstav.
+function extraParts(c) {
+  const items = c?.items || [];
+  const map = new Map();
+  for (const e of S.entries) {
+    if (e.carId !== c.id || !e.parts?.length) continue;
+    for (const raw of e.parts) {
+      const key = normWord(raw);
+      if (!key || items.some((i) => entryCovers({ parts: [raw] }, i))) continue;
+      const x = map.get(key) || { key, name: raw.trim().replace(/^./, (ch) => ch.toUpperCase()), entries: [] };
+      x.entries.push(e);
+      map.set(key, x);
+    }
+  }
+  const list = [...map.values()];
+  list.forEach((x) => x.entries.sort((a, b) => (b.date || "").localeCompare(a.date || "")));
+  return list.sort((a, b) => (b.entries[0].date || "").localeCompare(a.entries[0].date || ""));
+}
+const hasPart = (e, key) => (e.parts || []).some((p) => normWord(p) === key);
+
 function itemNames(e, c) {
   const items = c?.items || [];
   return (e.items || []).map((id) => items.find((i) => i.id === id)?.name).filter(Boolean);
@@ -349,6 +370,8 @@ function itemStatus(item, c, ents) {
   const fr = [];
   if (remMil != null) fr.push({ f: remMil / item.mil, kind: "mil" });
   if (remDays != null) fr.push({ f: remDays / (item.months * 30.44), kind: "days" });
+  // Utan intervall går det inte att räkna ut nästa byte, men senaste bytet visas ändå.
+  if (!item.mil && !item.months && lastDate) return { item, unknown: true, noInterval: true, level: "none", label: "Inget intervall", last, lastDate, lastMil };
   if (!fr.length) return { item, unknown: true, noOdo: odo == null && !!item.mil && lastMil != null, level: "none", last, lastDate, lastMil };
   fr.sort((a, b) => a.f - b.f);
   const frac = fr[0].f;
@@ -1334,7 +1357,15 @@ function viewCar() {
     <div class="card" id="underhall" style="scroll-margin-top:16px">
       <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
       <div class="rows">${st.map((s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc([
-        s.item.mil ? `var ${fmt(s.item.mil)} mil` : "", s.item.months ? `${s.item.months >= 24 && s.item.months % 12 === 0 ? `${s.item.months / 12} år` : `${s.item.months} mån`}` : ""].filter(Boolean).join(" eller ") + (s.noOdo ? " · mätarställning saknas" : s.unknown ? " · senaste byte okänt" : s.lastDate ? ` · senast ${fmtDateShort(s.lastDate)}` : ""))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.unknown ? "Okänt" : s.label)}</span></button>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
+        [s.item.mil ? `var ${fmt(s.item.mil)} mil` : "", s.item.months ? `${s.item.months >= 24 && s.item.months % 12 === 0 ? `${s.item.months / 12} år` : `${s.item.months} mån`}` : ""].filter(Boolean).join(" eller ") || "inget intervall",
+        s.noOdo ? "mätarställning saknas" : s.noInterval ? `senast ${fmtDateShort(s.lastDate)}` : s.unknown ? "senaste byte okänt" : s.lastDate ? `senast ${fmtDateShort(s.lastDate)}` : ""].filter(Boolean).join(" · "))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
+      ${(() => {
+        const extras = extraParts(c);
+        if (!extras.length) return "";
+        const rows = extras.map((x) => `<button class="dl as-btn" type="button" data-act="open-part" data-id="${esc(x.key)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(x.name)}</div><div class="dl-s">${esc(`senast bytt ${fmtDateShort(x.entries[0].date)}${x.entries.length > 1 ? ` · ${x.entries.length} gånger` : ""}`)}</div></div><span></span></button>`).join("");
+        return `${S.partsAll ? `<p class="label" style="margin:14px 0 2px">Annat som har bytts</p><div class="rows">${rows}</div>` : ""}
+          <button class="link" type="button" data-act="toggle-parts" style="margin-top:10px">${S.partsAll ? "Visa färre" : `Visa ${extras.length} till`}</button>`;
+      })()}
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
     <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
@@ -1765,7 +1796,13 @@ function entryForm(type, e = {}, opts = {}) {
   const items = (c.items || []).length ? `<fieldset><legend>Det här gjordes</legend><div class="checks">
     ${c.items.map((i) => `<label class="check"><input type="checkbox" name="items" value="${esc(i.id)}"${(e.items || []).includes(i.id) ? " checked" : ""}> ${esc(i.name)}</label>`).join("")}
   </div></fieldset>` : "";
-  const parts = field("Annat som byttes", `<input name="parts" id="ef-parts" value="${esc((e.parts || []).join(", "))}" placeholder="Till exempel bromsklossar fram, glödlampa">`, "Skilj med kommatecken. Står till exempel luftfilter eller bromsvätska här räknas underhållet om för den punkten, precis som om den var ikryssad.");
+  // Delar som skrivits in tidigare finns som kryssrutor under "Fler delar", så att man slipper skriva dem igen.
+  const extras = ["service", "eget"].includes(type) ? extraParts(c) : [];
+  const extraKeys = new Set(extras.map((x) => x.key));
+  const typedParts = (e.parts || []).filter((p) => !extraKeys.has(normWord(p)));
+  const extraChecks = extras.length ? `<details class="more"${extras.some((x) => hasPart(e, x.key)) ? " open" : ""}><summary>Fler delar (${extras.length})</summary>
+    <div class="checks" style="margin-top:8px">${extras.map((x) => `<label class="check"><input type="checkbox" name="extraParts" value="${esc(x.name)}"${hasPart(e, x.key) ? " checked" : ""}> ${esc(x.name)}</label>`).join("")}</div></details>` : "";
+  const parts = extraChecks + field("Annat som byttes", `<input name="parts" id="ef-parts" value="${esc(typedParts.join(", "))}" placeholder="Till exempel bromsklossar fram, glödlampa">`, "Skilj med kommatecken. Står till exempel luftfilter eller bromsvätska här räknas underhållet om för den punkten, precis som om den var ikryssad.");
   let body = "";
   switch (type) {
     case "tank": {
@@ -2037,7 +2074,11 @@ async function saveEntry(form) {
     case "service":
     case "eget":
       data.items = fd.getAll("items").map(String);
-      data.parts = str("parts").split(",").map((s) => s.trim()).filter(Boolean);
+      {
+        // Skrivna delar och ikryssade "Fler delar", utan dubbletter.
+        const seen = new Set();
+        data.parts = [...str("parts").split(","), ...fd.getAll("extraParts").map(String)].map((x) => x.trim()).filter((x) => x && !seen.has(normWord(x)) && seen.add(normWord(x)));
+      }
       data.workshop = type === "service" ? str("workshop") || null : null;
       data.title = type === "eget" ? str("title") : null;
       if (type === "eget" && !data.title) return formError("Skriv vad du gjorde.");
@@ -2149,7 +2190,7 @@ function openEntry(id, { fromCat = null } = {}) {
     <div class="btn-row" style="margin-top:18px">
       <button class="btn" type="button" data-act="edit-entry" data-id="${esc(e.id)}">Ändra</button>
       <button class="btn danger" type="button" data-act="delete-entry" data-id="${esc(e.id)}">Ta bort</button>
-    </div>`, fromCat?.startsWith("item:") ? { back: "edit-item", backId: fromCat.slice(5) } : fromCat ? { back: "open-cat", backId: fromCat } : {});
+    </div>`, fromCat?.startsWith("item:") ? { back: "edit-item", backId: fromCat.slice(5) } : fromCat?.startsWith("part:") ? { back: "open-part", backId: fromCat.slice(5) } : fromCat ? { back: "open-cat", backId: fromCat } : {});
   if (e.photoId) {
     getDoc(ref("photos", e.photoId)).then((s) => {
       const box = $("#photo-box");
@@ -2183,6 +2224,24 @@ function itemSheet(id) {
     <div class="form" style="margin-top:18px">
       <button class="btn primary block" type="button" data-act="log-item" data-id="${esc(id)}">Logga byte</button>
       <button class="btn ghost block" type="button" data-act="edit-item-form" data-id="${esc(id)}">Ändra intervall eller senaste byte</button>
+    </div>`);
+}
+
+function partSheet(key) {
+  const c = car();
+  const x = extraParts(c).find((p) => p.key === key);
+  if (!x) return;
+  openSheet(x.name, `
+    <dl class="detail-list">
+      <div><dt>Senast bytt</dt><dd>${esc(fmtDate(x.entries[0].date))}</dd></div>
+      <div><dt>Antal byten</dt><dd>${x.entries.length}</dd></div>
+    </dl>
+    <h3 class="section-t" style="margin-top:20px">Byten i loggen</h3>
+    <div class="rows" style="margin-top:6px">${x.entries.map((e) => entryRow(e, `part:${key}`)).join("")}</div>
+    <div class="form" style="margin-top:18px">
+      <button class="btn primary block" type="button" data-act="log-part" data-id="${esc(x.name)}">Logga byte</button>
+      <button class="btn ghost block" type="button" data-act="part-to-item" data-id="${esc(x.name)}">Gör till underhållspunkt</button>
+      <p class="hint">Som underhållspunkt kan delen få ett intervall och en stapel som visar när det är dags igen.</p>
     </div>`);
 }
 
@@ -2568,6 +2627,19 @@ const ACTIONS = {
   "edit-item"(el) { itemSheet(el.dataset.id); },
   "edit-item-form"(el) { itemsSheet(el.dataset.id); },
   "log-item"(el) { entryForm("service", { items: [el.dataset.id] }); },
+  "toggle-parts"() { S.partsAll = !S.partsAll; render(); },
+  "open-part"(el) { partSheet(el.dataset.id); },
+  "log-part"(el) { entryForm("service", { parts: [el.dataset.id] }); },
+  "part-to-item"(el) {
+    // Lägg till delen som underhållspunkt utan intervall, och öppna formuläret så att man kan fylla i intervallet.
+    const c = car();
+    const id = "i" + randomId(6);
+    const items = [...(c.items || []), { id, name: el.dataset.id, mil: null, months: null }];
+    updateDoc(ref("cars", c.id), { items }).catch(onWriteError);
+    c.items = items;
+    itemsSheet(id);
+    showToast(`${el.dataset.id} är en underhållspunkt. Fyll i intervallet och spara.`, 5000);
+  },
   "add-item-row"() {
     $("#item-rows").insertAdjacentHTML("beforeend", itemRowHtml({ id: "i" + randomId(6), name: "", mil: null, months: null }));
     $("#item-rows .item-row:last-child input")?.focus();
