@@ -1177,22 +1177,86 @@ function viewLog() {
     <div id="log-list" class="log-list">${logListHtml()}</div>`;
 }
 
+// Ekonomi: vald månad överst (bläddra bakåt och framåt), årets tolv månader som staplar, och årets nyckeltal.
+const ymKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+function ecoSelected() {
+  const now = ymKey(new Date());
+  if (!S.ecoMonth || S.ecoMonth > now) S.ecoMonth = now;
+  return S.ecoMonth;
+}
+function monthLabelLong(key) {
+  const [y, m] = key.split("-").map(Number);
+  return `${MONTHS[m - 1].replace(/^./, (x) => x.toUpperCase())} ${y}`;
+}
+function catRows(list, total, monthKey) {
+  const cats = {}, count = {};
+  for (const e of list) { const k = catOf(e); cats[k] = (cats[k] || 0) + e.amount; count[k] = (count[k] || 0) + 1; }
+  return Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<button class="dl as-btn" type="button" data-act="open-cat" data-id="${esc(k)}" data-month="${monthKey}">
+    <span class="dl-ic">${icon(CAT_ICON[k] || "receipt", 20)}</span>
+    <span><span class="dl-t">${esc(k)}</span><span class="dl-s">${total ? fmt((v / total) * 100) : 0} % · ${count[k]} st</span></span>
+    <span class="dl-v">${fmtKr(v)} kr ›</span></button>`).join("");
+}
+
 function viewEconomy() {
-  const eco = economy(carEntries());
-  const cats = Object.entries(eco.cats).sort((a, b) => b[1] - a[1]);
-  return `${subHeader("Senaste 12 månaderna", "Ekonomi")}
-    <div class="card"><div class="eco">
-      <div class="stat"><div class="label">Totalt</div><div class="n">${fmt(eco.total)} <small>kr</small></div></div>
-      <div class="stat"><div class="label">Kostnad per mil</div><div class="n">${eco.perMil != null && eco.total > 0 ? fmt(eco.perMil, 2) : "–"} <small>kr</small></div></div>
-      <div class="stat"><div class="label">Snitt per månad</div><div class="n">${eco.total > 0 ? fmt(eco.perMonth) : "–"} <small>kr</small></div></div>
-      <div class="stat"><div class="label">Körsträcka</div><div class="n">${eco.driven != null ? fmt(eco.driven) : "–"} <small>mil</small></div></div>
-    </div></div>
-    <div class="card"><h2>Fördelning</h2>
-      ${cats.length ? `<div class="rows">${cats.map(([k, v]) => `<button class="dl as-btn" type="button" data-act="open-cat" data-id="${esc(k)}"><span class="dl-ic">${icon(CAT_ICON[k] || "receipt", 20)}</span><span><span class="dl-t">${esc(k)}</span><span class="dl-s">${eco.total ? fmt((v / eco.total) * 100) : 0} % · ${eco.catCount[k]} st</span></span><span class="dl-v">${fmt(v)} kr ›</span></button>`).join("")}</div>
-        <p class="hint" style="margin-top:10px">Tryck på en rad för att se vad som ingår.</p>`
-        : `<p class="muted">Inga kostnader loggade de senaste 12 månaderna. Belopp från tankningar, service, däck och andra kostnader hamnar här.</p>`}
+  const paid = carEntries().filter((e) => e.amount > 0 && e.date);
+  const sel = ecoSelected();
+  const nowKey = ymKey(new Date());
+  const year = Number(sel.slice(0, 4));
+  const firstKey = paid.reduce((m, e) => (e.date.slice(0, 7) < m ? e.date.slice(0, 7) : m), nowKey);
+  const firstYear = Number(firstKey.slice(0, 4));
+
+  // Vald månad
+  const monthList = paid.filter((e) => e.date.startsWith(sel));
+  const monthTotal = monthList.reduce((s, e) => s + e.amount, 0);
+
+  // Årets tolv månader
+  const sums = Array.from({ length: 12 }, (_, i) => paid.filter((e) => e.date.startsWith(`${year}-${pad(i + 1)}`)).reduce((s, e) => s + e.amount, 0));
+  const max = Math.max(1, ...sums);
+  const yearTotal = sums.reduce((a, b) => a + b, 0);
+  // Snitt: månader som har passerat i år, från första loggade månaden om bilen började loggas samma år.
+  const startM = year === firstYear ? Number(firstKey.slice(5, 7)) : 1;
+  const endM = year === new Date().getFullYear() ? new Date().getMonth() + 1 : 12;
+  const monthsCounted = Math.max(1, endM - startM + 1);
+
+  // Årets nyckeltal
+  const odos = carEntries().filter((e) => e.odometer != null && (e.date || "").startsWith(`${year}-`)).map((e) => e.odometer);
+  const driven = odos.length >= 2 ? Math.max(...odos) - Math.min(...odos) : null;
+
+  const navBtn = (act, d, label, disabled) => `<button class="icon-btn" type="button" data-act="${act}" data-d="${d}" aria-label="${label}"${disabled ? " disabled" : ""}>${icon(d < 0 ? "back" : "next", 18)}</button>`;
+  return `${subHeader("Vad bilen kostar", "Ekonomi")}
+    <div class="card eco-month">
+      <div class="eco-nav">
+        ${navBtn("eco-step", -1, "Föregående månad", sel <= firstKey)}
+        <div class="eco-nav-t"><div class="label">Kostnad</div><h2>${esc(monthLabelLong(sel))}</h2></div>
+        ${navBtn("eco-step", 1, "Nästa månad", sel >= nowKey)}
+      </div>
+      <div class="eco-big">${fmtKr(monthTotal)} <small>kr</small></div>
+      ${monthList.length
+        ? `<p class="muted" style="text-align:center;margin:0 0 10px">${monthList.length === 1 ? "1 post" : `${monthList.length} poster`}</p><div class="rows">${catRows(monthList, monthTotal, sel)}</div>`
+        : `<p class="muted" style="text-align:center">Inga kostnader loggade i ${esc(MONTHS[Number(sel.slice(5, 7)) - 1])}.</p>`}
     </div>
-    <p class="hint" style="text-align:center">Kostnad per mil räknas på körsträckan mellan loggade mätarställningar.</p>`;
+    <div class="card">
+      <div class="eco-nav">
+        ${navBtn("eco-year", -1, "Föregående år", year <= firstYear)}
+        <div class="eco-nav-t"><div class="label">Hela året</div><h2>${year}</h2></div>
+        ${navBtn("eco-year", 1, "Nästa år", year >= new Date().getFullYear())}
+      </div>
+      <div class="year-bars" role="group" aria-label="Kostnad per månad ${year}">
+        ${sums.map((v, i) => {
+          const key = `${year}-${pad(i + 1)}`;
+          const future = key > nowKey;
+          return `<button type="button" class="ybar${key === sel ? " sel" : ""}" data-act="eco-month" data-m="${key}"${future ? " disabled" : ""} aria-label="${esc(monthLabelLong(key))}: ${fmtKr(v)} kr" aria-pressed="${key === sel}">
+            <i${v ? "" : ' class="zero"'} style="height:${v ? Math.max(4, Math.round((v / max) * 100)) : 0}%"></i><span>${MONTHS_SHORT[i].slice(0, 1)}</span></button>`;
+        }).join("")}
+      </div>
+      <div class="eco" style="margin-top:12px">
+        <div class="stat"><div class="label">Totalt ${year}</div><div class="n">${fmt(yearTotal)} <small>kr</small></div></div>
+        <div class="stat"><div class="label">Snitt per månad</div><div class="n">${yearTotal ? fmt(yearTotal / monthsCounted) : "–"} <small>kr</small></div></div>
+        <div class="stat"><div class="label">Kostnad per mil</div><div class="n">${driven && yearTotal ? fmt(yearTotal / driven, 2) : "–"} <small>kr</small></div></div>
+        <div class="stat"><div class="label">Körsträcka</div><div class="n">${driven != null ? fmt(driven) : "–"} <small>mil</small></div></div>
+      </div>
+      <p class="hint" style="margin-top:10px">Tryck på en stapel för att se den månaden. Kostnad per mil räknas på körsträckan mellan årets loggade mätarställningar.</p>
+    </div>`;
 }
 
 // Stapel som fylls på från förra bytet till nästa: tom när det är nybytt, full när det är dags.
@@ -2344,14 +2408,29 @@ const ACTIONS = {
     showToast("Datumet är borttaget");
   },
   "open-cat"(el) {
-    const cat = el.dataset.id;
+    // Id:t kan bära med sig månaden ("Bränsle@@2026-11"), så att tillbaka från en post visar samma månad.
+    const [cat, idMonth] = el.dataset.id.split("@@");
+    const month = el.dataset.month || idMonth || null;
     const since = addMonths(today0(), -12);
-    const list = carEntries().filter((e) => e.amount > 0 && parseDate(e.date) >= since && catOf(e) === cat);
+    const list = carEntries().filter((e) => e.amount > 0 && catOf(e) === cat && (month ? (e.date || "").startsWith(month) : parseDate(e.date) >= since));
     const sum = list.reduce((s, e) => s + e.amount, 0);
     openSheet(cat, `
-      <p class="muted" style="margin-bottom:10px">Senaste 12 månaderna · ${list.length} st · <b>${fmt(sum)} kr</b></p>
-      <div class="rows">${list.map((e) => entryRow(e, cat)).join("") || `<p class="muted">Inget här.</p>`}</div>`);
+      <p class="muted" style="margin-bottom:10px">${month ? esc(monthLabelLong(month)) : "Senaste 12 månaderna"} · ${list.length} st · <b>${fmtKr(sum)} kr</b></p>
+      <div class="rows">${list.map((e) => entryRow(e, month ? `${cat}@@${month}` : cat)).join("") || `<p class="muted">Inget här.</p>`}</div>`);
   },
+  "eco-step"(el) {
+    const [y, m] = ecoSelected().split("-").map(Number);
+    S.ecoMonth = ymKey(new Date(y, m - 1 + Number(el.dataset.d), 1));
+    render();
+  },
+  "eco-year"(el) {
+    const [y, m] = ecoSelected().split("-").map(Number);
+    const ny = y + Number(el.dataset.d);
+    // Samma månad nästa eller förra året, men aldrig framåt i tiden.
+    S.ecoMonth = ymKey(new Date(ny, m - 1, 1));
+    render();
+  },
+  "eco-month"(el) { S.ecoMonth = el.dataset.m; render(); },
   "goto-maintenance"() {
     setView("bilen");
     document.getElementById("underhall")?.scrollIntoView({ block: "start" });
