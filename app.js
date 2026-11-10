@@ -670,7 +670,7 @@ function renderOnboarding(error = "") {
     </form>
     ${error ? `<p class="err">${esc(error)}</p>` : ""}
     <button class="link" type="button" data-act="logout" style="align-self:center">Logga ut (${esc(S.user.email || "")})</button>`);
-  if (join) $("#ob-code")?.focus();
+  if (join && !window.matchMedia("(pointer: coarse)").matches) $("#ob-code")?.focus();
 }
 
 // Formuläret för bilen är uppdelat i delar, så att varje "Ändra" bara visar sin egen del.
@@ -1629,8 +1629,11 @@ function entryForm(type, e = {}, opts = {}) {
       <button class="btn primary block" type="submit">Spara</button>
       ${type === "tank" && !isEdit ? `<p class="hint">Din sambo får en avisering när du sparar.</p>` : ""}
     </form>`, { back: isEdit || opts.bookingId ? null : "new-entry" });
-  if (type === "tank" && !isEdit) $("#ef-amount")?.focus({ preventScroll: true });
-  if (type === "matare") $("#ef-odometer")?.focus({ preventScroll: true });
+  // Sätt markören i första fältet bara på dator. På telefon öppnar det tangentbordet direkt och döljer formuläret.
+  if (!window.matchMedia("(pointer: coarse)").matches) {
+    if (type === "tank" && !isEdit) $("#ef-amount")?.focus({ preventScroll: true });
+    if (type === "matare") $("#ef-odometer")?.focus({ preventScroll: true });
+  }
 }
 
 /* ----------------------------------------------------------- plats (GPS) */
