@@ -1040,7 +1040,7 @@ function odoAgeHtml(c) {
 // Snabbknappar för det man loggar oftast.
 function quickActions() {
   return `<div class="quick" role="group" aria-label="Logga snabbt">
-    ${["tank", "matare", "tvatt", "parkering"].map((t) => `<button type="button" data-act="new-entry" data-type="${t}">${icon(TYPE[t].icon, 22)}<span>${TYPE[t].label}</span></button>`).join("")}
+    ${["tank", "tvatt", "parkering", "kostnad"].map((t) => `<button type="button" data-act="new-entry" data-type="${t}">${icon(TYPE[t].icon, 22)}<span>${TYPE[t].label}</span></button>`).join("")}
   </div>`;
 }
 
