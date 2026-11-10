@@ -2149,7 +2149,7 @@ function openEntry(id, { fromCat = null } = {}) {
     <div class="btn-row" style="margin-top:18px">
       <button class="btn" type="button" data-act="edit-entry" data-id="${esc(e.id)}">Ändra</button>
       <button class="btn danger" type="button" data-act="delete-entry" data-id="${esc(e.id)}">Ta bort</button>
-    </div>`, fromCat ? { back: "open-cat", backId: fromCat } : {});
+    </div>`, fromCat?.startsWith("item:") ? { back: "edit-item", backId: fromCat.slice(5) } : fromCat ? { back: "open-cat", backId: fromCat } : {});
   if (e.photoId) {
     getDoc(ref("photos", e.photoId)).then((s) => {
       const box = $("#photo-box");
@@ -2157,6 +2157,33 @@ function openEntry(id, { fromCat = null } = {}) {
       box.innerHTML = s.exists() ? `<img class="photo" src="${esc(s.data().data)}" alt="Bifogad bild för ${esc(entryTitle(e))}">` : `<p class="hint">Bilden finns inte längre.</p>`;
     }).catch(() => { const box = $("#photo-box"); if (box) box.innerHTML = `<p class="hint">Bilden gick inte att hämta just nu.</p>`; });
   }
+}
+
+// En underhållspunkt: status, alla loggade byten (ikryssade eller skrivna i Annat som byttes) och knappar för att logga eller ändra.
+function itemSheet(id) {
+  const c = car();
+  const item = (c.items || []).find((i) => i.id === id);
+  if (!item) return;
+  const st = itemStatus(item, c, carEntries());
+  const history = carEntries().filter((e) => entryCovers(e, item)).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const interval = [item.mil ? `var ${fmt(item.mil)} mil` : "", item.months ? (item.months >= 24 && item.months % 12 === 0 ? `${item.months / 12} år` : `${item.months} mån`) : ""].filter(Boolean).join(" eller ");
+  const manual = item.baseDate && !history.some((e) => e.date >= item.baseDate);
+  openSheet(item.name, `
+    <dl class="detail-list">
+      <div><dt>Intervall</dt><dd>${esc(interval || "–")}</dd></div>
+      <div><dt>Senast bytt</dt><dd>${esc(st.lastDate ? [fmtDate(st.lastDate), st.lastMil != null ? `vid ${fmt(st.lastMil)} mil` : ""].filter(Boolean).join(", ") : "Okänt")}</dd></div>
+      ${!st.unknown ? `<div><dt>Nästa</dt><dd>${esc(dueText(st) || "–")}</dd></div><div><dt>Kvar</dt><dd>${esc(st.label)}</dd></div>` : ""}
+    </dl>
+    ${wearBar(st) ? `<div style="margin-top:12px">${wearBar(st)}</div>` : ""}
+    <h3 class="section-t" style="margin-top:20px">Byten i loggen</h3>
+    ${history.length
+      ? `<div class="rows" style="margin-top:6px">${history.map((e) => entryRow(e, `item:${id}`)).join("")}</div>`
+      : `<p class="muted" style="margin-top:6px">Inga loggade byten än. Kryssa i ${esc(item.name.toLowerCase())} när du loggar en service eller ett eget jobb, så hamnar det här.</p>`}
+    ${manual ? `<p class="hint" style="margin-top:8px">Senaste byte är ifyllt för hand under Underhåll: ${esc(fmtDate(item.baseDate))}${item.baseMil != null ? ` vid ${fmt(item.baseMil)} mil` : ""}.</p>` : ""}
+    <div class="form" style="margin-top:18px">
+      <button class="btn primary block" type="button" data-act="log-item" data-id="${esc(id)}">Logga byte</button>
+      <button class="btn ghost block" type="button" data-act="edit-item-form" data-id="${esc(id)}">Ändra intervall eller senaste byte</button>
+    </div>`);
 }
 
 function itemsSheet(focusId = null) {
@@ -2538,7 +2565,9 @@ const ACTIONS = {
     showToast("Ändringarna om bilen är sparade.");
   },
   "edit-items"() { itemsSheet(); },
-  "edit-item"(el) { itemsSheet(el.dataset.id); },
+  "edit-item"(el) { itemSheet(el.dataset.id); },
+  "edit-item-form"(el) { itemsSheet(el.dataset.id); },
+  "log-item"(el) { entryForm("service", { items: [el.dataset.id] }); },
   "add-item-row"() {
     $("#item-rows").insertAdjacentHTML("beforeend", itemRowHtml({ id: "i" + randomId(6), name: "", mil: null, months: null }));
     $("#item-rows .item-row:last-child input")?.focus();
