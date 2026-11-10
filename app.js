@@ -1363,7 +1363,12 @@ function bookingForm(b = {}) {
         ${field("Datum", `<input type="date" name="date" id="bk-date" required value="${esc(b.date || "")}">`)}
         ${field("Tid", `<input type="time" name="time" id="bk-time" value="${esc(b.time || "")}">`)}
       </div>
-      ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Till exempel Mekonomen Kungsbacka">`)}
+      ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Skriv företagets namn, till exempel Mölndals däckservice" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-suggest" aria-expanded="false">
+        <input type="hidden" name="placeAddr" id="bk-addr" value="${esc(b.addr || "")}">
+        <input type="hidden" name="placeLat" id="bk-lat" value="${b.lat ?? ""}">
+        <input type="hidden" name="placeLon" id="bk-lon" value="${b.lon ?? ""}">
+        <span class="suggest" id="bk-suggest" role="listbox" hidden></span>
+        <small id="bk-addr-show">${b.addr ? esc(b.addr) : "Välj ett förslag så kommer adressen med, och kartan fungerar i kalendern."}</small>`)}
       ${field("Anteckning", `<textarea name="note" id="bk-note" rows="2" placeholder="Till exempel lämna nyckeln i brevlådan">${esc(b.note || "")}</textarea>`)}
       <p class="err" id="form-err" hidden></p>
       <button class="btn ${isEdit ? "" : "primary "}block" type="submit">${isEdit ? "Spara ändringar" : "Spara bokningen"}</button>
@@ -1389,7 +1394,12 @@ function saveBooking(form, wantCalendar = false) {
   const date = str("date");
   if (!date) return formError("Välj vilket datum som är bokat.");
   const id = form.dataset.id || "b" + randomId(8);
-  const b = clean({ id, kind: str("kind") || "service", date, time: str("time") || null, place: str("place") || null, note: str("note") || null, createdBy: uid() });
+  const lat = num(fd.get("placeLat")), lon = num(fd.get("placeLon"));
+  const b = clean({
+    id, kind: str("kind") || "service", date, time: str("time") || null, place: str("place") || null,
+    addr: str("placeAddr") || null, lat: lat ?? null, lon: lon ?? null,
+    note: str("note") || null, createdBy: uid(),
+  });
   const list = (c.bookings || []).filter((x) => x.id !== id);
   list.push(b);
   updateDoc(ref("cars", c.id), { bookings: list }).catch(onWriteError);
@@ -1431,7 +1441,7 @@ function exportLog() {
 /* ------------------------------------------------------------- kalender */
 
 // Bygger en kalenderfil (.ics) som iPhone, Android och datorer kan lägga in i kalendern.
-function buildIcs({ uid: eventId, title, date, time = null, durationMin = 60, location = null, description = null, alarm }) {
+function buildIcs({ uid: eventId, title, date, time = null, durationMin = 60, location = null, geo = null, description = null, alarm }) {
   const esc2 = (s) => String(s || "").replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
   const ymdC = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
   const hm = (d) => `${ymdC(d)}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
@@ -1452,11 +1462,28 @@ function buildIcs({ uid: eventId, title, date, time = null, durationMin = 60, lo
     "BEGIN:VEVENT", `UID:${eventId}@bildagboken`, `DTSTAMP:${stamp}`, start, end,
     `SUMMARY:${esc2(title)}`,
     location ? `LOCATION:${esc2(location)}` : null,
+    // Position: GEO för alla kalendrar, och Apples egen rad så att iPhone visar kartan och vägbeskrivning.
+    geo ? `GEO:${geo.lat};${geo.lon}` : null,
+    geo ? `X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-APPLE-RADIUS=100;X-ADDRESS="${String(geo.address || "").replace(/"/g, "")}";X-TITLE="${String(geo.title || "").replace(/"/g, "")}":geo:${geo.lat},${geo.lon}` : null,
     description ? `DESCRIPTION:${esc2(description)}` : null,
     // Påminnelse: dagen innan för bokade tider, en vecka innan för sista datum.
     "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${esc2(title)}`, `TRIGGER:${alarm || (time ? "-P1D" : "-PT15H")}`, "END:VALARM",
     "END:VEVENT", "END:VCALENDAR",
-  ].filter(Boolean).join("\r\n");
+  ].filter(Boolean).map(foldIcs).join("\r\n");
+}
+
+// Kalenderfiler ska ha högst 75 byte per rad; längre rader delas med radbrytning och mellanslag.
+function foldIcs(line) {
+  const enc = new TextEncoder();
+  if (enc.encode(line).length <= 75) return line;
+  const out = [];
+  let cur = "";
+  for (const ch of line) {
+    if (enc.encode(cur + ch).length > (out.length ? 74 : 75)) { out.push(cur); cur = ""; }
+    cur += ch;
+  }
+  out.push(cur);
+  return out.join("\r\n ");
 }
 
 function addToCalendar(ev) {
@@ -1483,7 +1510,8 @@ function bookingCalendarEvent(b, c = car()) {
     date: b.date,
     time: b.time,
     durationMin: b.kind === "besiktning" ? 30 : 60,
-    location: b.place,
+    location: [b.place, b.addr].filter(Boolean).join(", "),
+    geo: b.lat != null && b.lon != null ? { lat: b.lat, lon: b.lon, title: b.place, address: b.addr } : null,
     description: [b.note, c.plate ? `Reg.nr ${c.plate}` : null, "Inlagd från Bildagboken"].filter(Boolean).join("\n"),
     fileName: `${kind} ${b.date}`,
   };
@@ -1611,6 +1639,51 @@ function entryForm(type, e = {}, opts = {}) {
   if (!window.matchMedia("(pointer: coarse)").matches) {
     if (type === "tank" && !isEdit) $("#ef-amount")?.focus({ preventScroll: true });
     if (type === "matare") $("#ef-odometer")?.focus({ preventScroll: true });
+  }
+}
+
+/* ------------------------------------------------- sök företag och adress */
+
+// Förslag på företag och adresser medan man skriver, från Photon (byggd på OpenStreetMap).
+// Sökningen görs först efter en kort paus i skrivandet och bara inom Sverige.
+let placeTimer = null, placeAbort = null;
+function placeSearchSoon(input) {
+  clearTimeout(placeTimer);
+  const q = input.value.trim();
+  const box = $("#bk-suggest");
+  if (q.length < 3) { if (box) box.hidden = true; input.setAttribute("aria-expanded", "false"); return; }
+  placeTimer = setTimeout(() => placeSearch(q), 400);
+}
+
+const placeLabel = (pr) => {
+  const street = [pr.street, pr.housenumber].filter(Boolean).join(" ");
+  const addr = [street, [pr.postcode, pr.city || pr.town || pr.village || pr.district].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  return { name: pr.name || street || pr.city || "", addr };
+};
+
+async function placeSearch(q) {
+  const box = $("#bk-suggest"), input = $("#bk-place");
+  if (!box || !input) return;
+  placeAbort?.abort();
+  placeAbort = new AbortController();
+  try {
+    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&bbox=10.5,55.0,24.3,69.1`, { signal: placeAbort.signal });
+    if (!res.ok) throw new Error("photon " + res.status);
+    const j = await res.json();
+    if (input.value.trim() !== q) return;
+    const seen = new Set();
+    const list = (j.features || []).filter((f) => f.properties?.countrycode === "SE" || !f.properties?.countrycode).map((f) => {
+      const { name, addr } = placeLabel(f.properties || {});
+      const [lon, lat] = f.geometry?.coordinates || [];
+      return name ? { name, addr, lat, lon } : null;
+    }).filter((x) => x && !seen.has(x.name + x.addr) && seen.add(x.name + x.addr));
+    box.innerHTML = list.length
+      ? list.map((x) => `<button type="button" role="option" data-act="place-pick" data-name="${esc(x.name)}" data-addr="${esc(x.addr)}" data-lat="${x.lat ?? ""}" data-lon="${x.lon ?? ""}"><b>${esc(x.name)}</b>${x.addr ? `<span>${esc(x.addr)}</span>` : ""}</button>`).join("")
+      : `<p class="hint">Inga träffar. Du kan skriva platsen själv.</p>`;
+    box.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+  } catch (e) {
+    if (e.name !== "AbortError") { box.innerHTML = `<p class="hint">Sökningen fungerar inte just nu. Du kan skriva platsen själv.</p>`; box.hidden = false; }
   }
 }
 
@@ -2067,6 +2140,18 @@ const ACTIONS = {
       el.classList.remove("busy");
     }
   },
+  "place-pick"(el) {
+    const set = (id, v) => { const x = document.getElementById(id); if (x) x.value = v; };
+    set("bk-place", el.dataset.name);
+    set("bk-addr", el.dataset.addr);
+    set("bk-lat", el.dataset.lat);
+    set("bk-lon", el.dataset.lon);
+    const show = $("#bk-addr-show");
+    if (show) show.textContent = el.dataset.addr || "Adressen saknas för den här platsen.";
+    const box = $("#bk-suggest");
+    if (box) box.hidden = true;
+    $("#bk-place")?.setAttribute("aria-expanded", "false");
+  },
   "geo-pick"(el) {
     const input = document.getElementById(el.dataset.target);
     if (input) { input.value = el.dataset.v; input.dispatchEvent(new Event("input", { bubbles: true })); }
@@ -2486,6 +2571,12 @@ function saveItems(form) {
 /* ---------------------------------------------------------- input helpers */
 
 function onInput(ev) {
+  if (ev.target.id === "bk-place") {
+    ["bk-addr", "bk-lat", "bk-lon"].forEach((id) => { const x = document.getElementById(id); if (x) x.value = ""; });
+    const show = $("#bk-addr-show");
+    if (show) show.textContent = "Välj ett förslag så kommer adressen med, och kartan fungerar i kalendern.";
+    placeSearchSoon(ev.target);
+  }
   if (ev.target.id === "ef-category") {
     const box = $("#ef-next-besikt");
     if (box) box.hidden = ev.target.value !== "Besiktning";

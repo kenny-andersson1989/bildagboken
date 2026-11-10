@@ -589,3 +589,10 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
   .hero .car-photo { aspect-ratio: 21 / 9; }
   .hero .car-fig { margin: 8px 0 6px; }
 }
+/* Förslag medan man skriver i "Var" */
+.suggest { display: flex; flex-direction: column; margin-top: 6px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--input); }
+.suggest button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; border: 0; border-top: 1px solid var(--line); background: none; padding: 10px 14px; cursor: pointer; font: 400 14px var(--f-body); color: var(--ink); }
+.suggest button:first-child { border-top: 0; }
+.suggest button:hover, .suggest button:focus-visible { background: var(--accent-soft); }
+.suggest button span { font-size: 12.5px; color: var(--ink-3); }
+.suggest .hint { padding: 10px 14px; }
