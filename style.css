@@ -564,3 +564,8 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
   .tab { position: relative; }
   .tab .badge { position: static; margin-left: auto; border: 0; }
 }
+/* Slitage på underhållspunkter: hur stor del av intervallet som har gått. */
+.wear { height: 6px; border-radius: 3px; background: var(--track); margin-top: 7px; overflow: hidden; }
+.wear i { display: block; height: 100%; border-radius: 3px; background: var(--sage); }
+.wear.soon i { background: var(--warn); }
+.wear.urgent i { background: var(--accent); }
