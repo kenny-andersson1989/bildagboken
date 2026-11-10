@@ -202,7 +202,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .odo-num { font-family: var(--f-display); font-weight: 800; font-size: 34px; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .odo-num span { font-size: 15px; font-weight: 600; color: var(--ink-3); margin-left: 4px; }
 .btn-soft { border: 0; cursor: pointer; font: 600 13px var(--f-body); color: var(--accent); background: var(--accent-soft); padding: 9px 14px; border-radius: var(--r-chip); white-space: nowrap; }
-.car-switch { margin-top: 8px; }
 
 /* service gauge */
 .facts { display: flex; flex-direction: column; gap: 10px; min-width: 0; }

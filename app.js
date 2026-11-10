@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const VERSION = "2.4";
+const VERSION = "2.5";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -851,7 +851,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       : `<p class="hint">Utan eget foto hämtas en bild på modellen från Wikipedia.</p>`}`;
   parts.dates = `
     <div class="row2">
-      ${inp("besiktning", "Besiktning senast", c.besiktning, 'type="date"')}
+      ${inp("besiktning", "Sista dag för besiktning", c.besiktning, 'type="date"')}
       ${inp("besiktningPlats", "Besiktningsstation", c.besiktningPlats, 'placeholder="Till exempel Bilprovningen Kungsbacka"')}
     </div>
     <div class="row2">
@@ -1094,9 +1094,6 @@ function viewOverview() {
     </button>`);
   }
 
-  const switcher = S.cars.length > 1
-    ? `<label class="field car-switch"><span class="label">Byt bil</span><select data-act="switch-car" id="car-switch">${S.cars.map((x) => `<option value="${x.id}"${x.id === c.id ? " selected" : ""}>${esc(carName(x))}</option>`).join("")}</select></label>`
-    : "";
   parts.push(`<article class="card hero">
     <div class="hero-top">
       <div><h2>${esc(carName(c))}</h2>
@@ -1112,7 +1109,6 @@ function viewOverview() {
       <div><div class="label">Mätarställning</div><div class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span></div>${odoAgeHtml(c)}</div>
       <button class="btn-soft" type="button" data-act="new-entry" data-type="matare">Uppdatera</button>
     </div>
-    ${switcher}
   </article>`);
 
   parts.push(fuelCard(c));
@@ -1161,7 +1157,7 @@ function viewOverview() {
     <h2>Ekonomi <button class="link" type="button" data-go="ekonomi">Visa alla</button></h2>
     ${hasCosts ? `<div class="eco">
       <div class="stat"><div class="label">${MONTHS[new Date().getMonth()].replace(/^./, (x) => x.toUpperCase())}</div><div class="n">${fmt(eco.thisMonth)} <small>kr</small></div></div>
-      <div class="stat"><div class="label">Snitt per månad</div><div class="n">${eco.total > 0 ? fmt(eco.perMonth) : "–"} <small>kr</small></div></div>
+      <div class="stat"><div class="label">Snitt per månad</div><div class="n">${(() => { const y = yearAverage(carEntries().filter((e) => e.amount > 0 && e.date), new Date().getFullYear()); return y.total ? fmt(y.avg) : "–"; })()} <small>kr</small></div></div>
       <div class="bars" aria-label="Kostnad per månad de senaste sex månaderna">
         ${eco.bars.map((b) => `<div class="bar${b.now ? " now" : ""}">${b.sum ? `<b>${fmt(b.sum / 1000, 1)}k</b>` : ""}<i style="height:${Math.round((b.sum / maxBar) * 70)}%"></i><span>${b.label}</span></div>`).join("")}
       </div>
@@ -1280,7 +1276,7 @@ function logListHtml() {
   const q = (S.query || "").trim();
   // Filtret Mätarställning visar alla poster med mätarställning (även service, tankning och däck), inte bara manuella avläsningar.
   const isInspection = (e) => e.type === "kostnad" && e.category === "Besiktning";
-  const inFilter = (e) => S.filter === "alla" || (S.filter === "matare" ? e.odometer != null : S.filter === "besiktning" ? isInspection(e) : e.type === S.filter);
+  const inFilter = (e) => S.filter === "alla" || (S.filter === "matare" ? e.odometer != null : S.filter === "besiktning" ? isInspection(e) : S.filter === "kostnad" ? e.type === "kostnad" && !isInspection(e) : e.type === S.filter);
   const ents = carEntries().filter((e) => inFilter(e) && entryMatches(e, q));
   const groups = [];
   for (const e of ents) {
@@ -1339,6 +1335,16 @@ function catRows(list, total, monthKey) {
     <span class="dl-v">${fmtKr(v)} kr ›</span></button>`).join("");
 }
 
+// Snitt per månad för ett år: på de månader som har passerat, från första loggade månaden om bilen började loggas samma år.
+function yearAverage(paid, year) {
+  const nowKey = ymKey(new Date());
+  const firstKey = paid.reduce((m, e) => (e.date.slice(0, 7) < m ? e.date.slice(0, 7) : m), nowKey);
+  const total = paid.filter((e) => e.date.startsWith(`${year}-`)).reduce((a, e) => a + e.amount, 0);
+  const startM = year === Number(firstKey.slice(0, 4)) ? Number(firstKey.slice(5, 7)) : 1;
+  const endM = year === new Date().getFullYear() ? new Date().getMonth() + 1 : 12;
+  return { total, avg: total / Math.max(1, endM - startM + 1) };
+}
+
 function viewEconomy() {
   const paid = carEntries().filter((e) => e.amount > 0 && e.date);
   const sel = ecoSelected();
@@ -1355,10 +1361,7 @@ function viewEconomy() {
   const sums = Array.from({ length: 12 }, (_, i) => paid.filter((e) => e.date.startsWith(`${year}-${pad(i + 1)}`)).reduce((s, e) => s + e.amount, 0));
   const max = Math.max(1, ...sums);
   const yearTotal = sums.reduce((a, b) => a + b, 0);
-  // Snitt: månader som har passerat i år, från första loggade månaden om bilen började loggas samma år.
-  const startM = year === firstYear ? Number(firstKey.slice(5, 7)) : 1;
-  const endM = year === new Date().getFullYear() ? new Date().getMonth() + 1 : 12;
-  const monthsCounted = Math.max(1, endM - startM + 1);
+  const yearAvg = yearAverage(paid, year).avg;
 
   // Årets nyckeltal
   const odos = carEntries().filter((e) => e.odometer != null && (e.date || "").startsWith(`${year}-`)).map((e) => e.odometer);
@@ -1393,7 +1396,7 @@ function viewEconomy() {
       </div>
       <div class="eco" style="margin-top:12px">
         <div class="stat"><div class="label">Totalt ${year}</div><div class="n">${fmt(yearTotal)} <small>kr</small></div></div>
-        <div class="stat"><div class="label">Snitt per månad</div><div class="n">${yearTotal ? fmt(yearTotal / monthsCounted) : "–"} <small>kr</small></div></div>
+        <div class="stat"><div class="label">Snitt per månad</div><div class="n">${yearTotal ? fmt(yearAvg) : "–"} <small>kr</small></div></div>
         <div class="stat"><div class="label">Kostnad per mil</div><div class="n">${driven && yearTotal ? fmt(yearTotal / driven, 2) : "–"} <small>kr</small></div></div>
         <div class="stat"><div class="label">Körsträcka</div><div class="n">${driven != null ? fmt(driven) : "–"} <small>mil</small></div></div>
       </div>
@@ -1474,7 +1477,7 @@ function viewCar() {
     <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
     <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
-        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Besiktning senast", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")], ["Senast tvättad", lastWash(c) ? [fmtDate(lastWash(c).date), lastWash(c).place].filter(Boolean).join(", ") : ""]]
+        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")], ["Senast tvättad", lastWash(c) ? [fmtDate(lastWash(c).date), lastWash(c).place].filter(Boolean).join(", ") : ""]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>`;
@@ -1959,12 +1962,15 @@ function entryForm(type, e = {}, opts = {}) {
             ${field("Hur ofta", `<select name="period" id="ef-period">${Object.entries(PERIODS).map(([k, l]) => `<option value="${k}"${String(e.period || 1) === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
             ${field("Slutar", `<input type="date" name="endDate" id="ef-endDate" value="${esc(e.end || "")}">`, "Lämna tom om den fortsätter.")}
           </div>
-          <p class="hint">Kostnaden ovan gäller per gång, och Datum är första betalningen. Den räknas in i Ekonomi och loggen varje gång, utan att du behöver logga den igen.</p>
+          <p class="hint">Kostnaden ovan gäller per gång, och första betalningen anges nedanför. Den räknas in i Ekonomi och loggen varje gång, utan att du behöver logga den igen.</p>
         </div>` : ""}
         ${date}${note}${photo}`;
       break;
     case "kostnad":
-      body = `${field("Typ", `<select name="category" id="ef-category">${COST_CATS.filter((k) => !["Tvätt", "Parkering"].includes(k) || e.category === k).map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
+      // Besiktning har en egen knapp i plusmenyn: då finns ingen Typ-lista, och Besiktning finns inte bland andra kostnader.
+      body = `${e.category === "Besiktning"
+        ? `<input type="hidden" name="category" id="ef-category" value="Besiktning">`
+        : field("Typ", `<select name="category" id="ef-category">${COST_CATS.filter((k) => !["Tvätt", "Parkering", "Besiktning"].includes(k) || e.category === k).map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
         ${field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
         ${amount()}${date}
         ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast (valfritt)", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(suggestNextInspection(e.date || todayStr(), c)) : ""}">`, "Uträknat från besiktningens datum. Kontrollera mot protokollet.")}</div>
@@ -1979,8 +1985,7 @@ function entryForm(type, e = {}, opts = {}) {
       ${body}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
-      ${type === "tank" && !isEdit ? `<p class="hint">Din sambo får en avisering när du sparar.</p>` : ""}
-    </form>`, { back: isEdit || opts.bookingId ? null : "new-entry" });
+    </form>`, opts.back ? { back: opts.back, backId: opts.backId } : isEdit ? { back: "open-entry", backId: e.id } : { back: opts.bookingId ? null : "new-entry" });
   if (opts.recurringId) { const lab = $("#ef-date")?.closest("label")?.querySelector("span"); if (lab) lab.textContent = "Första betalningen"; }
   // Sätt markören i första fältet bara på dator. På telefon öppnar det tangentbordet direkt och döljer formuläret.
   if (!window.matchMedia("(pointer: coarse)").matches) {
@@ -2447,7 +2452,7 @@ function itemsSheet(focusId = null) {
   const c = car();
   openSheet("Underhåll", `
     <form class="form" data-form="items" novalidate>
-      <p class="hint">Fyll i när det gjordes senast om det inte finns i loggen. När ni loggar en service med punkten ikryssad räknas den om automatiskt.</p>
+      <p class="hint">Fyll i när det gjordes senast om det inte finns i loggen. När ni loggar en service där punkten är ikryssad som Bytt räknas den om automatiskt.</p>
       <div class="form" id="item-rows">${(c.items || []).map(itemRowHtml).join("")}</div>
       <button class="btn ghost block" type="button" data-act="add-item-row">Lägg till punkt</button>
       <button class="btn primary block" type="submit">Spara</button>
@@ -2855,7 +2860,7 @@ const ACTIONS = {
   "edit-items"() { itemsSheet(); },
   "edit-item"(el) { itemSheet(el.dataset.id); },
   "edit-item-form"(el) { itemsSheet(el.dataset.id); },
-  "log-item"(el) { entryForm("service", { items: [el.dataset.id] }); },
+  "log-item"(el) { entryForm("service", { items: [el.dataset.id] }, { back: "edit-item", backId: el.dataset.id }); },
   "w-add"(el) {
     const list = $("#work-rows");
     if (!list) return;
@@ -2873,7 +2878,7 @@ const ACTIONS = {
   },
   "toggle-parts"() { S.partsAll = !S.partsAll; render(); },
   "open-part"(el) { partSheet(el.dataset.id); },
-  "log-part"(el) { entryForm("service", { parts: [el.dataset.id] }); },
+  "log-part"(el) { entryForm("service", { parts: [el.dataset.id] }, { back: "open-part", backId: normWord(el.dataset.id) }); },
   "part-to-item"(el) {
     // Lägg till delen som underhållspunkt utan intervall, och öppna formuläret så att man kan fylla i intervallet.
     const c = car();
@@ -3283,11 +3288,6 @@ function onInput(ev) {
 
 function onChange(ev) {
   if ((ev.target.id === "ef-date" || ev.target.id === "ef-category") && $("#ef-nextBesiktning")) updateNextInspection();
-  if (ev.target.id === "car-switch") {
-    S.carId = ev.target.value;
-    pref.set("car", S.carId);
-    render();
-  }
   if (ev.target.id === "fuel-range") {
     const l = Number(ev.target.value);
     updateDoc(ref("cars", S.carId), { fuelLevel: { level: l, by: uid(), at: serverTimestamp(), via: "manual" } }).catch(onWriteError);
