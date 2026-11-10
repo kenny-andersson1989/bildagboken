@@ -532,6 +532,8 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   const active = app.contains(document.activeElement) && document.activeElement.id ? document.activeElement : null;
   const caret = active && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
   S.screen = key;
+  // Vilken vy som visas, så att datorlayouten kan ordna korten olika per vy.
+  app.dataset.screen = key;
   app.innerHTML = html;
   if (active) {
     const again = document.getElementById(active.id);
