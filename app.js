@@ -1,8 +1,8 @@
-// Bildagboken — delad bilapp för ett hushåll. Data synkas via Firebase (Firestore + Google-inloggning).
+// Bildagboken — delad bilapp för ett hushåll. Data synkas via Firebase (Firestore + inloggning med Google eller Apple).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
-  onAuthStateChanged, signOut
+  getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
+  linkWithPopup, linkWithRedirect, onAuthStateChanged, signOut
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
@@ -635,7 +635,8 @@ function renderLogin(error = "") {
     <section class="login">
       <h1><img class="login-logo" src="icons/logo.png" alt="Bildagboken" width="900" height="244"></h1>
       <p>Service, tankning, däck, datum och kostnader för er bil. Ni ser samma sak i båda telefonerna.</p>
-      <button class="btn google block" type="button" data-act="login">${icon("google", 20)} Logga in med Google</button>
+      <button class="btn apple block" type="button" data-act="login" data-provider="apple">${icon("apple", 20)} Logga in med Apple</button>
+      <button class="btn google block" type="button" data-act="login" data-provider="google">${icon("google", 20)} Logga in med Google</button>
       ${error ? `<p class="err">${esc(error)}</p>` : ""}
       <p class="hint">Har du fått en inbjudan? Logga in först, sedan skriver du in koden.</p>
     </section>`);
@@ -1336,6 +1337,12 @@ function viewSettings() {
     <div class="card">
       <h2>Konto</h2>
       <p class="muted">Inloggad som ${esc(S.user.email || "")}</p>
+      <div class="rows" style="margin-top:8px">${Object.keys(PROVIDER_IDS).map((k) => {
+        const on = linkedProviders().includes(k);
+        return `<div class="dl"><div class="dl-ic">${icon(k, 20)}</div><div><div class="dl-t">${PROVIDER_NAMES[k]}</div><div class="dl-s">${on ? "Kopplat, du kan logga in med det" : "Inte kopplat"}</div></div>
+          ${on ? `<span class="pill ok">Kopplat</span>` : `<button class="link" type="button" data-act="link-provider" data-provider="${k}">Koppla</button>`}</div>`;
+      }).join("")}</div>
+      <p class="hint" style="margin-top:10px">Koppla både Google och Apple så kan du logga in med vilket du vill och ändå se samma bilar och logg.</p>
       <div class="ask"><button class="btn ghost" type="button" data-act="logout">Logga ut</button></div>
     </div>
     <p class="hint" style="text-align:center">Bildagboken ${VERSION}</p>`;
@@ -2188,9 +2195,8 @@ async function copyText(text) {
 }
 
 const ACTIONS = {
-  async login() {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: "select_account" });
+  async login(el) {
+    const provider = authProvider(el?.dataset.provider || "google");
     try {
       await signInWithPopup(auth, provider);
     } catch (e) {
@@ -2198,6 +2204,24 @@ const ACTIONS = {
         try { await signInWithRedirect(auth, provider); } catch (e2) { renderLogin(authError(e2)); }
       } else if (e.code !== "auth/popup-closed-by-user") {
         renderLogin(authError(e));
+      }
+    }
+  },
+  async "link-provider"(el) {
+    // Koppla ett inloggningssätt till kontot man redan har, så att samma bilar och logg följer med.
+    const name = el.dataset.provider;
+    const provider = authProvider(name);
+    try {
+      await linkWithPopup(auth.currentUser, provider);
+      await auth.currentUser.reload?.();
+      S.user = auth.currentUser;
+      showToast(`${PROVIDER_NAMES[name]} är kopplat. Nu kan du logga in med det också.`, 5000);
+      render();
+    } catch (e) {
+      if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment", "auth/cancelled-popup-request"].includes(e.code)) {
+        try { await linkWithRedirect(auth.currentUser, provider); } catch (e2) { showToast(authError(e2), 8000); }
+      } else if (e.code !== "auth/popup-closed-by-user") {
+        showToast(authError(e, name), 9000);
       }
     }
   },
@@ -2500,11 +2524,38 @@ const ACTIONS = {
   "dismiss-install"() { pref.set("installDismissed", "1"); render(); },
 };
 
-function authError(e) {
+const PROVIDER_NAMES = { google: "Google", apple: "Apple" };
+const PROVIDER_IDS = { google: "google.com", apple: "apple.com" };
+
+function authProvider(name) {
+  if (name === "apple") {
+    const p = new OAuthProvider("apple.com");
+    p.addScope("email");
+    p.addScope("name");
+    p.setCustomParameters({ locale: "sv_SE" });
+    return p;
+  }
+  const p = new GoogleAuthProvider();
+  p.setCustomParameters({ prompt: "select_account" });
+  return p;
+}
+
+// Vilka inloggningssätt kontot har, till exempel ["google", "apple"].
+function linkedProviders() {
+  const ids = (S.user?.providerData || []).map((x) => x.providerId);
+  return Object.keys(PROVIDER_IDS).filter((k) => ids.includes(PROVIDER_IDS[k]));
+}
+
+function authError(e, name = null) {
   const map = {
     "auth/network-request-failed": "Ingen kontakt med nätet. Försök igen.",
     "auth/unauthorized-domain": "Den här adressen är inte godkänd för inloggning i Firebase.",
     "auth/popup-closed-by-user": "Inloggningen avbröts.",
+    "auth/operation-not-allowed": "Det här inloggningssättet är inte påslaget i Firebase än.",
+    "auth/account-exists-with-different-credential": "Det finns redan ett konto med samma e-postadress. Logga in på det sätt du använde först, och koppla sedan det andra under Inställningar → Konto.",
+    "auth/credential-already-in-use": `Det ${PROVIDER_NAMES[name] || ""}-kontot används redan av ett annat konto i Bildagboken. Logga ut, logga in med det och lämna det hushållet först, eller använd ett annat konto.`,
+    "auth/provider-already-linked": `${PROVIDER_NAMES[name] || "Det"} är redan kopplat till ditt konto.`,
+    "auth/requires-recent-login": "Logga ut och logga in igen, och försök sedan koppla på nytt.",
   };
   return map[e?.code] || `Inloggningen misslyckades (${e?.code || e?.message || "okänt fel"}).`;
 }
