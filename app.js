@@ -949,14 +949,23 @@ function viewOverview() {
       <input type="file" accept="image/*" id="hero-photo" class="vh" aria-label="Byt bild på bilen">
     </label>
     <div class="odo">
-      <div><div class="label">Mätarställning</div><div class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span></div></div>
+      <div><div class="label">Mätarställning</div><div class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span></div>${odoAgeHtml(c)}</div>
       <button class="btn-soft" type="button" data-act="new-entry" data-type="matare">Uppdatera</button>
     </div>
     ${switcher}
   </article>`);
 
   parts.push(fuelCard(c));
-  parts.push(inviteCard());
+  parts.push(quickActions());
+
+  const dls = deadlines(c);
+  const wash = washRow(c);
+  parts.push(`<article class="card">
+    <h2>Att hålla koll på <button class="link" type="button" data-act="edit-car" data-section="dates">Ändra datum</button></h2>
+    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...(wash ? [{ ...wash, always: true }] : []), ...dls])}
+    ${!c.besiktning && !c.forsakringDatum && !taxMonth(c) ? `<p class="hint" style="margin-top:10px">Lägg till besiktning, försäkring och skatt under Ändra datum.</p>` : ""}
+    <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
+  </article>`);
 
   // Underhåll: de punkter som är närmast att bytas, med samma staplar som under Bilen.
   const st = allItemStatus(c);
@@ -980,19 +989,13 @@ function viewOverview() {
         <span class="dl-ic">${icon("wrench", 20)}</span>
         <span><span class="dl-t">${esc(x.item.name)}</span><span class="dl-s">${esc(dueText(x))}</span>${wearBar(x)}</span>
         <span class="pill ${x.level}">${esc(x.label)}</span></button>`).join("")}</div>
-      ${unknownCount ? `<p class="hint" style="margin-top:10px">${unknownCount === 1 ? "1 punkt saknar" : `${unknownCount} punkter saknar`} senaste byte. Fyll i under Bilen → Underhåll.</p>` : ""}
+      ${unknownCount && pref.get("maintHintHidden." + c.id) !== String(unknownCount) ? `<div class="ask"><button class="btn-soft" type="button" data-act="goto-maintenance">Fyll i underhåll (${unknownCount} kvar)</button><button class="link" type="button" data-act="hide-maint-hint" data-n="${unknownCount}">Dölj</button></div>` : ""}
       ${serviceDueEstimate(first, c) ? `<div class="ask"><button class="btn-soft" type="button" data-act="service-calendar" data-id="${esc(first.item.id)}">${icon("calendar", 16)} Påminn mig i kalendern</button><small>Gäller ${esc(first.item.name.toLowerCase())}.</small></div>` : ""}
     </article>`);
   }
 
-  const dls = deadlines(c);
-  const wash = washRow(c);
-  parts.push(`<article class="card">
-    <h2>Att hålla koll på <button class="link" type="button" data-act="edit-car" data-section="dates">Ändra datum</button></h2>
-    <div class="rows">${[...bookingRows(c), ...(wash ? [wash] : []), ...dls].map(rowHtml).join("")}</div>
-    ${!c.besiktning && !c.forsakringDatum && !taxMonth(c) ? `<p class="hint" style="margin-top:10px">Lägg till besiktning, försäkring och skatt under Ändra datum.</p>` : ""}
-    <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
-  </article>`);
+
+  parts.push(recentCard(c));
 
   const eco = economy(carEntries());
   const maxBar = Math.max(1, ...eco.bars.map((b) => b.sum));
@@ -1020,8 +1023,50 @@ function viewOverview() {
       <small>Kopierar en fråga med er bil och historik som du klistrar in i Claude.</small>
     </div>
   </article>`);
+  parts.push(inviteCard());
   parts.push(installCard());
   return parts.join("");
+}
+
+// "Uppdaterad för 3 veckor sedan" under mätarställningen. Orange efter en månad.
+function odoAgeHtml(c) {
+  const last = latestOdoEntry(c.id);
+  if (!last?.date) return "";
+  const ago = Math.max(0, -daysUntil(parseDate(last.date)));
+  const when = ago === 0 ? "i dag" : ago === 1 ? "i går" : ago < 14 ? `för ${ago} dagar sedan` : ago < 60 ? `för ${Math.round(ago / 7)} veckor sedan` : `för ${daysText(ago)} sedan`;
+  return `<div class="odo-age${ago >= 30 ? " old" : ""}">Uppdaterad ${esc(when)}${ago >= 30 ? " · dags att uppdatera" : ""}</div>`;
+}
+
+// Snabbknappar för det man loggar oftast.
+function quickActions() {
+  return `<div class="quick" role="group" aria-label="Logga snabbt">
+    ${["tank", "matare", "tvatt", "parkering"].map((t) => `<button type="button" data-act="new-entry" data-type="${t}">${icon(TYPE[t].icon, 22)}<span>${TYPE[t].label}</span></button>`).join("")}
+  </div>`;
+}
+
+// Att hålla koll på: bokningar, tvätt, brådskande och det som händer inom tre månader. Resten bakom "Visa fler".
+function kollRowsHtml(rows) {
+  const near = (x) => x.always || x.level === "urgent" || x.level === "soon" || (x.days != null && x.days <= 92);
+  const shown = rows.filter(near), later = rows.filter((x) => !near(x));
+  const all = S.kollAll;
+  return `<div class="rows">${[...shown, ...(all ? later : [])].map(rowHtml).join("")}</div>
+    ${later.length ? `<button class="link" type="button" data-act="toggle-koll" style="margin-top:10px">${all ? "Visa färre" : `Visa ${later.length} till`}</button>` : ""}`;
+}
+
+// De tre senaste loggarna, för båda, så att man ser vad den andra har gjort.
+function recentCard(c) {
+  const list = [...S.entries].filter((e) => e.carId === c.id).sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt)).slice(0, 3);
+  if (!list.length) return "";
+  return `<article class="card">
+    <h2>Senaste <button class="link" type="button" data-go="logg">Logg</button></h2>
+    <div class="rows">${list.map((e) => {
+      const mine = e.createdBy === uid();
+      return `<button class="dl as-btn" type="button" data-act="open-entry" data-id="${esc(e.id)}">
+        <span class="avatar${mine ? " me" : ""}">${esc((mine ? myName() : memberName(e.createdBy)).slice(0, 1).toUpperCase())}</span>
+        <span><span class="dl-t">${esc(activityText(e))}</span><span class="dl-s">${esc(timeAgo(tsMs(e.createdAt)) || fmtDateShort(e.date))}</span></span>
+        <span></span></button>`;
+    }).join("")}</div>
+  </article>`;
 }
 
 function entryRow(e, fromCat = null) {
@@ -2048,6 +2093,8 @@ const ACTIONS = {
     if (picks) picks.hidden = true;
   },
   "wash-new"() { entryForm("tvatt"); },
+  "toggle-koll"() { S.kollAll = !S.kollAll; render(); },
+  "hide-maint-hint"(el) { pref.set("maintHintHidden." + S.carId, el.dataset.n); render(); },
   "book-inspection"() { bookingForm({ kind: "besiktning" }); },
   async "deadline-remove"(el) {
     const key = el.dataset.id;
