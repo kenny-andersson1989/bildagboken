@@ -632,25 +632,30 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       <label class="field"><span>Skatt betalas i</span>${sel("skattManad", [["", "Vet inte"], ...MONTHS.map((m, i) => [String(i + 1), m])], c.skattManad || "")}</label>
       ${inp("skattBelopp", "Skatt per år (kr)", c.skattBelopp, 'inputmode="numeric"')}
     </div>`;
+  // Varje däcksats får en egen rubrik, och tomma rutor står tomma (inga exempelvärden som ser ifyllda ut).
+  const tireHead = (k, label) => `<p class="tire-head" data-tire="${k}">${label}<span class="tire-on"${(c.tiresOn || "sommar") === k ? "" : " hidden"}> · sitter på</span></p>`;
   parts.tires = `
     <label class="field"><span>Det här sitter på nu</span>${sel("tiresOn", [["sommar", "Sommardäck"], ["vinter", "Vinterdäck"]], c.tiresOn || "sommar")}</label>
+    ${tireHead("sommar", "Sommardäck")}
     <div class="row2">
-      ${inp("s_brand", "Sommardäck, märke", summer.brand, 'placeholder="Michelin Primacy 4"')}
-      ${inp("s_size", "Dimension", summer.size, 'placeholder="205/55 R16"')}
+      ${inp("s_brand", "Märke", summer.brand)}
+      ${inp("s_size", "Dimension", summer.size, 'autocomplete="off"')}
     </div>
     <div class="row2">
-      ${inp("s_year", "Tillverkningsår", summer.year, 'inputmode="numeric"')}
-      ${inp("s_depth", "Mönsterdjup (mm)", summer.depth, 'inputmode="decimal"')}
+      ${inp("s_year", "Tillverkningsår", summer.year, 'inputmode="numeric" autocomplete="off"')}
+      ${inp("s_depth", "Mönsterdjup (mm)", summer.depth, 'inputmode="decimal" autocomplete="off"')}
+    </div>
+    ${tireHead("vinter", "Vinterdäck")}
+    <div class="row2">
+      ${inp("w_brand", "Märke", winter.brand)}
+      ${inp("w_size", "Dimension", winter.size, 'autocomplete="off"')}
     </div>
     <div class="row2">
-      ${inp("w_brand", "Vinterdäck, märke", winter.brand, 'placeholder="Nokian Hakkapeliitta"')}
-      ${inp("w_size", "Dimension", winter.size, 'placeholder="205/55 R16"')}
+      ${inp("w_year", "Tillverkningsår", winter.year, 'inputmode="numeric" autocomplete="off"')}
+      ${inp("w_depth", "Mönsterdjup (mm)", winter.depth, 'inputmode="decimal" autocomplete="off"')}
     </div>
-    <div class="row2">
-      ${inp("w_year", "Tillverkningsår", winter.year, 'inputmode="numeric"')}
-      ${inp("w_depth", "Mönsterdjup (mm)", winter.depth, 'inputmode="decimal"')}
-    </div>
-    <label class="check"><input type="checkbox" name="w_studded" id="cf-w_studded"${winter.studded ? " checked" : ""}> Vinterdäcken är dubbade</label>`;
+    <label class="check"><input type="checkbox" name="w_studded" id="cf-w_studded"${winter.studded ? " checked" : ""}> Vinterdäcken är dubbade</label>
+    <p class="hint">Dimensionen står på däckets sida, till exempel 205/55 R16. Sommar- och vinterdäcken sparas var för sig.</p>`;
   parts.specs = `
     <label class="field"><span>En sak per rad, till exempel "Motorolja: 5W-30"</span><textarea name="specsText" id="cf-specsText" rows="9">${esc(c.specsText ?? SPEC_TEMPLATE)}</textarea></label>
     <p class="hint">Fusklapp för butiken: oljetyp, däckdimension, lufttryck, torkarblad, glödlampor och liknande.</p>`;
@@ -2072,6 +2077,11 @@ function saveItems(form) {
 
 let manualTotal = false;
 function onInput(ev) {
+  if (ev.target.id === "cf-tiresOn") {
+    // Flytta "sitter på" till den däcksats som väljs.
+    document.querySelectorAll(".tire-head").forEach((h) => { h.querySelector(".tire-on").hidden = h.dataset.tire !== ev.target.value; });
+    return;
+  }
   if (ev.target.id === "fuel-range") {
     // Visa nivån direkt medan man drar; den sparas när man släpper (change).
     const l = Number(ev.target.value);
