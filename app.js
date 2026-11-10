@@ -1732,7 +1732,8 @@ const ACTIONS = {
       title: `${x.calTitle}: ${carName(c)}`,
       date: x.date,
       location: x.place,
-      description: [x.sub, c.plate ? `Reg.nr ${c.plate}` : null, "Inlagd från Bildagboken"].filter(Boolean).join("\n"),
+      // Platsen står redan som plats i kalendern, så den behövs inte i beskrivningen också.
+      description: [x.place ? x.sub.replace(` · ${x.place}`, "") : x.sub, c.plate ? `Reg.nr ${c.plate}` : null, "Inlagd från Bildagboken"].filter(Boolean).join("\n"),
       alarm: "-P6DT15H",
       fileName: `${x.title} ${ymd(x.date)}`,
     });
@@ -1990,6 +1991,8 @@ async function saveNewCar(form) {
     createdBy: uid(),
   };
   setDoc(cRef, full).catch(onWriteError);
+  // Lägg in bilen lokalt direkt, så att vyn inte ritas innan databasen hunnit skicka tillbaka den.
+  if (!S.cars.some((x) => x.id === cRef.id)) S.cars = [...S.cars, { ...full, id: cRef.id, createdAt: Date.now() }];
   S.carId = cRef.id;
   pref.set("car", cRef.id);
   closeSheet();
