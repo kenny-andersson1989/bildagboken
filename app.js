@@ -921,9 +921,13 @@ function bookingFeed() {
   return S.cars.flatMap((c) => (c.bookings || []).filter((b) => b.createdAt).map((b) => ({ id: b.id, carId: c.id, createdBy: b.createdBy, createdAt: b.createdAt, date: b.date, _booking: b })));
 }
 
+// Poster med ett datum längre bak än 30 dagar räknas inte som nyheter, även om de nyss lades in
+// (till exempel gamla servicar som förs in i efterhand). De finns kvar i loggen och i aviseringslistan.
+const isRecentDate = (e) => !e.date || e.date >= ymd(new Date(Date.now() - 30 * 864e5));
+
 function unseenFromOthers() {
   const seen = lastSeenMs();
-  return [...S.entries, ...bookingFeed()].filter((e) => e.createdBy !== uid() && tsMs(e.createdAt) > seen);
+  return [...S.entries.filter(isRecentDate), ...bookingFeed()].filter((e) => e.createdBy !== uid() && tsMs(e.createdAt) > seen);
 }
 
 function headerMain() {
@@ -1118,7 +1122,7 @@ function bookingActivity(b) {
 
 function recentCard(c) {
   const items = [
-    ...S.entries.filter((e) => e.carId === c.id).map((e) => ({ ts: tsMs(e.createdAt), who: e.createdBy, text: activityText(e), act: "open-entry", id: e.id, date: e.date })),
+    ...S.entries.filter((e) => e.carId === c.id && isRecentDate(e)).map((e) => ({ ts: tsMs(e.createdAt), who: e.createdBy, text: activityText(e), act: "open-entry", id: e.id, date: e.date })),
     ...(c.bookings || []).filter((b) => b.createdAt).map((b) => ({ ts: tsMs(b.createdAt), who: b.createdBy, text: bookingActivity(b), act: "open-booking", id: b.id, date: b.date })),
   ].sort((a, b) => b.ts - a.ts).slice(0, 3);
   if (!items.length) return "";
@@ -3148,7 +3152,7 @@ function subscribe(hid) {
       for (const ch of s.docChanges()) {
         if (ch.type !== "added" || ch.doc.metadata.hasPendingWrites) continue;
         const e = { id: ch.doc.id, ...ch.doc.data({ serverTimestamps: "estimate" }) };
-        if (e.createdBy !== uid()) announce(e);
+        if (e.createdBy !== uid() && isRecentDate(e)) announce(e);
       }
     }
     first = false;
