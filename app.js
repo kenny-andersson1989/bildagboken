@@ -657,7 +657,7 @@ function catOf(e) {
   if (e.category === "Försäkring") return "Försäkring";
   return "Övrigt";
 }
-const CAT_ICON = { "Bränsle": "fuel", "Service och reparationer": "wrench", "Däck": "tire", "Skatt och besiktning": "check", "Försäkring": "calendar", "Tvätt": "wash", "Parkering": "parking", "P-böter": "parking", "Övrigt": "receipt" };
+const CAT_ICON = { "Bränsle": "fuel", "Service och reparationer": "wrench", "Däck": "tire", "Skatt och besiktning": "check", "Försäkring": "doc", "Tvätt": "wash", "Parkering": "parking", "P-böter": "parking", "Övrigt": "receipt" };
 
 function economy(ents, months = 12) {
   const since = addMonths(today0(), -months);
@@ -1338,7 +1338,7 @@ function docReminders(c) {
     .map(({ d, days }) => ({ icon: "doc", title: days < 0 ? `${d.title} har gått ut` : `${d.title} går ut`, sub: `Gäller till ${fmtDate(d.validTo)}`, level: days < 0 ? "urgent" : levelFromDays(days), label: days < 0 ? "Gått ut" : daysText(days), act: "open-doc", id: d.id, days, always: true }));
 }
 function docForm(d = null) {
-  openSheet(d ? "Ändra dokument" : "Nytt dokument", `
+  openSheet(d ? "Ändra dokument" : "Dokument", `
     <form class="form" data-form="doc"${d ? ` data-id="${esc(d.id)}"` : ""} novalidate>
       ${field("Vad är det?", `<input name="title" id="doc-title" required placeholder="Till exempel försäkringsbrev 2027" autocomplete="off" value="${esc(d?.title || "")}">`)}
       ${field("Gäller till (valfritt)", `<input type="date" name="validTo" id="doc-valid" value="${esc(d?.validTo || "")}">`, "Till exempel när försäkringen, garantin eller parkeringstillståndet går ut. Ni får en påminnelse två månader innan.")}
@@ -1832,11 +1832,16 @@ function upcomingHtml(q) {
   }).join("")}</div>` };
 }
 
+// Ikonen för en post: samma som i plusmenyn och i Ekonomi.
+function entryIcon(e) {
+  if (e.type === "kostnad") return CAT_ICON[catOf(e)] || "receipt";
+  return TYPE[e.type]?.icon || "list";
+}
 function entryRow(e, fromCat = null) {
   const mine = e.createdBy === uid();
   const d = entryDetail(e);
   return `<button class="entry" type="button" data-act="open-entry" data-id="${esc(e.id)}"${fromCat ? ` data-cat="${esc(fromCat)}"` : ""}>
-    <span class="dl-ic">${icon(TYPE[e.type]?.icon || "list", 20)}</span>
+    <span class="dl-ic">${icon(entryIcon(e), 20)}</span>
     <span><span class="t">${esc(entryTitle(e))}</span>${d ? `<span class="d">${esc(d)}</span>` : ""}
       <span class="m"><span class="who${mine ? " me" : ""}">${esc(whoName(e.createdBy))}</span>${esc(fmtDateShort(e.date))}${e.odometer != null && e.type !== "matare" ? ` · ${fmt(e.odometer)} mil` : ""}${e.photoId ? " · bild" : ""}</span></span>
     <span class="amt">${e.amount != null ? `${fmtKr(e.amount)} kr` : e.type === "matare" && e.odometer != null ? `${fmt(e.odometer)} mil` : ""}</span>
@@ -1904,7 +1909,7 @@ function logListHtml() {
 }
 
 function viewLog() {
-  const filters = [["alla", "Alla"], ...LOG_ORDER.map((k) => [k, k === "besiktning" ? "Besiktning" : TYPE[k].label])];
+  const filters = [["alla", "Alla"], ...LOG_ORDER.map((k) => [k, typeLabel(k)])];
   return `${subHeader("Allt som hänt med bilen", "Logg")}
     <label class="search">${icon("search", 18)}
       <input type="search" id="log-search" placeholder="Sök, till exempel bromsar" value="${esc(S.query || "")}" autocomplete="off" enterkeyhint="search" aria-label="Sök i loggen">
@@ -2128,11 +2133,11 @@ function viewCar() {
       ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon("car", 16)}${esc(carName(x))}</button>`).join("")}
       <button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>
     </div>
-    <div class="card">
-      <h2>Anteckningar <button class="link" type="button" data-act="edit-car" data-section="specs">Ändra</button></h2>
-      ${specs.length ? `<div class="spec">${specs.map(([k, v]) => `<div><div class="label">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("")}</div>` : ""}
-      ${freeLines.length ? `<div class="notes"${specs.length ? ' style="margin-top:10px"' : ""}>${freeLines.map((l) => `<p>${esc(l)}</p>`).join("")}</div>` : ""}
-      ${!specs.length && !freeLines.length ? `<p class="muted">Skriv det ni vill komma ihåg om bilen, till exempel oljetyp, däckdimension eller var reservnyckeln ligger.</p>` : ""}
+    <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
+      <dl class="detail-list">
+        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")], ["Senast tvättad", lastWash(c) ? [fmtDate(lastWash(c).date), lastWash(c).place].filter(Boolean).join(", ") : ""]]
+          .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
+      </dl>
     </div>
     <div class="card" id="underhall" style="scroll-margin-top:16px">
       <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
@@ -2147,6 +2152,12 @@ function viewCar() {
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
     <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
+    <div class="card">
+      <h2>Anteckningar <button class="link" type="button" data-act="edit-car" data-section="specs">Ändra</button></h2>
+      ${specs.length ? `<div class="spec">${specs.map(([k, v]) => `<div><div class="label">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("")}</div>` : ""}
+      ${freeLines.length ? `<div class="notes"${specs.length ? ' style="margin-top:10px"' : ""}>${freeLines.map((l) => `<p>${esc(l)}</p>`).join("")}</div>` : ""}
+      ${!specs.length && !freeLines.length ? `<p class="muted">Skriv det ni vill komma ihåg om bilen, till exempel oljetyp, däckdimension eller var reservnyckeln ligger.</p>` : ""}
+    </div>
     ${photosCard(c)}
     ${docsCard(c)}
     <div class="card">
@@ -2154,12 +2165,6 @@ function viewCar() {
       <p class="muted">All service, egna jobb, däckbyten och besiktningar med datum, mätarställning och kostnad. Bra att visa en köpare eller verkstad.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="print-book">${icon("print", 16)} Skriv ut eller spara som PDF</button>
       ${shareCardHtml(c)}</div>
-    </div>
-    <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
-      <dl class="detail-list">
-        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")], ["Senast tvättad", lastWash(c) ? [fmtDate(lastWash(c).date), lastWash(c).place].filter(Boolean).join(", ") : ""]]
-          .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
-      </dl>
     </div>`;
 }
 
@@ -2357,14 +2362,20 @@ $("#confirm-scrim").addEventListener("click", () => closeConfirm(false));
 
 const TYPE_DEFINITE = { tank: "tankningen", matare: "mätarställningen", service: "servicen", eget: "jobbet", dack: "däckposten", tvatt: "tvätten", parkering: "parkeringen", kostnad: "kostnaden" };
 
-// Samma ordning i plusmenyn som filtren i loggen.
-const LOG_ORDER = ["tank", "service", "eget", "dack", "tvatt", "parkering", "kostnad", "besiktning", "matare"];
+// Samma ordning överallt (plusmenyn och filtren i loggen), i tre grupper:
+// det man gör när man kör, underhåll av bilen och övriga kostnader. Det vanligaste först i varje grupp.
+const LOG_GROUPS = [
+  ["Köra", ["tank", "matare", "parkering"]],
+  ["Underhåll", ["service", "dack", "eget"]],
+  ["Övrigt", ["besiktning", "tvatt", "kostnad"]],
+];
+const LOG_ORDER = LOG_GROUPS.flatMap(([, keys]) => keys);
+const typeIcon = (k) => (k === "besiktning" ? "check" : TYPE[k].icon);
+const typeLabel = (k) => (k === "besiktning" ? "Besiktning" : TYPE[k].label);
 function typePicker() {
-  openSheet("Vad vill du logga?", `<div class="types">
-    ${LOG_ORDER.map((k) => k === "besiktning"
-      ? `<button type="button" data-act="new-entry" data-type="kostnad" data-cat="Besiktning">${icon("check", 26)}Besiktning</button>`
-      : `<button type="button" data-act="new-entry" data-type="${k}">${icon(TYPE[k].icon, 26)}${TYPE[k].label}</button>`).join("")}
-  </div>
+  openSheet("Vad vill du logga?", LOG_GROUPS.map(([name, keys]) => `<p class="types-head">${name}</p><div class="types">
+    ${keys.map((k) => `<button type="button" data-act="new-entry" data-type="${k === "besiktning" ? "kostnad" : k}"${k === "besiktning" ? ' data-cat="Besiktning"' : ""}>${icon(typeIcon(k), 26)}${typeLabel(k)}</button>`).join("")}
+  </div>`).join("") + `
   <button class="btn ghost block" type="button" data-act="new-booking" style="margin-top:12px">${icon("calendar", 18)} Lägg in bokad tid</button>
   <p class="hint" style="margin-top:14px">Det du sparar syns direkt hos din sambo.</p>`);
 }
@@ -2450,7 +2461,7 @@ function bookingForm(b = {}) {
       </div>
       ${field("Anteckning", `<textarea name="note" id="bk-note" rows="2" placeholder="Till exempel lämna nyckeln i brevlådan">${esc(b.note || "")}</textarea>`)}
       <p class="err" id="form-err" hidden></p>
-      <button class="btn primary block" type="submit">${isEdit ? "Spara ändringar" : "Spara bokningen"}</button>
+      <button class="btn primary block" type="submit">Spara</button>
       ${isEdit
         ? `<button class="btn ghost block" type="button" data-act="booking-calendar" data-id="${esc(b.id)}">${icon("calendar", 18)} Lägg till i kalendern</button>
            <button class="btn danger block" type="button" data-act="delete-booking" data-id="${esc(b.id)}">Ta bort bokningen</button>`
