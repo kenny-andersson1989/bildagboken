@@ -781,6 +781,7 @@ function render() {
     bell.setAttribute("aria-label", `Aviseringar${n ? `, ${n} nya` : ""}`);
   }
   ensureCarImage(car());
+  runLaunchAction();
 }
 
 function renderLogin(error = "") {
@@ -1097,6 +1098,307 @@ function inviteCard() {
   </article>`;
 }
 
+/* ------------------------------------------------------- budget per bil */
+
+// Månadsbudget för bilen: hur mycket som har gått åt och om det är nära eller över.
+function budgetInfo(c, key = ymKey(new Date())) {
+  if (!c?.budget) return null;
+  const spent = carEntries().filter((e) => e.amount > 0 && (e.date || "").startsWith(key)).reduce((a, e) => a + e.amount, 0);
+  const frac = spent / c.budget;
+  return { budget: c.budget, spent, frac, level: frac > 1 ? "urgent" : frac >= 0.8 ? "soon" : "ok" };
+}
+function budgetBar(bi) {
+  if (!bi) return "";
+  const left = bi.budget - bi.spent;
+  return `<div class="budget">
+    <span class="wear ${bi.level}" role="img" aria-label="${Math.round(bi.frac * 100)} % av budgeten"><i style="width:${Math.min(100, bi.frac * 100).toFixed(1)}%"></i></span>
+    <span class="budget-t">${fmtKr(bi.spent)} av ${fmtKr(bi.budget)} kr · ${left >= 0 ? `${fmtKr(left)} kr kvar` : `${fmtKr(-left)} kr över`}</span>
+  </div>`;
+}
+function budgetReminder(c) {
+  const bi = budgetInfo(c);
+  if (!bi || bi.frac < 0.8) return [];
+  return [{ icon: "coin", title: bi.frac > 1 ? "Över månadens budget" : "Budgeten är nästan slut", sub: `${fmtKr(bi.spent)} av ${fmtKr(bi.budget)} kr i ${MONTHS[new Date().getMonth()]}`, level: bi.level, label: `${Math.round(bi.frac * 100)} %`, act: "go-view", id: "ekonomi", always: true, days: 0 }];
+}
+function budgetSheet() {
+  const c = car();
+  openSheet("Budget per månad", `
+    <form class="form" data-form="budget" novalidate>
+      ${field(`Budget för ${esc(carName(c))} (kr per månad)`, `<input name="budget" id="bu-budget" inputmode="numeric" value="${c.budget ?? ""}" placeholder="Till exempel 3 000">`, "Allt som loggas räknas: bränsle, service, försäkring, parkering och annat. Lämna tomt för att ta bort budgeten.")}
+      <p class="err" id="form-err" hidden></p>
+      <button class="btn primary block" type="submit">Spara</button>
+    </form>`);
+}
+function saveBudget(form) {
+  const v = num(new FormData(form).get("budget"));
+  if (v != null && v < 0) return formError("Budgeten kan inte vara mindre än noll.");
+  const c = car();
+  c.budget = v || null;
+  updateDoc(ref("cars", c.id), { budget: v || null }).catch(onWriteError);
+  closeSheet(); render();
+  showToast(v ? `Budgeten är ${fmtKr(v)} kr per månad` : "Budgeten är borttagen");
+}
+
+/* ----------------------------------------------------------- att göra */
+
+// Gemensam att göra-lista för bilen. Klara saker ligger kvar överstrukna tills någon rensar dem.
+function todoCard(c) {
+  const list = c.todos || [];
+  const open = list.filter((t) => !t.done), done = list.filter((t) => t.done);
+  return `<article class="card">
+    <h2>Att göra ${done.length ? `<button class="link" type="button" data-act="todo-clear">Rensa klara</button>` : ""}</h2>
+    ${list.length ? `<div class="todos">${[...open, ...done].map((t) => `<label class="todo${t.done ? " done" : ""}">
+        <input type="checkbox" data-act="todo-toggle" data-id="${esc(t.id)}"${t.done ? " checked" : ""}>
+        <span class="todo-t">${esc(t.text)}</span><small>${esc(whoName(t.by))}</small></label>`).join("")}</div>`
+      : `<p class="muted">Saker som ska göras med bilen, till exempel köpa torkarblad eller boka service. Ni ser samma lista.</p>`}
+    <form class="todo-add" data-form="todo" data-keep novalidate>
+      <input name="text" id="todo-text" placeholder="Till exempel köp spolarvätska" autocomplete="off" enterkeyhint="done" aria-label="Ny sak att göra">
+      <button class="btn-soft" type="submit">${icon("plus", 16)} Lägg till</button>
+    </form>
+  </article>`;
+}
+function saveTodo(form) {
+  const text = String(new FormData(form).get("text") || "").trim();
+  if (!text) return;
+  const c = car();
+  const list = [...(c.todos || []), { id: "t" + randomId(8), text, done: false, by: uid(), at: Date.now() }];
+  c.todos = list;
+  updateDoc(ref("cars", c.id), { todos: list }).catch(onWriteError);
+  form.reset();
+  // Sidan ritas inte om medan någon skriver i ett formulär, så släpp fokus först och sätt tillbaka det efteråt.
+  delete form.dataset.dirty;
+  document.activeElement?.blur?.();
+  render();
+  $("#todo-text")?.focus({ preventScroll: true });
+}
+
+/* ----------------------------------------------------------- dokument */
+
+// Foton av försäkringsbrev, registreringsbevis, garantier och liknande. Sparas som bilderna i loggen.
+function docsCard(c) {
+  const docs = [...(c.docs || [])].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  return `<div class="card">
+    <h2>Dokument</h2>
+    ${docs.length ? `<div class="rows">${docs.map((d) => `<button class="dl as-btn" type="button" data-act="open-doc" data-id="${esc(d.id)}"><span class="dl-ic">${icon("doc", 20)}</span>
+      <span><span class="dl-t">${esc(d.title)}</span><span class="dl-s">${esc(`Sparat ${fmtDateShort(d.date)} av ${whoName(d.by).replace(/^Du$/, "dig")}`)}</span></span><span></span></button>`).join("")}</div>`
+      : `<p class="muted">Fota försäkringsbrev, registreringsbevis, garantier och kvitton ni vill spara. Ni ser samma dokument.</p>`}
+    <div class="ask"><button class="btn-soft" type="button" data-act="new-doc">${icon("plus", 16)} Lägg till dokument</button></div>
+  </div>`;
+}
+function docForm() {
+  openSheet("Nytt dokument", `
+    <form class="form" data-form="doc" novalidate>
+      ${field("Vad är det?", `<input name="title" id="doc-title" required placeholder="Till exempel försäkringsbrev 2027" autocomplete="off">`)}
+      <label class="photo-in">${icon("camera", 22)}<span id="photo-label">Fota eller välj en bild</span><input type="file" name="photo" id="ef-photo" accept="image/*"></label>
+      <p class="hint">PDF-filer går inte att spara. Ta en skärmbild av PDF:en och välj den i stället.</p>
+      <p class="err" id="form-err" hidden></p>
+      <button class="btn primary block" type="submit">Spara</button>
+    </form>`);
+}
+async function saveDoc(form) {
+  const fd = new FormData(form);
+  const title = String(fd.get("title") || "").trim();
+  const file = fd.get("photo");
+  if (!title) return formError("Skriv vad det är för dokument.");
+  if (!file || !file.size) return formError("Välj en bild av dokumentet.");
+  const btn = form.querySelector('button[type="submit"]');
+  btn.disabled = true; btn.textContent = "Sparar …";
+  const data = await compressImage(file).catch(() => null);
+  if (!data) { btn.disabled = false; btn.textContent = "Spara"; return formError("Bilden gick inte att läsa in. Prova en annan bild."); }
+  const c = car();
+  const pRef = doc(col("photos"));
+  setDoc(pRef, { data, carId: c.id, createdBy: uid(), createdAt: serverTimestamp() }).catch(onWriteError);
+  const list = [...(c.docs || []), { id: "d" + randomId(8), title, photoId: pRef.id, date: todayStr(), by: uid() }];
+  c.docs = list;
+  updateDoc(ref("cars", c.id), { docs: list }).catch(onWriteError);
+  closeSheet(); render();
+  showToast("Dokumentet är sparat");
+}
+function docSheet(id) {
+  const d = (car()?.docs || []).find((x) => x.id === id);
+  if (!d) return;
+  openSheet(d.title, `
+    <div id="photo-box"><p class="hint">Hämtar bilden …</p></div>
+    <p class="hint" style="margin-top:8px">Sparat ${esc(fmtDate(d.date))} av ${esc(whoName(d.by).replace(/^Du$/, "dig"))}. Tryck på bilden för att se den större.</p>
+    <button class="btn danger block" type="button" data-act="delete-doc" data-id="${esc(d.id)}" style="margin-top:14px">Ta bort dokumentet</button>`);
+  getDoc(ref("photos", d.photoId)).then((snap) => {
+    const box = $("#photo-box");
+    if (box) box.innerHTML = snap.exists() ? `<button class="photo-zoom" type="button" data-act="photo-zoom" aria-label="Visa bilden större"><img class="photo" src="${esc(snap.data().data)}" alt="${esc(d.title)}"></button>` : `<p class="hint">Bilden finns inte längre.</p>`;
+  }).catch(() => { const box = $("#photo-box"); if (box) box.innerHTML = `<p class="hint">Bilden gick inte att hämta just nu.</p>`; });
+}
+
+/* ------------------------------------------------------------ servicebok */
+
+// Servicebok att skriva ut eller spara som PDF: bilen, underhållet och alla jobb med datum, mil och kostnad.
+function serviceBookHtml(c) {
+  const ents = carEntries().filter((e) => ["service", "eget", "dack"].includes(e.type) || (e.type === "kostnad" && e.category === "Besiktning"))
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const what = (e) => {
+    if (e.type === "kostnad") return ["Besiktning", e.title].filter(Boolean).join(" · ");
+    if (e.type === "dack") return [TIRE_ACTIONS[e.tireAction] || "Däck", e.depth != null ? `${fmt(e.depth, 1)} mm` : ""].filter(Boolean).join(" · ");
+    const w = workOf(e, c).map(workText).join(", ");
+    return [e.type === "eget" ? e.title || "Eget jobb" : "Service", w].filter(Boolean).join(": ");
+  };
+  const total = ents.reduce((a, e) => a + (e.amount || 0), 0);
+  const st = allItemStatus(c).filter((x) => !x.unknown || x.lastDate);
+  const facts = [["Registreringsnummer", c.plate], ["Årsmodell", c.year], ["Motor", c.engine], ["Drivmedel", c.fuel], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", c.besiktning ? fmtDate(c.besiktning) : ""]].filter(([, v]) => v);
+  return `<div class="pb">
+    <header class="pb-head"><div><h1>Servicebok</h1><p>${esc(carName(c))}${c.plate ? ` · ${esc(String(c.plate).toUpperCase())}` : ""}</p></div><p class="pb-date">Utskriven ${esc(fmtDate(todayStr()))}<br>Bildagboken</p></header>
+    <table class="pb-facts">${facts.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</table>
+    ${st.length ? `<h2>Underhåll</h2><table class="pb-table"><thead><tr><th>Punkt</th><th>Intervall</th><th>Senast</th><th>Nästa</th></tr></thead><tbody>
+      ${st.map((x) => `<tr><td>${esc(x.item.name)}</td><td>${esc(intervalText(x.item).replace(/^var /, ""))}</td><td>${esc(x.lastDate ? `${fmtDate(x.lastDate)}${x.lastMil != null ? `, ${fmt(x.lastMil)} mil` : ""}` : "–")}</td><td>${esc(x.unknown ? "–" : dueText(x) || "–")}</td></tr>`).join("")}
+    </tbody></table>` : ""}
+    <h2>Utfört arbete</h2>
+    ${ents.length ? `<table class="pb-table"><thead><tr><th>Datum</th><th>Mätarställning</th><th>Vad</th><th>Var</th><th class="r">Kostnad</th></tr></thead><tbody>
+      ${ents.map((e) => `<tr><td>${esc(fmtDate(e.date))}</td><td>${e.odometer != null ? `${esc(fmt(e.odometer))} mil` : "–"}</td><td>${esc(what(e))}${e.note ? `<br><small>${esc(e.note)}</small>` : ""}</td><td>${esc(e.workshop || e.place || "")}</td><td class="r">${e.amount != null ? `${esc(fmtKr(e.amount))} kr` : ""}</td></tr>`).join("")}
+    </tbody><tfoot><tr><td colspan="4">Totalt ${ents.length} ${ents.length === 1 ? "post" : "poster"}</td><td class="r">${esc(fmtKr(total))} kr</td></tr></tfoot></table>`
+      : `<p>Inga service, egna jobb, däckbyten eller besiktningar är loggade än.</p>`}
+  </div>`;
+}
+function printServiceBook() {
+  const c = car();
+  if (!c) return;
+  document.getElementById("print-root")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<div id="print-root">${serviceBookHtml(c)}</div>`);
+  const done = () => { document.getElementById("print-root")?.remove(); window.removeEventListener("afterprint", done); };
+  window.addEventListener("afterprint", done);
+  const old = document.title;
+  document.title = `Servicebok ${carName(c)}${c.plate ? " " + String(c.plate).toUpperCase() : ""}`;
+  setTimeout(() => { window.print(); document.title = old; }, 50);
+}
+
+/* --------------------------------------------------------- läsa kvitton */
+
+// Textigenkänning i telefonen (Tesseract, svenska). Hämtas första gången den används, cirka 3 MB.
+const TESS = "https://cdn.jsdelivr.net/npm/";
+let tessPromise = null;
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (tessPromise) return tessPromise;
+  tessPromise = new Promise((resolve, reject) => {
+    const sc = document.createElement("script");
+    sc.src = TESS + "tesseract.js@5.1.1/dist/tesseract.min.js";
+    sc.onload = () => resolve(window.Tesseract);
+    sc.onerror = () => { tessPromise = null; reject(new Error("kunde inte ladda")); };
+    document.head.appendChild(sc);
+  });
+  return tessPromise;
+}
+async function readReceiptText(file, onProgress) {
+  const T = await loadTesseract();
+  const worker = await T.createWorker("swe", 1, {
+    workerPath: TESS + "tesseract.js@5.1.1/dist/worker.min.js",
+    corePath: TESS + "tesseract.js-core@5.1.1",
+    langPath: TESS + "@tesseract.js-data/swe@1.0.0/4.0.0_best_int",
+    logger: (m) => { if (m.status === "recognizing text" && onProgress) onProgress(m.progress); },
+  });
+  try { return (await worker.recognize(file)).data.text || ""; }
+  finally { worker.terminate(); }
+}
+// Plocka ut belopp, datum och ställe ur texten på ett kvitto.
+const BRANDS = ["Circle K", "OKQ8", "Preem", "St1", "Ingo", "Shell", "Tanka", "Qstar", "Q8", "Gulf", "Din-X", "Bilia", "Mekonomen", "Vianor", "Euromaster", "Däckia", "Speedy", "Biltema", "Jula", "Clas Ohlson", "Easypark", "EasyPark", "Aimo", "Apcoa", "Parkster", "Q-Park", "Europark", "Statoil", "Hedin", "Volvo", "Ahlberg"];
+function parseReceipt(text) {
+  const lines = String(text || "").split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const money = (s) => {
+    const out = [];
+    for (const m of s.matchAll(/(\d{1,3}(?:[ . ]\d{3})*|\d+)[,.](\d{2})(?!\d)/g)) out.push(Number(m[1].replace(/[ . ]/g, "") + "." + m[2]));
+    return out;
+  };
+  let amount = null;
+  const key = /(att\s*betala|totalt|total|summa|belopp|betalt|kortbetalning|debiterat|sek\b|kr\b)/i;
+  for (const l of lines) {
+    if (!key.test(l) || /moms|vat|netto|exkl|rabatt|växel|pris\/l|kr\/l|per\s*liter/i.test(l)) continue;
+    const vals = money(l);
+    if (vals.length) { const v = Math.max(...vals); if (amount == null || (/att\s*betala|totalt|total|summa/i.test(l) && v >= amount)) amount = v; }
+  }
+  if (amount == null) {
+    const all = lines.filter((l) => !/moms|vat|kr\/l|pris\/l/i.test(l)).flatMap(money).filter((v) => v > 0 && v < 100000);
+    if (all.length) amount = Math.max(...all);
+  }
+  let date = null;
+  const t = lines.join(" ");
+  let m = t.match(/\b(20\d{2})[-./](0[1-9]|1[0-2])[-./](0[1-9]|[12]\d|3[01])\b/);
+  if (m) date = `${m[1]}-${m[2]}-${m[3]}`;
+  else if ((m = t.match(/\b(0[1-9]|[12]\d|3[01])[-./](0[1-9]|1[0-2])[-./](20\d{2}|\d{2})\b/))) date = `${m[3].length === 2 ? "20" + m[3] : m[3]}-${m[2]}-${m[1]}`;
+  else if ((m = t.match(/\b(\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/)) && Number(m[1]) >= 20) date = `20${m[1]}-${m[2]}-${m[3]}`;
+  let place = null;
+  for (const b of BRANDS) {
+    const re = new RegExp(b.replace(/[-]/g, "[- ]?").replace(/ /g, "\\s*"), "i");
+    const hit = lines.find((l) => re.test(l));
+    if (hit) { place = b; const city = (hit.replace(re, "").match(/[A-ZÅÄÖ][a-zåäö]{3,}/) || [])[0]; if (city) place += " " + city; break; }
+  }
+  return { amount, date, place };
+}
+
+// Kvittoknappen i formulären: fota kvittot, läs av det och fyll i belopp, datum och ställe. Fotot sparas som bild på posten.
+const RECEIPT_TYPES = ["tank", "service", "eget", "dack", "tvatt", "parkering", "kostnad"];
+function receiptButton() {
+  return `<label class="btn ghost block receipt-btn" id="receipt-btn">${icon("camera", 18)} <span id="receipt-label">Läs av ett kvitto</span>
+    <input type="file" id="ef-scan" accept="image/*" class="vh"></label>`;
+}
+async function scanReceipt(file) {
+  const label = $("#receipt-label"), btn = $("#receipt-btn");
+  if (!file || !label) return;
+  // Kvittot blir också postens bild.
+  const photo = $("#ef-photo");
+  if (photo) {
+    try { const dt = new DataTransfer(); dt.items.add(file); photo.files = dt.files; photo.dispatchEvent(new Event("change", { bubbles: true })); } catch { /* går inte att flytta bilden i den här webbläsaren */ }
+  }
+  btn?.classList.add("busy");
+  label.textContent = "Läser kvittot …";
+  try {
+    const text = await readReceiptText(file, (p) => { if ($("#receipt-label")) $("#receipt-label").textContent = `Läser kvittot … ${Math.round(p * 100)} %`; });
+    const r = parseReceipt(text);
+    const filled = [];
+    const set = (id, v) => { const x = document.getElementById(id); if (x && v != null && v !== "") { x.value = v; x.dispatchEvent(new Event("input", { bubbles: true })); return true; } return false; };
+    if (r.amount != null && set("ef-amount", fmtKr(r.amount).replace(/\s/g, " "))) filled.push(`${fmtKr(r.amount)} kr`);
+    if (r.date && r.date <= todayStr() && set("ef-date", r.date)) { filled.push(fmtDateShort(r.date)); const d = $("#ef-date"); if (d) markDateQuick(d); }
+    if (r.place) {
+      const id = ["ef-station", "ef-workshop", "ef-place"].find((x) => document.getElementById(x) && !document.getElementById(x).value.trim());
+      if (id && set(id, r.place)) { filled.push(r.place); if (id === "ef-station") document.querySelector("#sheet details.more")?.setAttribute("open", ""); }
+    }
+    if ($("#receipt-label")) $("#receipt-label").textContent = filled.length ? `Ifyllt från kvittot: ${filled.join(", ")}` : "Hittade inget belopp. Fyll i själv.";
+    if (filled.length) showToast("Kontrollera det som fylldes i från kvittot.");
+  } catch (e) {
+    console.warn("Kvittot gick inte att läsa", e);
+    if ($("#receipt-label")) $("#receipt-label").textContent = navigator.onLine ? "Kvittot gick inte att läsa. Fyll i själv." : "Läsningen behöver nät första gången.";
+  } finally {
+    btn?.classList.remove("busy");
+  }
+}
+
+/* ------------------------------------------------------------- genvägar */
+
+// Länkar som öppnar ett formulär direkt, för hemskärmen och appen Genvägar: ?ny=tank och liknande.
+const SHORTCUTS = [["tank", "Logga tankning"], ["matare", "Uppdatera mätarställningen"], ["tvatt", "Logga tvätt"], ["parkering", "Logga parkering"], ["bokning", "Lägg in bokad tid"], ["meny", "Vad vill du logga?"]];
+let launchAction = new URLSearchParams(location.search).get("ny");
+function runLaunchAction() {
+  if (!launchAction) return;
+  const a = launchAction;
+  launchAction = null;
+  const u = new URL(location.href); u.searchParams.delete("ny");
+  history.replaceState(history.state, "", u.pathname + u.search + (u.hash || "#oversikt"));
+  setTimeout(() => {
+    if (a === "bokning") bookingForm();
+    else if (TYPE[a]) entryForm(a);
+    else typePicker();
+  }, 0);
+}
+const shortcutUrl = (k) => `${location.origin}${location.pathname}?ny=${k}`;
+function shortcutsCard() {
+  return `<div class="card">
+    <h2>Genvägar</h2>
+    <p class="muted">Länkar som öppnar ett formulär direkt. Lägg dem i appen Genvägar på iPhone och sedan på hemskärmen, så loggar du med ett tryck.</p>
+    <div class="rows" style="margin-top:8px">${SHORTCUTS.map(([k, l]) => `<div class="dl"><span class="dl-ic">${icon(k === "bokning" ? "calendar" : k === "meny" ? "plus" : TYPE[k].icon, 20)}</span>
+      <span><span class="dl-t">${esc(l)}</span><span class="dl-s">${esc(shortcutUrl(k).replace(/^https?:\/\//, ""))}</span></span>
+      <button class="link" type="button" data-act="copy-shortcut" data-id="${k}">Kopiera</button></div>`).join("")}</div>
+    <details class="more" style="margin-top:12px"><summary>Så gör du på iPhone</summary>
+      <ol class="steps"><li>Kopiera länken du vill ha.</li><li>Öppna appen <b>Genvägar</b> och tryck på plus.</li><li>Lägg till åtgärden <b>Öppna URL:er</b> och klistra in länken.</li><li>Tryck på dela-knappen och välj <b>Lägg till på hemskärmen</b>.</li></ol>
+      <p class="hint">Länken öppnas i Safari. Första gången behöver du logga in där också, sedan kommer Safari ihåg dig.</p>
+    </details>
+  </div>`;
+}
+
 function viewOverview() {
   const c = car();
   const parts = [headerMain()];
@@ -1133,11 +1435,12 @@ function viewOverview() {
   const dls = deadlines(c);
   parts.push(`<article class="card">
     <h2>Att hålla koll på</h2>
-    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...odoReminder(c), ...dls])}
+    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...odoReminder(c), ...budgetReminder(c), ...dls])}
     ${!c.besiktning && !c.forsakringDatum ? `<div class="ask"><button class="btn-soft" type="button" data-act="edit-car" data-section="dates">Lägg till besiktning, försäkring och skatt</button></div>` : ""}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
   </article>`);
 
+  parts.push(todoCard(c));
   parts.push(recentCard(c));
 
   // Underhåll: de punkter som är närmast att bytas, med samma staplar som under Bilen.
@@ -1179,6 +1482,7 @@ function viewOverview() {
         ${eco.bars.map((b) => `<div class="bar${b.now ? " now" : ""}">${b.sum ? `<b>${fmt(b.sum / 1000, 1)}k</b>` : ""}<i style="height:${Math.round((b.sum / maxBar) * 70)}%"></i><span>${b.label}</span></div>`).join("")}
       </div>
     </div>
+    ${budgetBar(budgetInfo(c))}
 `
     : `<p class="muted">Här ser ni vad bilen kostar per månad när ni har loggat er första tankning eller kostnad.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="new-entry" data-type="tank">${icon("fuel", 16)} Logga en tankning</button></div>`}
@@ -1397,8 +1701,34 @@ function viewEconomy() {
   const yearAvg = yearAverage(paid, year).avg;
 
   // Årets nyckeltal
-  const odos = carEntries().filter((e) => e.odometer != null && (e.date || "").startsWith(`${year}-`)).map((e) => e.odometer);
-  const driven = odos.length >= 2 ? Math.max(...odos) - Math.min(...odos) : null;
+  const drivenIn = (y, until = `${y}-12-31`) => {
+    const odos = carEntries().filter((e) => e.odometer != null && (e.date || "").startsWith(`${y}-`) && e.date <= until).map((e) => e.odometer);
+    return odos.length >= 2 ? Math.max(...odos) - Math.min(...odos) : null;
+  };
+  const driven = drivenIn(year);
+  // Jämförelse med året innan, när det finns något att jämföra med.
+  // Pågående år jämförs med samma period året innan (till och med samma dag), annars hela året.
+  const cutoff = year === new Date().getFullYear() ? `${year - 1}-${todayStr().slice(5)}` : `${year - 1}-12-31`;
+  const prevPaid = paid.filter((e) => e.date.startsWith(`${year - 1}-`) && e.date <= cutoff);
+  const prevTotal = prevPaid.reduce((a, e) => a + e.amount, 0);
+  const prevDriven = drivenIn(year - 1, cutoff);
+  const delta = (now, before, unit = "") => {
+    if (!before || now == null) return "";
+    const p = Math.round(((now - before) / before) * 100);
+    return `<div class="delta ${p > 0 ? "up" : p < 0 ? "down" : ""}">${p > 0 ? "+" : ""}${p} % mot ${year === new Date().getFullYear() ? `samma tid ${year - 1}` : year - 1}${unit}</div>`;
+  };
+  const c = car();
+  const bi = budgetInfo(c, sel);
+  // Bilåret i siffror: vad pengarna gick till och vad som gjordes.
+  const yearList = paid.filter((e) => e.date.startsWith(`${year}-`));
+  const byCat = {};
+  for (const e of yearList) byCat[catOf(e)] = (byCat[catOf(e)] || 0) + e.amount;
+  const topCat = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0];
+  const topMonth = sums.reduce((m, v, i) => (v > m.v ? { v, i } : m), { v: 0, i: -1 });
+  const countType = (t) => carEntries().filter((e) => e.type === t && (e.date || "").startsWith(`${year}-`)).length;
+  const yearFacts = [
+    ["Tankningar", countType("tank")], ["Service och egna jobb", countType("service") + countType("eget")], ["Tvättar", countType("tvatt")], ["Parkeringar", countType("parkering")],
+  ].filter(([, n]) => n);
 
   const navBtn = (act, d, label, disabled) => `<button class="icon-btn" type="button" data-act="${act}" data-d="${d}" aria-label="${label}"${disabled ? " disabled" : ""}>${icon(d < 0 ? "back" : "next", 18)}</button>`;
   return `${subHeader("Vad bilen kostar", "Ekonomi")}
@@ -1409,6 +1739,8 @@ function viewEconomy() {
         ${navBtn("eco-step", 1, "Nästa månad", sel >= nowKey)}
       </div>
       <div class="eco-big">${fmtKr(monthTotal)} <small>kr</small></div>
+      ${bi ? budgetBar(bi) : ""}
+      <div class="ask" style="justify-content:center;margin:6px 0 12px"><button class="link" type="button" data-act="budget-edit">${c?.budget ? "Ändra budget" : "Sätt en månadsbudget"}</button></div>
       ${monthList.length
         ? `<p class="muted" style="text-align:center;margin:0 0 10px">${monthList.length === 1 ? "1 post" : `${monthList.length} poster`}</p><div class="rows">${catRows(monthList, monthTotal, sel)}</div>`
         : `<p class="muted" style="text-align:center">Inga kostnader loggade i ${esc(MONTHS[Number(sel.slice(5, 7)) - 1])}.</p>`}
@@ -1428,13 +1760,22 @@ function viewEconomy() {
         }).join("")}
       </div>
       <div class="eco" style="margin-top:12px">
-        <div class="stat"><div class="label">Totalt ${year}</div><div class="n">${fmtKr(yearTotal)} <small>kr</small></div></div>
+        <div class="stat"><div class="label">Totalt ${year}</div><div class="n">${fmtKr(yearTotal)} <small>kr</small></div>${delta(yearTotal, prevTotal)}</div>
         <div class="stat"><div class="label">Snitt per månad</div><div class="n">${yearTotal ? fmt(yearAvg) : "–"} <small>kr</small></div></div>
-        <div class="stat"><div class="label">Kostnad per mil</div><div class="n">${driven && yearTotal ? fmt(yearTotal / driven, 2) : "–"} <small>kr</small></div></div>
-        <div class="stat"><div class="label">Körsträcka</div><div class="n">${driven != null ? fmt(driven) : "–"} <small>mil</small></div></div>
+        <div class="stat"><div class="label">Kostnad per mil</div><div class="n">${driven && yearTotal ? fmt(yearTotal / driven, 2) : "–"} <small>kr</small></div>${driven && prevDriven && prevTotal ? delta(yearTotal / driven, prevTotal / prevDriven) : ""}</div>
+        <div class="stat"><div class="label">Körsträcka</div><div class="n">${driven != null ? fmt(driven) : "–"} <small>mil</small></div>${delta(driven, prevDriven)}</div>
       </div>
       <p class="hint" style="margin-top:10px">Tryck på en stapel för att se den månaden. Kostnad per mil räknas på körsträckan mellan årets loggade mätarställningar.</p>
-    </div>`;
+    </div>
+    ${yearTotal || yearFacts.length ? `<div class="card">
+      <h2>Bilåret ${year} i siffror</h2>
+      <dl class="detail-list">
+        ${topCat ? `<div><dt>Mest pengar på</dt><dd>${esc(topCat[0])}, ${esc(fmtKr(topCat[1]))} kr (${Math.round((topCat[1] / yearTotal) * 100)} %)</dd></div>` : ""}
+        ${topMonth.i >= 0 ? `<div><dt>Dyraste månaden</dt><dd>${esc(MONTHS[topMonth.i].replace(/^./, (x) => x.toUpperCase()))}, ${esc(fmtKr(topMonth.v))} kr</dd></div>` : ""}
+        ${yearFacts.map(([k, n]) => `<div><dt>${esc(k)}</dt><dd>${n} st</dd></div>`).join("")}
+        ${prevTotal ? `<div><dt>Jämfört med ${year === new Date().getFullYear() ? `samma tid ${year - 1}` : year - 1}</dt><dd>${yearTotal >= prevTotal ? `${esc(fmtKr(yearTotal - prevTotal))} kr mer` : `${esc(fmtKr(prevTotal - yearTotal))} kr mindre`}</dd></div>` : ""}
+      </dl>
+    </div>` : ""}`;
 }
 
 // Stapel som fylls på från förra bytet till nästa: tom när det är nybytt, full när det är dags.
@@ -1520,6 +1861,12 @@ function viewCar() {
         <span class="pill ${ended ? "none" : "ok"}">${ended ? "Avslutad" : "Pågår"}</span></button>`;
     }).join("")}</div></div>` : ""}
     <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
+    ${docsCard(c)}
+    <div class="card">
+      <h2>Servicebok</h2>
+      <p class="muted">All service, egna jobb, däckbyten och besiktningar med datum, mätarställning och kostnad. Bra att visa en köpare eller verkstad.</p>
+      <div class="ask"><button class="btn-soft" type="button" data-act="print-book">${icon("print", 16)} Skriv ut eller spara som PDF</button></div>
+    </div>
     <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
         ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")], ["Senast tvättad", lastWash(c) ? [fmtDate(lastWash(c).date), lastWash(c).place].filter(Boolean).join(", ") : ""]]
@@ -1603,6 +1950,7 @@ function viewSettings() {
       <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för er båda. Du får frågan en gång till innan något tas bort.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>
     </div>
+    ${shortcutsCard()}
     <div class="card">
       <h2>Säkerhetskopia</h2>
       <p class="muted"><b>Loggen</b> som kalkylark, med bokade tider, för Excel eller Numbers. Bra att ha med vid försäljning av bilen.</p>
@@ -2118,6 +2466,7 @@ function entryForm(type, e = {}, opts = {}) {
   const formTitle = type === "kostnad" && e.category === "Besiktning" ? "Besiktning" : TYPE[type].label;
   openSheet(isEdit ? `Ändra ${formTitle.toLowerCase()}` : formTitle, `
     <form class="form" data-form="entry" data-type="${type}"${isEdit ? ` data-id="${esc(e.id)}"` : ""}${opts.recurringId ? ` data-rec="${esc(opts.recurringId)}"` : ""}${opts.bookingId ? ` data-booking="${esc(opts.bookingId)}"` : ""} novalidate>
+      ${!isEdit && RECEIPT_TYPES.includes(type) ? receiptButton() : ""}
       ${body}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
@@ -3157,6 +3506,47 @@ const ACTIONS = {
     const b = (car()?.bookings || []).find((x) => x.id === el.dataset.id);
     if (b) openMapChooser({ name: b.place, addr: b.addr, lat: b.lat, lon: b.lon, pid: b.placeId, directions: true });
   },
+  "go-view"(el) { setView(el.dataset.id); },
+  "budget-edit"() { budgetSheet(); },
+  "todo-toggle"(el) {
+    const c = car();
+    const list = (c.todos || []).map((t) => (t.id === el.dataset.id ? { ...t, done: !t.done, doneBy: !t.done ? uid() : null } : t));
+    c.todos = list;
+    updateDoc(ref("cars", c.id), { todos: list }).catch(onWriteError);
+    render();
+  },
+  "todo-clear"() {
+    const c = car();
+    const before = c.todos || [];
+    const list = before.filter((t) => !t.done);
+    c.todos = list;
+    updateDoc(ref("cars", c.id), { todos: list }).catch(onWriteError);
+    render();
+    showToast("Klara saker är borttagna", 6000, () => { c.todos = before; updateDoc(ref("cars", c.id), { todos: before }).catch(onWriteError); render(); });
+  },
+  "new-doc"() { docForm(); },
+  "open-doc"(el) { docSheet(el.dataset.id); },
+  "delete-doc"(el) {
+    const c = car();
+    const d = (c.docs || []).find((x) => x.id === el.dataset.id);
+    if (!d) return closeSheet();
+    const list = (c.docs || []).filter((x) => x.id !== d.id);
+    c.docs = list;
+    updateDoc(ref("cars", c.id), { docs: list }).catch(onWriteError);
+    const timer = setTimeout(() => deleteDoc(ref("photos", d.photoId)).catch(() => {}), 8000);
+    closeSheet(); render();
+    showToast("Dokumentet är borttaget", 6000, () => {
+      clearTimeout(timer);
+      c.docs = [...(c.docs || []).filter((x) => x.id !== d.id), d];
+      updateDoc(ref("cars", c.id), { docs: c.docs }).catch(onWriteError);
+      render();
+    });
+  },
+  "print-book"() { printServiceBook(); },
+  async "copy-shortcut"(el) {
+    const ok = await copyText(shortcutUrl(el.dataset.id));
+    showToast(ok ? "Länken är kopierad" : shortcutUrl(el.dataset.id), ok ? 3500 : 9000);
+  },
   "edit-entry"(el) {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (e) entryForm(e.type, e);
@@ -3380,6 +3770,9 @@ async function onSubmit(ev) {
     if (kind === "car-edit") return saveCarEdit(form);
     if (kind === "items") return saveItems(form);
     if (kind === "booking") return saveBooking(form, ev.submitter?.value === "1");
+    if (kind === "budget") return saveBudget(form);
+    if (kind === "todo") return saveTodo(form);
+    if (kind === "doc") return await saveDoc(form);
     if (kind === "rename") {
       const fd = new FormData(form);
       const name = String(fd.get("name") || "").trim();
@@ -3626,6 +4019,7 @@ function onInput(ev) {
 }
 
 function onChange(ev) {
+  if (ev.target.id === "ef-scan") { scanReceipt(ev.target.files?.[0]); ev.target.value = ""; }
   if (ev.target.id === "ef-date") markDateQuick(ev.target);
   if (ev.target.id === "bk-addr") geocodeBookingAddress();
   if ((ev.target.id === "ef-date" || ev.target.id === "ef-category") && $("#ef-nextBesiktning")) updateNextInspection();
