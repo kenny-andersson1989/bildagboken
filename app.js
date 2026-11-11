@@ -864,7 +864,7 @@ function renderOnboarding(error = "") {
       <label class="field"><span>Ditt namn</span><input name="name" id="ob-name" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
       <label class="field"><span>Vad heter hushållet?</span><input name="house" id="ob-house" maxlength="40" placeholder="Till exempel Familjen Andersson"></label>
       <button class="btn primary block" type="submit">Skapa</button>
-      <p class="hint">Sedan bjuder du in din sambo med en kod.</p>
+      <p class="hint">Sedan kan du bjuda in andra med en kod, till exempel familj eller den du delar bil med.</p>
     </form>
     <form class="card form" data-form="join-house" data-keep>
       <h2>Gå med i en befintlig</h2>
@@ -1176,8 +1176,8 @@ function installCard() {
 function inviteCard() {
   if (!S.house || (S.house.members || []).length > 1) return "";
   return `<article class="card">
-    <h2>Bjud in din sambo</h2>
-    <p class="muted">Ni delar allt i appen. Din sambo loggar in med Apple eller Google och skriver in koden:</p>
+    <h2>Dela bilen med någon</h2>
+    <p class="muted">Alla ni som delar ser och loggar samma sak. Den du bjuder in loggar in med Apple eller Google och skriver in koden:</p>
     <p class="code" style="margin:10px 0">${esc(S.house.inviteCode)}</p>
     <button class="btn-soft" type="button" data-act="copy-invite">Kopiera inbjudningslänk</button>
   </article>`;
@@ -2189,7 +2189,7 @@ function viewNotifications() {
   const feed = [...S.entries, ...bookingFeed()].sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt)).slice(0, 40);
   const perm = "Notification" in window ? Notification.permission : "unsupported";
   return `${subHeader("Det ni gjort med bilen", "Aviseringar", true)}
-    ${perm === "default" ? `<div class="card"><h2>Få notiser i telefonen</h2><p class="muted">Då ser du när din sambo loggar något. Notiserna kommer när appen är öppen eller nyss har använts.</p><div class="ask"><button class="btn-soft" type="button" data-act="enable-notif">Slå på notiser</button></div></div>` : ""}
+    ${perm === "default" ? `<div class="card"><h2>Få notiser i telefonen</h2><p class="muted">Då ser du när någon av de andra loggar något. Notiserna kommer när appen är öppen eller nyss har använts.</p><div class="ask"><button class="btn-soft" type="button" data-act="enable-notif">Slå på notiser</button></div></div>` : ""}
     ${reminders.length ? `<div class="card"><h2>Påminnelser</h2><div class="rows">${reminders.map((r) => rowHtml({ icon: r.icon || "bell", title: r.title, sub: r.sub, level: "urgent", label: r.label || "Nu", act: r.act, id: r.id })).join("")}</div></div>` : ""}
     <div class="card">
       ${feed.length ? feed.map((e) => {
@@ -2228,7 +2228,7 @@ function viewSettings() {
     <form class="card form" data-form="rename" data-keep>
       <h2>Namn</h2>
       <label class="field"><span>Hushållets namn</span><input name="house" id="st-house" required maxlength="40" value="${esc(S.house?.name || "")}"></label>
-      <label class="field"><span>Ditt namn, så ser din sambo dig i appen</span><input name="name" id="st-name" required maxlength="30" value="${esc(myName())}"></label>
+      <label class="field"><span>Ditt namn, så ser de andra vem som har loggat</span><input name="name" id="st-name" required maxlength="30" value="${esc(myName())}"></label>
       <button class="btn primary block" type="submit">Spara</button>
     </form>
     <div class="card">
@@ -2249,7 +2249,7 @@ function viewSettings() {
       <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(carName(x))}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
         <span class="row-actions">${x.id === S.carId ? `<span class="pill ok">Vald</span>` : `<button class="link" type="button" data-act="pick-car" data-id="${esc(x.id)}">Välj</button>`}
         <button class="link danger" type="button" data-act="delete-car" data-id="${esc(x.id)}" aria-label="Ta bort ${esc(carName(x))}">Ta bort</button></span></div>`).join("")}</div>
-      <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för er båda. Du får frågan en gång till innan något tas bort.</p>
+      <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för alla ni som delar bilen. Du får frågan en gång till innan något tas bort.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>
     </div>
     ${cardsSettingsCard()}
@@ -2385,7 +2385,7 @@ function typePicker() {
     ${keys.map((k) => `<button type="button" data-act="new-entry" data-type="${k === "besiktning" ? "kostnad" : k}"${k === "besiktning" ? ' data-cat="Besiktning"' : ""}>${icon(typeIcon(k), 26)}${typeLabel(k)}</button>`).join("")}
   </div>`).join("") + `
   <button class="btn ghost block" type="button" data-act="new-booking" style="margin-top:12px">${icon("calendar", 18)} Lägg in bokad tid</button>
-  <p class="hint" style="margin-top:14px">Det du sparar syns direkt hos din sambo.</p>`);
+  <p class="hint" style="margin-top:14px">Det du sparar syns direkt för alla ni som delar bilen.</p>`);
 }
 
 // Snabbval under ett datumfält: I dag och I går.
@@ -2474,7 +2474,7 @@ function bookingForm(b = {}) {
         ? `<button class="btn ghost block" type="button" data-act="booking-calendar" data-id="${esc(b.id)}">${icon("calendar", 18)} Lägg till i kalendern</button>
            <button class="btn danger block" type="button" data-act="delete-booking" data-id="${esc(b.id)}">Ta bort bokningen</button>`
         : `<button class="btn ghost block" type="submit" name="cal" value="1">${icon("calendar", 18)} Spara och lägg till i kalendern</button>`}
-      <p class="hint">Bokningen syns för er båda under Att hålla koll på och bland påminnelserna dagen innan. Lägger du den i kalendern påminner telefonen dig också.</p>
+      <p class="hint">Bokningen syns för alla ni som delar bilen under Att hålla koll på och bland påminnelserna dagen innan. Lägger du den i kalendern påminner telefonen dig också.</p>
     </form>`, { back: isEdit ? null : "new-entry" });
   // Finns platsen redan med position visas kartan direkt.
   showBookingMap();
@@ -3369,7 +3369,7 @@ async function saveEntry(form) {
   if (Object.keys(carUpdate).length) updateDoc(ref("cars", carTarget.id), carUpdate).catch(onWriteError);
 
   closeSheet();
-  showToast(existing ? "Ändringen är sparad" : `${TYPE[type].label} sparad${type === "tank" ? ". Din sambo ser den direkt." : ""}`);
+  showToast(existing ? "Ändringen är sparad" : `${TYPE[type].label} sparad${type === "tank" ? ". De andra ser den direkt." : ""}`);
   if (!existing && S.view !== "oversikt" && S.view !== "logg") setView("logg");
 }
 
@@ -4122,7 +4122,7 @@ const ACTIONS = {
     const ok = await confirmDialog({
       title: `Ta bort ${carName(c)}?`,
       lines: [
-        `Bilen${n ? ` och hela dess logg (${n} ${n === 1 ? "post" : "poster"})` : ""} tas bort för er båda.`,
+        `Bilen${n ? ` och hela dess logg (${n} ${n === 1 ? "post" : "poster"})` : ""} tas bort för alla ni som delar bilen.`,
         c.plate ? `Reg.nr ${c.plate}` : null,
       ],
       okLabel: "Ta bort bilen",
@@ -4148,7 +4148,7 @@ const ACTIONS = {
   async "copy-invite"() {
     const link = `${location.origin}${location.pathname}?join=${S.house.inviteCode}`;
     const ok = await copyText(`Gå med i vår bildagbok: ${link}\nKod: ${S.house.inviteCode}`);
-    showToast(ok ? "Inbjudan kopierad. Skicka den till din sambo." : `Koden är ${S.house.inviteCode}. Länk: ${link}`, ok ? 3500 : 9000);
+    showToast(ok ? "Inbjudan kopierad. Skicka den till den du vill dela bilen med." : `Koden är ${S.house.inviteCode}. Länk: ${link}`, ok ? 3500 : 9000);
   },
   "ask-claude"() {
     const text = claudePrompt(car());
