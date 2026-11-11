@@ -1396,11 +1396,16 @@ function photosCard(c) {
   return `<div class="photos-part">
     <p class="label" style="margin:0 0 8px">Bilder från loggen</p>
     ${S.showPhotos ? `<div class="photo-grid">${shown.map((e) => `<button type="button" class="pg" data-act="open-entry" data-id="${esc(e.id)}" aria-label="${esc(entryTitle(e))}, ${esc(fmtDateShort(e.date))}">
-        ${gridPhotos.get(e.photoId) ? `<img src="${esc(gridPhotos.get(e.photoId))}" alt="">` : `<span class="pg-wait"></span>`}<span class="pg-d">${esc(fmtDateShort(e.date))}</span></button>`).join("")}</div>
+        ${gridPhotos.get(e.photoId) ? `<img src="${esc(gridPhotos.get(e.photoId))}" alt="">` : `<span class="pg-wait"></span>`}<span class="pg-d"><b>${esc(photoLabel(e))}</b>${esc(fmtDateShort(e.date))}</span></button>`).join("")}</div>
       ${ents.length > shown.length ? `<p class="hint" style="margin-top:8px">De ${shown.length} senaste av ${ents.length} bilder.</p>` : ""}`
       : `<p class="muted">Kvitton och foton från loggen, i datumordning. ${ents.length === 1 ? "1 bild" : `${ents.length} bilder`}.</p>
       <div class="ask" style="margin-top:8px"><button class="btn-soft" type="button" data-act="show-photos">${icon("image", 16)} Visa bilderna</button></div>`}
   </div>`;
+}
+// Vad en bild i loggen hör till: typen av post, eller kategorin för en kostnad (till exempel Besiktning).
+function photoLabel(e) {
+  if (e.type === "kostnad") return e.category || "Kostnad";
+  return TYPE[e.type]?.label || "Post";
 }
 async function loadPhotoGrid() {
   const c = car();
