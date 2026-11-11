@@ -723,8 +723,7 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 /* Budget: stapel och text under månadens summa */
 .budget { margin: 10px 0 4px; }
 .budget .wear { height: 8px; border-radius: 4px; }
-.budget-t { display: block; font-size: 12.5px; color: var(--ink-2); margin-top: 6px; text-align: center; font-variant-numeric: tabular-nums; }
-.eco + .budget .budget-t, .card > .budget:last-child .budget-t { text-align: left; }
+.budget-t { display: block; font-size: 12.5px; color: var(--ink-2); margin-top: 6px; font-variant-numeric: tabular-nums; }
 /* Jämförelse med året innan */
 .delta { font-size: 11.5px; font-weight: 600; color: var(--ink-3); margin-top: 2px; }
 .delta.up { color: var(--accent-text); }
@@ -733,7 +732,11 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .todos { display: flex; flex-direction: column; }
 .todo { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 44px; padding: 6px 0; border-top: 1px solid var(--line); cursor: pointer; }
 .todo:first-child { border-top: 0; }
-.todo input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
+/* Samma fyrkantiga kryssruta som i formulären */
+.todo .box { width: 20px; height: 20px; border-radius: 5px; border: 1.5px solid var(--ink-3); display: grid; place-items: center; box-sizing: border-box; }
+.todo input:checked + .box { background: var(--accent); border-color: var(--accent); }
+.todo input:checked + .box::after { content: "✓"; color: var(--accent-ink); font-size: 12px; font-weight: 800; line-height: 1; }
+.todo input:focus-visible + .box { outline: 2px solid var(--accent); outline-offset: 2px; }
 .todo-t { font-size: 14.5px; overflow-wrap: anywhere; }
 .todo small { font-size: 11.5px; color: var(--ink-3); }
 .todo.done .todo-t { text-decoration: line-through; color: var(--ink-3); }
@@ -767,3 +770,42 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
   .pb .r { text-align: right; white-space: nowrap; }
   .pb small { color: #555; }
 }
+
+/* Budgetraden i Ekonomi: rubrik och Ändra som i korten */
+.budget-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 4px 0 0; }
+.eco-month .budget { margin-bottom: 14px; }
+/* Rensa sökningen: större tryckyta än själva knappen */
+.search-clear { position: relative; }
+.search-clear::after { content: ""; position: absolute; inset: -9px; }
+/* Välj kort på Översikt */
+.card-order { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.card-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.card-row .check { flex: 1; }
+.icon-btn.sm { width: 40px; height: 40px; }
+.icon-btn:disabled { opacity: .35; cursor: default; }
+/* Fält som fylldes i från ett kvitto */
+.from-receipt { border-color: var(--sage) !important; background: var(--sage-soft) !important; }
+/* Bilder i datumordning */
+.photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.pg { position: relative; aspect-ratio: 1; border: 0; padding: 0; border-radius: 12px; overflow: hidden; background: var(--track); cursor: pointer; }
+.pg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pg-wait { position: absolute; inset: 0; background: var(--track); }
+.pg-d { position: absolute; left: 6px; bottom: 6px; font-size: 11px; font-weight: 600; color: #fff; background: rgba(0, 0, 0, .5); padding: 1px 6px; border-radius: 999px; }
+/* Delad servicebok */
+.share-box { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.share-url { margin: 2px 0 0; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+.todo-add select { flex: none; width: auto; max-width: 40%; }
+.shared-book { overflow-x: auto; }
+.shared-book .pb-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; border-bottom: 2px solid var(--ink); padding-bottom: 8px; margin-bottom: 12px; }
+.shared-book .pb-head h1 { font: 700 24px var(--f-display); margin: 0; }
+.shared-book .pb-head p { margin: 2px 0 0; }
+.shared-book .pb-date { text-align: right; font-size: 12px; color: var(--ink-3); }
+.shared-book h2 { font: 700 16px var(--f-display); margin: 18px 0 6px; display: block; }
+.shared-book table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.shared-book .pb-facts { width: auto; }
+.shared-book .pb-facts th { text-align: left; font-weight: 500; color: var(--ink-3); padding: 2px 16px 2px 0; }
+.shared-book .pb-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); border-bottom: 1px solid var(--line); padding: 4px 6px 4px 0; }
+.shared-book .pb-table td { border-bottom: 1px solid var(--line); padding: 6px 6px 6px 0; vertical-align: top; }
+.shared-book .pb-table tfoot td { font-weight: 700; border-bottom: 0; }
+.shared-book .r { text-align: right; white-space: nowrap; }
+.shared-book small { color: var(--ink-3); }

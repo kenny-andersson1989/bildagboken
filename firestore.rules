@@ -17,6 +17,14 @@ service cloud.firestore {
       allow delete: if signedIn() && memberOf(resource.data.householdId);
     }
 
+    // Servicebok som delas med en köpare: vem som helst med länken kan läsa just den, ingen kan lista alla.
+    match /shares/{token} {
+      allow get: if true;
+      allow create: if signedIn() && memberOf(request.resource.data.householdId);
+      allow update: if signedIn() && memberOf(resource.data.householdId) && request.resource.data.householdId == resource.data.householdId;
+      allow delete: if signedIn() && memberOf(resource.data.householdId);
+    }
+
     match /households/{hid} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
       allow create: if signedIn() && request.resource.data.members == [request.auth.uid];
