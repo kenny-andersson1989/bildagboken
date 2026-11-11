@@ -2648,11 +2648,16 @@ function bookingForm(b = {}) {
       ${isEdit ? `<button class="btn ghost block" type="button" data-act="booking-done" data-id="${esc(b.id)}">${b.kind === "annat" ? "Klart, ta bort bokningen" : "Klart, logga det"}</button>` : ""}
       ${field("Vad är bokat?", `<select name="kind" id="bk-kind">${kinds.map(([k, l]) => `<option value="${k}"${(b.kind || "service") === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
       ${(() => {
-        // Datum och tid i samma fält, så att iPhone visar en enda väljare. "Ingen tid" ger bara datum.
-        const noTime = !!b.id && !b.time;
-        const val = b.date ? (noTime ? b.date : `${b.date}T${b.time || "09:00"}`) : "";
-        return field("Datum och tid", `<input type="${noTime ? "date" : "datetime-local"}" name="when" id="bk-when" required value="${esc(val)}">`)
-          + `<label class="check" style="align-self:flex-start"><input type="checkbox" id="bk-notime"${noTime ? " checked" : ""}> Ingen tid, bara datum</label>`;
+        // Datum i ett stort fält. Tiden väljs med knappar för vanliga tider (inget fönster öppnas),
+        // och Annan tid öppnar tidsväljaren för andra klockslag.
+        const t = b.time || "";
+        const common = BOOK_TIMES.includes(t);
+        return field("Datum", `<input type="date" name="date" id="bk-date" required value="${esc(b.date || "")}" class="big-date">`)
+          + `<div class="field"><span>Tid</span><div class="time-pick" role="group" aria-label="Tid">
+              <button type="button" class="chip-btn" data-act="bk-time" data-v="" aria-pressed="${!t}">Ingen tid</button>
+              ${BOOK_TIMES.map((x) => `<button type="button" class="chip-btn" data-act="bk-time" data-v="${x}" aria-pressed="${t === x}">${x}</button>`).join("")}
+              <label class="chip-btn time-other${t && !common ? " on" : ""}">${icon("calendar", 14)} <span id="bk-time-label">${t && !common ? esc(t) : "Annan tid"}</span><input type="time" id="bk-time-other" value="${t && !common ? esc(t) : ""}" aria-label="Annan tid"></label>
+            </div><input type="hidden" name="time" id="bk-time" value="${esc(t)}"></div>`;
       })()}
       ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Till exempel Mölndals däckservice" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-suggest" aria-expanded="false">
         <span class="suggest" id="bk-suggest" role="listbox" hidden></span>`)}
@@ -2688,13 +2693,26 @@ function bookingForm(b = {}) {
   }
 }
 
+// Vanliga tider för bokningar, som knappar i formuläret.
+const BOOK_TIMES = ["07:00", "07:30", "08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
+function setBookingTime(v) {
+  const hid = $("#bk-time");
+  if (!hid) return;
+  hid.value = v || "";
+  document.querySelectorAll("[data-act=bk-time]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === hid.value)));
+  const other = document.querySelector(".time-other");
+  const isOther = !!v && !BOOK_TIMES.includes(v);
+  other?.classList.toggle("on", isOther);
+  const lab = $("#bk-time-label");
+  if (lab) lab.textContent = isOther ? v : "Annan tid";
+  if (!isOther && $("#bk-time-other")) $("#bk-time-other").value = "";
+}
 function saveBooking(form, wantCalendar = false) {
   const c = car();
   const fd = new FormData(form);
   const str = (k) => String(fd.get(k) ?? "").trim();
-  const when = str("when");
-  const date = when.slice(0, 10);
-  const time = when.length > 10 ? when.slice(11, 16) : "";
+  const date = str("date");
+  const time = str("time");
   if (!date) return formError("Välj vilket datum som är bokat.");
   const id = form.dataset.id || "b" + randomId(8);
   const lat = num(fd.get("placeLat")), lon = num(fd.get("placeLon"));
@@ -4187,6 +4205,7 @@ const ACTIONS = {
     showToast(`${evs.length} händelser till kalendern`);
   },
   "budget-edit"() { budgetSheet(); },
+  "bk-time"(el) { setBookingTime(el.dataset.v); },
   "notes-toggle"() { S.notesOpen = !S.notesOpen; render(); if (S.notesOpen && !(car()?.todos || []).length) $("#todo-text")?.focus(); },
   "note-filter"(el) { S.noteFilter = el.dataset.f; render(); },
   "todo-tag"(el) {
@@ -4739,15 +4758,7 @@ function onInput(ev) {
 }
 
 function onChange(ev) {
-  if (ev.target.id === "bk-notime") {
-    const w = $("#bk-when");
-    if (w) {
-      const d = w.value.slice(0, 10);
-      w.value = "";
-      w.type = ev.target.checked ? "date" : "datetime-local";
-      w.value = d ? (ev.target.checked ? d : `${d}T09:00`) : "";
-    }
-  }
+  if (ev.target.id === "bk-time-other") setBookingTime(ev.target.value);
   if (ev.target.id === "ef-tireAction") { const box = $("#ef-tirekind-box"); if (box) box.hidden = isSwap(ev.target.value); }
   if (ev.target.id === "ef-scan") { scanReceipt(ev.target.files?.[0]); ev.target.value = ""; }
   if (ev.target.id === "ef-date") markDateQuick(ev.target);
