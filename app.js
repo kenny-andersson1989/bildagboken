@@ -1314,8 +1314,7 @@ function guessTag(text) {
 function todoItemsHtml(items) {
   return `<div class="todos">${items.map((t) => `<label class="todo${t.done ? " done" : ""}">
       <input type="checkbox" class="vh" data-act="todo-toggle" data-id="${esc(t.id)}"${t.done ? " checked" : ""}><span class="box" aria-hidden="true"></span>
-      <span class="todo-t">${esc(t.text)}</span>
-      <button type="button" class="tag-pill${t.tag ? ` tag-${t.tag}` : " tag-none"}" data-act="todo-retag" data-id="${esc(t.id)}" aria-label="Kategori: ${esc(tagLabel(t.tag) || "ingen")}. Tryck för att byta.">${esc(tagLabel(t.tag) || "+ kategori")}</button></label>`).join("")}</div>`;
+      <span class="todo-t">${esc(t.text)}</span><small>${esc(whoName(t.by))}</small></label>`).join("")}</div>`;
 }
 function todoFormHtml() {
   return `<form class="todo-add" data-form="todo" data-keep novalidate>
@@ -1323,8 +1322,6 @@ function todoFormHtml() {
         <input name="text" id="todo-text" placeholder="Något att göra, köpa eller laga" autocomplete="off" enterkeyhint="done" aria-label="Ny sak">
         <button class="todo-btn" type="submit" aria-label="Lägg till">${icon("plus", 20)}</button>
       </div>
-      <input type="hidden" name="tag" id="todo-tag" value="">
-      <div class="tag-pick" role="group" aria-label="Kategori">${TODO_TAGS.map((t) => `<button type="button" class="chip-btn" data-act="todo-tag" data-v="${t.k}" aria-pressed="false">${esc(t.label)}</button>`).join("")}</div>
     </form>`;
 }
 function todoCard(c) {
@@ -1332,7 +1329,7 @@ function todoCard(c) {
   const open = list.filter((t) => !t.done), done = list.filter((t) => t.done);
   return `<article class="card">
     <h2>Att göra ${done.length ? `<button class="link" type="button" data-act="todo-clear">Rensa klara</button>` : ""}</h2>
-    ${list.length ? todoItemsHtml([...open, ...done]) : `<p class="muted">Saker att göra, köpa eller laga på bilen. Ni ser samma lista, och den finns också under Bilen → Anteckningar.</p>`}
+    ${list.length ? todoItemsHtml([...open, ...done]) : `<p class="muted">Saker att göra, köpa eller laga på bilen. Alla ni som delar bilen ser samma lista.</p>`}
     ${todoFormHtml()}
   </article>`;
 }
@@ -1376,8 +1373,7 @@ function saveTodo(form) {
   const text = String(new FormData(form).get("text") || "").trim();
   if (!text) return;
   const c = car();
-  const tag = String(new FormData(form).get("tag") || "") || guessTag(text) || null;
-  const list = [...(c.todos || []), { id: "t" + randomId(8), text, done: false, by: uid(), at: Date.now(), tag }];
+  const list = [...(c.todos || []), { id: "t" + randomId(8), text, done: false, by: uid(), at: Date.now() }];
   c.todos = list;
   updateDoc(ref("cars", c.id), { todos: list }).catch(onWriteError);
   form.reset();
@@ -2322,13 +2318,6 @@ function viewCar() {
     <div class="car-chips" role="group" aria-label="Välj bil">
       ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon("car", 16)}${esc(carName(x))}</button>`).join("")}
       <button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>
-    </div>
-    <div class="card">
-      <h2>Anteckningar <button class="link" type="button" data-act="edit-car" data-section="specs">Ändra</button></h2>
-      ${specs.length ? `<div class="spec">${specs.map(([k, v]) => `<div><div class="label">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("")}</div>` : ""}
-      ${freeLines.length ? `<div class="notes"${specs.length ? ' style="margin-top:10px"' : ""}>${freeLines.map((l) => `<p>${esc(l)}</p>`).join("")}</div>` : ""}
-      ${!specs.length && !freeLines.length ? `<p class="muted">Skriv det ni vill komma ihåg om bilen, till exempel oljetyp, däckdimension eller var reservnyckeln ligger.</p>` : ""}
-      ${notesListHtml(c)}
     </div>
     <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
@@ -4757,14 +4746,6 @@ function updateNextInspection() {
 }
 
 function onInput(ev) {
-  if (ev.target.id === "todo-text") {
-    const form = ev.target.closest("form");
-    if (form && form.dataset.manual !== "1") {
-      const g = guessTag(ev.target.value);
-      form.querySelector("#todo-tag").value = g;
-      form.querySelectorAll("[data-act=todo-tag]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === g)));
-    }
-  }
   if (ev.isTrusted && ev.target.classList?.contains("from-receipt")) ev.target.classList.remove("from-receipt");
   if (ev.target.id === "ef-recurring") {
     const b = $("#ef-rec-box"); if (b) b.hidden = !ev.target.checked;
