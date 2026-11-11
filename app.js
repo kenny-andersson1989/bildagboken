@@ -764,6 +764,58 @@ function markMore(el) { el.classList.toggle("more", el.scrollWidth - el.clientWi
 document.addEventListener("scroll", (ev) => { if (ev.target.classList?.contains("filters") || ev.target.classList?.contains("car-chips")) markMore(ev.target); }, true);
 window.addEventListener("resize", () => app.querySelectorAll(".filters, .car-chips").forEach(markMore));
 
+// Bränslestapeln: dra upp och ner (eller använd piltangenterna). Sparas när man släpper.
+function setFuelDraft(p) {
+  p = Math.max(0, Math.min(100, Math.round(p)));
+  S.fuelDraft = { carId: S.carId, pct: p };
+  const bar = $("#fuel-v");
+  if (!bar) return p;
+  bar.className = `fuel-v ${pctClass(p)}`;
+  bar.querySelector("i").style.height = p + "%";
+  bar.querySelector("b").textContent = p;
+  bar.setAttribute("aria-valuenow", p);
+  bar.setAttribute("aria-valuetext", pctText(p));
+  return p;
+}
+function saveFuel() {
+  if (!S.fuelDraft) return;
+  const p = S.fuelDraft.pct;
+  const c = car();
+  c.fuelLevel = { level: Math.round(p / 12.5), pct: p, by: uid(), at: Date.now(), via: "manual" };
+  updateDoc(ref("cars", S.carId), { fuelLevel: { level: Math.round(p / 12.5), pct: p, by: uid(), at: serverTimestamp(), via: "manual" } }).catch(onWriteError);
+  S.fuelDraft = null;
+  render();
+}
+let fuelDrag = null;
+document.addEventListener("pointerdown", (ev) => {
+  const bar = ev.target.closest?.("#fuel-v");
+  if (!bar) return;
+  ev.preventDefault();
+  fuelDrag = bar;
+  try { bar.setPointerCapture(ev.pointerId); } catch { /* äldre webbläsare */ }
+  const r = bar.getBoundingClientRect();
+  setFuelDraft(((r.bottom - ev.clientY) / r.height) * 100);
+});
+document.addEventListener("pointermove", (ev) => {
+  if (!fuelDrag) return;
+  const r = fuelDrag.getBoundingClientRect();
+  setFuelDraft(((r.bottom - ev.clientY) / r.height) * 100);
+});
+const endFuelDrag = () => { if (!fuelDrag) return; fuelDrag = null; saveFuel(); };
+document.addEventListener("pointerup", endFuelDrag);
+document.addEventListener("pointercancel", endFuelDrag);
+document.addEventListener("keydown", (ev) => {
+  if (ev.target.id !== "fuel-v") return;
+  const step = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 10, PageDown: -10 }[ev.key];
+  const to = ev.key === "Home" ? 0 : ev.key === "End" ? 100 : null;
+  if (step == null && to == null) return;
+  ev.preventDefault();
+  const cur = S.fuelDraft?.pct ?? fuelPct(car()?.fuelLevel) ?? 50;
+  setFuelDraft(to ?? cur + step);
+  clearTimeout(window.__fuelKeyTimer);
+  window.__fuelKeyTimer = setTimeout(() => { saveFuel(); $("#fuel-v")?.focus(); }, 700);
+});
+
 function render() {
   if (!S.user) return renderLogin();
   if (!S.hid) return;
@@ -951,11 +1003,22 @@ function carSvg(c) {
 /* Bild på bilen: eget foto om det finns, annars bild från Wikipedia, annars ritad siluett. */
 const photoCache = {};
 const photoPending = {};
+// Bilens foto sparas också i telefonen, så att det syns direkt när appen startar.
+const carPhotoKey = (id) => "carphoto." + id;
+function rememberCarPhoto(id, data) {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k?.startsWith("bildagboken.carphoto.") && k !== "bildagboken." + carPhotoKey(id)) localStorage.removeItem(k); }
+    if (data) pref.set(carPhotoKey(id), data);
+  } catch { /* fullt eller avstängt: då hämtas fotot som vanligt */ }
+}
 function loadPhoto(id) {
   if (photoCache[id] || photoPending[id] || !S.hid) return;
+  const saved = pref.get(carPhotoKey(id));
+  if (saved) { photoCache[id] = saved; return; }
   photoPending[id] = true;
   getDoc(ref("photos", id)).then((s) => {
     photoCache[id] = s.exists() ? s.data().data : "";
+    if (photoCache[id] && S.cars.some((c) => c.photoId === id)) rememberCarPhoto(id, photoCache[id]);
     render();
   }).catch(() => {}).finally(() => { delete photoPending[id]; });
 }
@@ -987,10 +1050,11 @@ async function ensureCarImage(c) {
 
 function carVisual(c) {
   if (c.photoId) {
+    if (photoCache[c.photoId] == null) loadPhoto(c.photoId);
     const d = photoCache[c.photoId];
     if (d) return `<figure class="car-fig"><img class="car-photo" src="${esc(d)}" alt="Foto på er ${esc(`${c.make} ${c.model}`)}"></figure>`;
-    loadPhoto(c.photoId);
-    return carSvg(c);
+    // Medan fotot hämtas visas en tom yta i samma storlek, inte den ritade bilen.
+    if (d !== "") return `<figure class="car-fig"><div class="car-photo car-wait" aria-hidden="true"></div></figure>`;
   }
   if (c.imageUrl) {
     return `<figure class="car-fig"><img class="car-photo" src="${esc(c.imageUrl)}" alt="${esc(`${c.make} ${c.model}`)}, bild från Wikipedia" referrerpolicy="no-referrer"${c.imageFallback && c.imageFallback !== c.imageUrl ? ` data-fallback="${esc(c.imageFallback)}"` : ""} onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;this.removeAttribute('data-fallback')}else{this.closest('figure').hidden=true}">
@@ -999,27 +1063,29 @@ function carVisual(c) {
   return carSvg(c);
 }
 
-/* Bränslemätare: hur mycket som finns kvar i tanken, i åttondelar som på instrumentbrädan. */
-const FUEL_LABELS = ["Tom", "⅛", "¼", "⅜", "½", "⅝", "¾", "⅞", "Full"];
-const fuelText = (l) => (l === 0 ? "Tom tank" : l === 8 ? "Full tank" : `${FUEL_LABELS[l]} tank`);
-const fuelClass = (l) => (l <= 2 ? "low" : l <= 4 ? "mid" : "ok");
-const fuelNowHtml = (l) => (l == null ? `<small>Inte angivet</small>` : `${esc(fuelText(l))}${l <= 2 ? " <small>Tanka snart</small>" : ""}`);
-
-function fuelCard(c) {
+/* Bränslemätare: hur mycket som finns kvar i tanken, i procent. Äldre värden sparades i åttondelar (level 0–8). */
+const fuelPct = (f) => (f ? (typeof f.pct === "number" ? f.pct : typeof f.level === "number" ? f.level * 12.5 : null) : null);
+const pctText = (p) => (p <= 0 ? "Tom tank" : p >= 100 ? "Full tank" : `${Math.round(p)} %`);
+const pctClass = (p) => (p <= 25 ? "low" : p <= 50 ? "mid" : "ok");
+function fuelGauge(c) {
   const f = c.fuelLevel;
-  const draft = S.fuelDraft && S.fuelDraft.carId === c.id ? S.fuelDraft.level : null;
-  const level = draft ?? (f && typeof f.level === "number" ? f.level : null);
-  const meta = f
-    ? `${f.via === "tank" ? "Fulltankad" : "Uppdaterad"} av ${whoName(f.by) === "Du" ? "dig" : whoName(f.by)} · ${timeAgo(tsMs(f.at)).toLowerCase()}`
-    : "Dra i reglaget så ser ni båda hur mycket som finns kvar i tanken.";
-  return `<article class="card fuel-card">
-    <div class="fuel-head"><h2>Bränsle</h2><div class="fuel-now ${level != null ? fuelClass(level) : ""}" id="fuel-now">${fuelNowHtml(level)}</div></div>
-    <input type="range" class="fuel-range${level == null ? " unset" : ""}" id="fuel-range" min="0" max="8" step="1" value="${level ?? 4}" aria-label="Bränsle kvar i tanken" aria-valuetext="${esc(level != null ? fuelText(level) : "Inte angivet")}">
-    <div class="fuel-ticks" aria-hidden="true">${FUEL_LABELS.map((l, i) => `<span${i % 2 ? ' class="minor"' : ""}>${l}</span>`).join("")}</div>
-    <p class="fuel-meta" id="fuel-meta">${esc(meta)}</p>
-  </article>`;
+  const draft = S.fuelDraft && S.fuelDraft.carId === c.id ? S.fuelDraft.pct : null;
+  const p = draft ?? fuelPct(f);
+  const v = p ?? 0;
+  return `<div class="fuel-col">
+    <span class="fuel-end">Full</span>
+    <div class="fuel-v ${p == null ? "unset" : pctClass(v)}" id="fuel-v" role="slider" tabindex="0" aria-label="Bränsle kvar i tanken" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(v)}" aria-valuetext="${esc(p == null ? "Inte angivet" : pctText(v))}">
+      <i style="height:${v}%"></i><b>${p == null ? "?" : Math.round(v)}</b>
+    </div>
+    <span class="fuel-end">Tom</span>
+  </div>`;
 }
-
+function fuelLine(c) {
+  const f = c.fuelLevel, p = fuelPct(f);
+  if (p == null) return `<div class="odo-age">Dra i stapeln för att visa hur mycket bränsle som finns kvar</div>`;
+  const what = p > 0 && p < 100 ? `Bränsle ${Math.round(p)} %` : pctText(p);
+  return `<div class="odo-age${p <= 25 ? " old" : ""}" id="fuel-line">${esc(what)}${p <= 25 ? " · tanka snart" : ""} · ${esc(`av ${whoName(f.by) === "Du" ? "dig" : whoName(f.by)} ${timeAgo(tsMs(f.at)).toLowerCase()}`)}</div>`;
+}
 // Bokningar visas i flödet som poster av typen "bokning", så att de kan sorteras ihop med loggarna.
 // Det som inte är poster men ändå ska synas för den andra: bokningar, att göra och dokument.
 function bookingFeed() {
@@ -1568,18 +1634,20 @@ function viewOverview() {
       <div class="sub">${esc([c.year, c.fuel, c.color].filter(Boolean).join(" · "))}</div></div>
       ${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}
     </div>
-    <label class="car-pick" title="Byt bild på bilen">
-      ${carVisual(c)}
-      <span class="cam" aria-hidden="true">${icon("camera", 19)}</span>
-      <input type="file" accept="image/*" id="hero-photo" class="vh" aria-label="Byt bild på bilen">
-    </label>
+    <div class="hero-media">
+      <label class="car-pick" title="Byt bild på bilen">
+        ${carVisual(c)}
+        <span class="cam" aria-hidden="true">${icon("camera", 19)}</span>
+        <input type="file" accept="image/*" id="hero-photo" class="vh" aria-label="Byt bild på bilen">
+      </label>
+      ${fuelGauge(c)}
+    </div>
     <div class="odo">
-      <div><div class="label">Mätarställning</div><div class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span></div>${odoAgeHtml(c)}</div>
+      <div><div class="label">Mätarställning</div><div class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span></div>${odoAgeHtml(c)}${fuelLine(c)}</div>
       <button class="btn-soft" type="button" data-act="new-entry" data-type="matare">Uppdatera</button>
     </div>
   </article>`);
 
-  parts.push("<!--card:fuel-->", fuelCard(c));
 
   const dls = deadlines(c);
   parts.push("<!--card:koll-->", `<article class="card">
@@ -1652,7 +1720,7 @@ function viewOverview() {
 }
 
 // Korten på Översikt i den ordning man valt under Inställningar, utan de man har dolt.
-const CARD_NAMES = { fuel: "Bränsle", koll: "Att hålla koll på", todo: "Att göra", recent: "Senaste", maint: "Underhåll", eco: "Ekonomi", tips: "Tips" };
+const CARD_NAMES = { koll: "Att hålla koll på", todo: "Att göra", recent: "Senaste", maint: "Underhåll", eco: "Ekonomi", tips: "Tips" };
 function cardPrefs() {
   let p = {};
   try { p = JSON.parse(pref.get("cards") || "{}"); } catch { p = {}; }
@@ -2098,9 +2166,9 @@ function viewCar() {
 function viewNotifications() {
   const seen = lastSeenMs();
   const c = car();
-  const fl = c.fuelLevel?.level;
+  const fl = fuelPct(c.fuelLevel);
   const reminders = [
-    ...(typeof fl === "number" && fl <= 2 ? [{ icon: "fuel", title: "Tanka snart", sub: `Bränslet är på ${fuelText(fl).toLowerCase()}`, label: FUEL_LABELS[fl] }] : []),
+    ...(fl != null && fl <= 25 ? [{ icon: "fuel", title: "Tanka snart", sub: `Bränslet är på ${pctText(fl).toLowerCase()}`, label: `${Math.round(fl)} %` }] : []),
     ...bookingRows(c).filter((b) => b.days <= 1),
     ...deadlines(c).filter((d) => d.level === "urgent"),
     ...allItemStatus(c).filter((s) => !s.unknown && s.level === "urgent").map((s) => ({ title: `Dags för ${s.item.name.toLowerCase()}`, sub: s.label })),
@@ -3227,7 +3295,7 @@ async function saveEntry(form) {
   }
   // Fulltankning sätter bränslemätaren till Full.
   if (type === "tank" && data.full && !existing) {
-    carUpdate.fuelLevel = { level: 8, by: uid(), at: serverTimestamp(), via: "tank" };
+    carUpdate.fuelLevel = { level: 8, pct: 100, by: uid(), at: serverTimestamp(), via: "tank" };
   }
   // Gjord besiktning: flytta "Besiktning senast" till nästa datum.
   // Bara om det nya datumet är senare än det som redan finns, så att en gammal besiktning inte flyttar sista dagen bakåt.
@@ -4176,6 +4244,7 @@ async function uploadCarPhoto(c, file) {
   const pRef = doc(col("photos"));
   setDoc(pRef, { data: dataUrl, carId: c.id, kind: "car", createdBy: uid(), createdAt: serverTimestamp() }).catch(onWriteError);
   photoCache[pRef.id] = dataUrl;
+  rememberCarPhoto(pRef.id, dataUrl);
   if (c.photoId) deleteDoc(ref("photos", c.photoId)).catch(() => {});
   return pRef.id;
 }
@@ -4282,16 +4351,6 @@ function onInput(ev) {
     document.querySelectorAll(".tire-head").forEach((h) => { h.querySelector(".tire-on").hidden = h.dataset.tire !== ev.target.value; });
     return;
   }
-  if (ev.target.id === "fuel-range") {
-    // Visa nivån direkt medan man drar; den sparas när man släpper (change).
-    const l = Number(ev.target.value);
-    S.fuelDraft = { carId: S.carId, level: l };
-    ev.target.classList.remove("unset");
-    const now = $("#fuel-now");
-    if (now) { now.className = `fuel-now ${fuelClass(l)}`; now.innerHTML = fuelNowHtml(l); }
-    ev.target.setAttribute("aria-valuetext", fuelText(l));
-    return;
-  }
   if (ev.target.id === "log-search") {
     const had = !!S.query;
     S.query = ev.target.value;
@@ -4319,14 +4378,6 @@ function onChange(ev) {
   if (ev.target.id === "ef-date") markDateQuick(ev.target);
   if (ev.target.id === "bk-addr") geocodeBookingAddress();
   if ((ev.target.id === "ef-date" || ev.target.id === "ef-category") && $("#ef-nextBesiktning")) updateNextInspection();
-  if (ev.target.id === "fuel-range") {
-    const l = Number(ev.target.value);
-    updateDoc(ref("cars", S.carId), { fuelLevel: { level: l, by: uid(), at: serverTimestamp(), via: "manual" } }).catch(onWriteError);
-    S.fuelDraft = null;
-    const meta = $("#fuel-meta");
-    if (meta) meta.textContent = "Uppdaterad av dig · nyss";
-    return;
-  }
   if (ev.target.id === "hero-photo") {
     const f = ev.target.files?.[0];
     ev.target.value = "";
@@ -4385,12 +4436,12 @@ const fuelSeen = {};
 function checkFuelChanges(cars, first) {
   for (const c of cars) {
     const f = c.fuelLevel;
-    if (!f || typeof f.level !== "number") continue;
+    if (fuelPct(f) == null) continue;
     const at = tsMs(f.at);
     const prev = fuelSeen[c.id];
     fuelSeen[c.id] = at;
     if (first || !prev || at <= prev || f.by === uid()) continue;
-    if (f.level <= 2) notify(`${memberName(f.by)}: bränslet i ${carName(c)} är på ${fuelText(f.level).toLowerCase()}. Tanka snart.`, `fuel-${c.id}`);
+    if (fuelPct(f) <= 25) notify(`${memberName(f.by)}: bränslet i ${carName(c)} är på ${pctText(fuelPct(f)).toLowerCase()}. Tanka snart.`, `fuel-${c.id}`);
   }
 }
 

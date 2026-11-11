@@ -819,3 +819,23 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .log-list .card { padding-top: 12px; padding-bottom: 12px; }
 /* Anteckningar om bilen */
 .notes p { margin: 0 0 4px; font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
+
+/* Bilden och bränslestapeln bredvid varandra */
+.hero-media { display: flex; gap: 12px; align-items: stretch; margin: 8px 0 6px; }
+.hero-media .car-pick { flex: 1; min-width: 0; }
+.hero-media .car-fig { margin: 0; }
+.car-wait { aspect-ratio: 16 / 9; }
+.fuel-col { flex: none; width: 38px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.fuel-end { font-size: 11px; font-weight: 600; color: var(--ink-3); line-height: 1; }
+.fuel-v { position: relative; flex: 1; min-height: 80px; width: 26px; border-radius: 13px; background: var(--track); overflow: hidden; cursor: ns-resize; touch-action: none; -webkit-user-select: none; user-select: none; }
+.fuel-v:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.fuel-v i { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 0 0 13px 13px; background: #3F8A55; transition: height .08s linear; }
+.fuel-v.mid i { background: #C9922B; }
+.fuel-v.low i { background: #C8432B; }
+.fuel-v.unset i { background: transparent; }
+.fuel-v b { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font-size: 10.5px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.fuel-v.unset b { color: var(--ink-3); text-shadow: none; }
+.fuel-v.low b { bottom: auto; top: 6px; color: var(--ink-2); text-shadow: none; }
+@media (max-width: 759px) {
+  .hero-media .car-fig, .hero-media .car-photo { margin: 0; }
+}
