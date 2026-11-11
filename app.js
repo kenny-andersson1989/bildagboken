@@ -12,7 +12,7 @@ import {
 import { firebaseConfig } from "./firebase-config.js";
 import { MAPKIT_TOKEN } from "./maps-config.js";
 
-const VERSION = "2.6";
+const VERSION = "2.7";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -418,6 +418,8 @@ function entryDetail(e, c = car()) {
 
 function activityText(e) {
   if (e._booking) return bookingActivity(e._booking);
+  if (e._todo) return e._todo.to === uid() && e.createdBy !== uid() ? `${memberName(e.createdBy)} bad dig: ${e._todo.text}` : `${whoName(e.createdBy)} lade till att göra: ${e._todo.text}`;
+  if (e._doc) return `${whoName(e.createdBy)} sparade dokumentet ${e._doc.title}`;
   const n = whoName(e.createdBy);
   const unit = /kWh/.test(e.fuel || "") ? "kWh" : "l";
   const kr = e.amount != null ? ` för ${fmtKr(e.amount)} kr` : "";
@@ -1019,8 +1021,20 @@ function fuelCard(c) {
 }
 
 // Bokningar visas i flödet som poster av typen "bokning", så att de kan sorteras ihop med loggarna.
+// Det som inte är poster men ändå ska synas för den andra: bokningar, att göra och dokument.
 function bookingFeed() {
-  return S.cars.flatMap((c) => (c.bookings || []).filter((b) => b.createdAt).map((b) => ({ id: b.id, carId: c.id, createdBy: b.createdBy, createdAt: b.createdAt, date: b.date, _booking: b })));
+  return S.cars.flatMap((c) => [
+    ...(c.bookings || []).filter((b) => b.createdAt).map((b) => ({ id: b.id, carId: c.id, createdBy: b.createdBy, createdAt: b.createdAt, date: b.date, _booking: b })),
+    ...(c.todos || []).filter((t) => t.at && !t.done).map((t) => ({ id: t.id, carId: c.id, createdBy: t.by, createdAt: t.at, _todo: t })),
+    ...(c.docs || []).filter((d) => d.at).map((d) => ({ id: d.id, carId: c.id, createdBy: d.by, createdAt: d.at, date: d.date, _doc: d })),
+  ]);
+}
+// Vad som öppnas när man trycker på en rad i flödet.
+function feedAct(e) {
+  if (e._booking) return ["open-booking", e.id];
+  if (e._todo) return ["go-view", "oversikt"];
+  if (e._doc) return ["open-doc", e.id];
+  return ["open-entry", e.id];
 }
 
 // Poster med ett datum längre bak än 30 dagar räknas inte som nyheter, även om de nyss lades in
@@ -1116,25 +1130,56 @@ function budgetBar(bi) {
   </div>`;
 }
 function budgetReminder(c) {
+  const cats = Object.keys(c?.budgetCats || {}).map((k) => ({ k, bi: catBudgetInfo(c, k) })).filter((x) => x.bi && x.bi.frac >= 0.8)
+    .map(({ k, bi }) => ({ icon: CAT_ICON[k] || "coin", title: bi.frac > 1 ? `${k}: över budget` : `${k}: budgeten nästan slut`, sub: `${fmtKr(bi.spent)} av ${fmtKr(bi.budget)} kr i ${MONTHS[new Date().getMonth()]}`, level: bi.level, label: `${Math.round(bi.frac * 100)} %`, act: "go-view", id: "ekonomi", always: true, days: 0 }));
   const bi = budgetInfo(c);
-  if (!bi || bi.frac < 0.8) return [];
-  return [{ icon: "coin", title: bi.frac > 1 ? "Över månadens budget" : "Budgeten är nästan slut", sub: `${fmtKr(bi.spent)} av ${fmtKr(bi.budget)} kr i ${MONTHS[new Date().getMonth()]}`, level: bi.level, label: `${Math.round(bi.frac * 100)} %`, act: "go-view", id: "ekonomi", always: true, days: 0 }];
+  if (!bi || bi.frac < 0.8) return cats;
+  return [...cats, { icon: "coin", title: bi.frac > 1 ? "Över månadens budget" : "Budgeten är nästan slut", sub: `${fmtKr(bi.spent)} av ${fmtKr(bi.budget)} kr i ${MONTHS[new Date().getMonth()]}`, level: bi.level, label: `${Math.round(bi.frac * 100)} %`, act: "go-view", id: "ekonomi", always: true, days: 0 }];
 }
 function budgetSheet() {
   const c = car();
   openSheet("Budget per månad", `
     <form class="form" data-form="budget" novalidate>
       ${field(`Budget för ${esc(carName(c))} (kr per månad)`, `<input name="budget" id="bu-budget" inputmode="numeric" value="${c.budget ?? ""}" placeholder="Till exempel 3 000">`, "Allt som loggas räknas: bränsle, service, försäkring, parkering och annat. Lämna tomt för att ta bort budgeten.")}
+      ${(() => {
+        // Förslag: snittet för de senaste sex hela månaderna, avrundat uppåt till hundratal.
+        const t = new Date();
+        const keys = Array.from({ length: 6 }, (_, i) => ymKey(new Date(t.getFullYear(), t.getMonth() - 1 - i, 1)));
+        const paid = carEntries().filter((e) => e.amount > 0 && keys.includes((e.date || "").slice(0, 7)));
+        if (!paid.length) return "";
+        const avg = paid.reduce((a, e) => a + e.amount, 0) / 6;
+        const sug = Math.ceil(avg / 100) * 100;
+        return `<p class="hint">Snittet de senaste sex månaderna är ${esc(fmtKr(Math.round(avg)))} kr.</p>
+          <div class="date-quick"><button type="button" class="chip-btn" data-act="budget-suggest" data-v="${sug}">Använd ${esc(fmt(sug))} kr</button></div>`;
+      })()}
+      <details class="more"${Object.keys(c.budgetCats || {}).length ? " open" : ""}>
+        <summary>Budget per kategori (valfritt)</summary>
+        <div class="form">${BUDGET_CATS.map((k, i) => field(`${esc(k)} (kr per månad)`, `<input name="cat${i}" inputmode="numeric" value="${c.budgetCats?.[k] ?? ""}" placeholder="–">`)).join("")}
+          <p class="hint">Till exempel 1 500 kr för bränsle och 500 kr för parkering. Ni får en påminnelse när en kategori närmar sig gränsen.</p></div>
+      </details>
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
     </form>`);
+}
+const BUDGET_CATS = ["Bränsle", "Service och reparationer", "Däck", "Parkering", "P-böter", "Tvätt", "Försäkring", "Skatt och besiktning", "Övrigt"];
+// Hur mycket som gått åt i en kategori denna månad jämfört med kategorins budget.
+function catBudgetInfo(c, cat, key = ymKey(new Date())) {
+  const b = c?.budgetCats?.[cat];
+  if (!b) return null;
+  const spent = carEntries().filter((e) => e.amount > 0 && (e.date || "").startsWith(key) && catOf(e) === cat).reduce((a, e) => a + e.amount, 0);
+  const frac = spent / b;
+  return { budget: b, spent, frac, level: frac > 1 ? "urgent" : frac >= 0.8 ? "soon" : "ok" };
 }
 function saveBudget(form) {
   const v = num(new FormData(form).get("budget"));
   if (v != null && v < 0) return formError("Budgeten kan inte vara mindre än noll.");
   const c = car();
+  const fd = new FormData(form);
+  const cats = {};
+  BUDGET_CATS.forEach((k, i) => { const x = num(fd.get("cat" + i)); if (x > 0) cats[k] = x; });
   c.budget = v || null;
-  updateDoc(ref("cars", c.id), { budget: v || null }).catch(onWriteError);
+  c.budgetCats = cats;
+  updateDoc(ref("cars", c.id), { budget: v || null, budgetCats: cats }).catch(onWriteError);
   closeSheet(); render();
   showToast(v ? `Budgeten är ${fmtKr(v)} kr per månad` : "Budgeten är borttagen");
 }
@@ -1148,20 +1193,31 @@ function todoCard(c) {
   return `<article class="card">
     <h2>Att göra ${done.length ? `<button class="link" type="button" data-act="todo-clear">Rensa klara</button>` : ""}</h2>
     ${list.length ? `<div class="todos">${[...open, ...done].map((t) => `<label class="todo${t.done ? " done" : ""}">
-        <input type="checkbox" data-act="todo-toggle" data-id="${esc(t.id)}"${t.done ? " checked" : ""}>
-        <span class="todo-t">${esc(t.text)}</span><small>${esc(whoName(t.by))}</small></label>`).join("")}</div>`
+        <input type="checkbox" class="vh" data-act="todo-toggle" data-id="${esc(t.id)}"${t.done ? " checked" : ""}><span class="box" aria-hidden="true"></span>
+        <span class="todo-t">${esc(t.text)}</span><small>${esc(todoWho(t))}</small></label>`).join("")}</div>`
       : `<p class="muted">Saker som ska göras med bilen, till exempel köpa torkarblad eller boka service. Ni ser samma lista.</p>`}
     <form class="todo-add" data-form="todo" data-keep novalidate>
-      <input name="text" id="todo-text" placeholder="Till exempel köp spolarvätska" autocomplete="off" enterkeyhint="done" aria-label="Ny sak att göra">
+      <input name="text" id="todo-text" placeholder="Något att göra" autocomplete="off" enterkeyhint="done" aria-label="Ny sak att göra">
+      ${(S.house?.members || []).length > 1 ? `<select name="to" id="todo-to" aria-label="Vem ska göra det"><option value="">Vem som helst</option>${(S.house.members || []).map((m) => `<option value="${esc(m)}">${esc(m === uid() ? "Jag" : memberName(m))}</option>`).join("")}</select>` : ""}
       <button class="btn-soft" type="submit">${icon("plus", 16)} Lägg till</button>
     </form>
   </article>`;
+}
+// Vem som lade till saken, eller vem den gäller om den är riktad till någon.
+// Saker som någon har bett dig om syns också under Att hålla koll på.
+function todoReminders(c) {
+  return (c.todos || []).filter((t) => !t.done && t.to === uid() && t.by !== uid()).map((t) => ({ icon: "todo", title: t.text, sub: `${memberName(t.by)} bad dig`, level: "soon", label: "Att göra", act: "go-view", id: "oversikt", always: true, days: 0 }));
+}
+function todoWho(t) {
+  if (t.to) return t.to === uid() ? "Till dig" : `Till ${memberName(t.to)}`;
+  return whoName(t.by);
 }
 function saveTodo(form) {
   const text = String(new FormData(form).get("text") || "").trim();
   if (!text) return;
   const c = car();
-  const list = [...(c.todos || []), { id: "t" + randomId(8), text, done: false, by: uid(), at: Date.now() }];
+  const to = String(new FormData(form).get("to") || "") || null;
+  const list = [...(c.todos || []), { id: "t" + randomId(8), text, done: false, by: uid(), at: Date.now(), to }];
   c.todos = list;
   updateDoc(ref("cars", c.id), { todos: list }).catch(onWriteError);
   form.reset();
@@ -1175,22 +1231,56 @@ function saveTodo(form) {
 /* ----------------------------------------------------------- dokument */
 
 // Foton av försäkringsbrev, registreringsbevis, garantier och liknande. Sparas som bilderna i loggen.
+// Alla bilder från loggen i datumordning. Hämtas först när man vill se dem, eftersom varje bild är stor.
+const gridPhotos = new Map();
+function photosCard(c) {
+  const ents = S.entries.filter((e) => e.carId === c.id && e.photoId).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  if (!ents.length) return "";
+  const shown = ents.slice(0, 24);
+  return `<div class="card">
+    <h2>Bilder</h2>
+    ${S.showPhotos ? `<div class="photo-grid">${shown.map((e) => `<button type="button" class="pg" data-act="open-entry" data-id="${esc(e.id)}" aria-label="${esc(entryTitle(e))}, ${esc(fmtDateShort(e.date))}">
+        ${gridPhotos.get(e.photoId) ? `<img src="${esc(gridPhotos.get(e.photoId))}" alt="">` : `<span class="pg-wait"></span>`}<span class="pg-d">${esc(fmtDateShort(e.date))}</span></button>`).join("")}</div>
+      ${ents.length > shown.length ? `<p class="hint" style="margin-top:8px">De ${shown.length} senaste av ${ents.length} bilder.</p>` : ""}`
+      : `<p class="muted">Kvitton och foton från loggen, i datumordning. ${ents.length === 1 ? "1 bild" : `${ents.length} bilder`}.</p>
+      <div class="ask"><button class="btn-soft" type="button" data-act="show-photos">${icon("image", 16)} Visa bilderna</button></div>`}
+  </div>`;
+}
+async function loadPhotoGrid() {
+  const c = car();
+  const ids = S.entries.filter((e) => e.carId === c.id && e.photoId).sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 24).map((e) => e.photoId).filter((id) => !gridPhotos.has(id));
+  await Promise.all(ids.map((id) => getDoc(ref("photos", id)).then((snap) => { if (snap.exists()) gridPhotos.set(id, snap.data().data); }).catch(() => {})));
+  render();
+}
+
 function docsCard(c) {
   const docs = [...(c.docs || [])].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   return `<div class="card">
     <h2>Dokument</h2>
     ${docs.length ? `<div class="rows">${docs.map((d) => `<button class="dl as-btn" type="button" data-act="open-doc" data-id="${esc(d.id)}"><span class="dl-ic">${icon("doc", 20)}</span>
-      <span><span class="dl-t">${esc(d.title)}</span><span class="dl-s">${esc(`Sparat ${fmtDateShort(d.date)} av ${whoName(d.by).replace(/^Du$/, "dig")}`)}</span></span><span></span></button>`).join("")}</div>`
+      <span><span class="dl-t">${esc(d.title)}</span><span class="dl-s">${esc(d.validTo ? `Gäller till ${fmtDateShort(d.validTo)}` : `Sparat ${fmtDateShort(d.date)} av ${whoName(d.by).replace(/^Du$/, "dig")}`)}</span></span>${docPill(d)}</button>`).join("")}</div>`
       : `<p class="muted">Fota försäkringsbrev, registreringsbevis, garantier och kvitton ni vill spara. Ni ser samma dokument.</p>`}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-doc">${icon("plus", 16)} Lägg till dokument</button></div>
   </div>`;
 }
-function docForm() {
-  openSheet("Nytt dokument", `
-    <form class="form" data-form="doc" novalidate>
-      ${field("Vad är det?", `<input name="title" id="doc-title" required placeholder="Till exempel försäkringsbrev 2027" autocomplete="off">`)}
-      <label class="photo-in">${icon("camera", 22)}<span id="photo-label">Fota eller välj en bild</span><input type="file" name="photo" id="ef-photo" accept="image/*"></label>
-      <p class="hint">PDF-filer går inte att spara. Ta en skärmbild av PDF:en och välj den i stället.</p>
+// Hur länge ett dokument (försäkring, garanti) gäller: som en pill i listan och en påminnelse när det närmar sig.
+function docPill(d) {
+  if (!d.validTo) return "<span></span>";
+  const days = daysUntil(parseDate(d.validTo));
+  return `<span class="pill ${days < 0 ? "urgent" : levelFromDays(days)}">${esc(days < 0 ? "Har gått ut" : daysText(days) + " kvar")}</span>`;
+}
+function docReminders(c) {
+  return (c.docs || []).filter((d) => d.validTo).map((d) => ({ d, days: daysUntil(parseDate(d.validTo)) }))
+    .filter((x) => x.days <= 60 && x.days >= -30)
+    .map(({ d, days }) => ({ icon: "doc", title: days < 0 ? `${d.title} har gått ut` : `${d.title} går ut`, sub: `Gäller till ${fmtDate(d.validTo)}`, level: days < 0 ? "urgent" : levelFromDays(days), label: days < 0 ? "Gått ut" : daysText(days), act: "open-doc", id: d.id, days, always: true }));
+}
+function docForm(d = null) {
+  openSheet(d ? "Ändra dokument" : "Nytt dokument", `
+    <form class="form" data-form="doc"${d ? ` data-id="${esc(d.id)}"` : ""} novalidate>
+      ${field("Vad är det?", `<input name="title" id="doc-title" required placeholder="Till exempel försäkringsbrev 2027" autocomplete="off" value="${esc(d?.title || "")}">`)}
+      ${field("Gäller till (valfritt)", `<input type="date" name="validTo" id="doc-valid" value="${esc(d?.validTo || "")}">`, "Till exempel när försäkringen, garantin eller parkeringstillståndet går ut. Ni får en påminnelse två månader innan.")}
+      ${d ? "" : `<label class="photo-in">${icon("camera", 22)}<span id="photo-label">Fota eller välj en bild</span><input type="file" name="photo" id="ef-photo" accept="image/*"></label>
+      <p class="hint">PDF-filer går inte att spara. Ta en skärmbild av PDF:en och välj den i stället.</p>`}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
     </form>`);
@@ -1200,6 +1290,14 @@ async function saveDoc(form) {
   const title = String(fd.get("title") || "").trim();
   const file = fd.get("photo");
   if (!title) return formError("Skriv vad det är för dokument.");
+  if (form.dataset.id) {
+    const c = car();
+    const list = (c.docs || []).map((x) => (x.id === form.dataset.id ? { ...x, title, validTo: String(fd.get("validTo") || "") || null } : x));
+    c.docs = list;
+    updateDoc(ref("cars", c.id), { docs: list }).catch(onWriteError);
+    closeSheet(); render();
+    return showToast("Dokumentet är ändrat");
+  }
   if (!file || !file.size) return formError("Välj en bild av dokumentet.");
   const btn = form.querySelector('button[type="submit"]');
   btn.disabled = true; btn.textContent = "Sparar …";
@@ -1208,7 +1306,7 @@ async function saveDoc(form) {
   const c = car();
   const pRef = doc(col("photos"));
   setDoc(pRef, { data, carId: c.id, createdBy: uid(), createdAt: serverTimestamp() }).catch(onWriteError);
-  const list = [...(c.docs || []), { id: "d" + randomId(8), title, photoId: pRef.id, date: todayStr(), by: uid() }];
+  const list = [...(c.docs || []), { id: "d" + randomId(8), title, photoId: pRef.id, date: todayStr(), by: uid(), at: Date.now(), validTo: String(fd.get("validTo") || "") || null }];
   c.docs = list;
   updateDoc(ref("cars", c.id), { docs: list }).catch(onWriteError);
   closeSheet(); render();
@@ -1219,8 +1317,11 @@ function docSheet(id) {
   if (!d) return;
   openSheet(d.title, `
     <div id="photo-box"><p class="hint">Hämtar bilden …</p></div>
-    <p class="hint" style="margin-top:8px">Sparat ${esc(fmtDate(d.date))} av ${esc(whoName(d.by).replace(/^Du$/, "dig"))}. Tryck på bilden för att se den större.</p>
-    <button class="btn danger block" type="button" data-act="delete-doc" data-id="${esc(d.id)}" style="margin-top:14px">Ta bort dokumentet</button>`);
+    <p class="hint" style="margin-top:8px">Sparat ${esc(fmtDate(d.date))} av ${esc(whoName(d.by).replace(/^Du$/, "dig"))}${d.validTo ? `. Gäller till ${esc(fmtDate(d.validTo))}` : ""}. Tryck på bilden för att se den större.</p>
+    <div class="form" style="margin-top:14px">
+      <button class="btn primary block" type="button" data-act="edit-doc" data-id="${esc(d.id)}">Ändra</button>
+      <button class="btn danger block" type="button" data-act="delete-doc" data-id="${esc(d.id)}">Ta bort dokumentet</button>
+    </div>`);
   getDoc(ref("photos", d.photoId)).then((snap) => {
     const box = $("#photo-box");
     if (box) box.innerHTML = snap.exists() ? `<button class="photo-zoom" type="button" data-act="photo-zoom" aria-label="Visa bilden större"><img class="photo" src="${esc(snap.data().data)}" alt="${esc(d.title)}"></button>` : `<p class="hint">Bilden finns inte längre.</p>`;
@@ -1230,7 +1331,8 @@ function docSheet(id) {
 /* ------------------------------------------------------------ servicebok */
 
 // Servicebok att skriva ut eller spara som PDF: bilen, underhållet och alla jobb med datum, mil och kostnad.
-function serviceBookHtml(c) {
+// Serviceboken som vanlig text i tabeller. Samma innehåll används för utskrift och för länken till en köpare.
+function serviceBookData(c) {
   const ents = carEntries().filter((e) => ["service", "eget", "dack"].includes(e.type) || (e.type === "kostnad" && e.category === "Besiktning"))
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const what = (e) => {
@@ -1239,27 +1341,76 @@ function serviceBookHtml(c) {
     const w = workOf(e, c).map(workText).join(", ");
     return [e.type === "eget" ? e.title || "Eget jobb" : "Service", w].filter(Boolean).join(": ");
   };
-  const total = ents.reduce((a, e) => a + (e.amount || 0), 0);
   const st = allItemStatus(c).filter((x) => !x.unknown || x.lastDate);
-  const facts = [["Registreringsnummer", c.plate], ["Årsmodell", c.year], ["Motor", c.engine], ["Drivmedel", c.fuel], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", c.besiktning ? fmtDate(c.besiktning) : ""]].filter(([, v]) => v);
+  return {
+    car: carName(c), plate: c.plate ? String(c.plate).toUpperCase() : "", made: todayStr(),
+    facts: [["Registreringsnummer", c.plate ? String(c.plate).toUpperCase() : ""], ["Årsmodell", c.year ? String(c.year) : ""], ["Motor", c.engine], ["Drivmedel", c.fuel], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", c.besiktning ? fmtDate(c.besiktning) : ""]].filter(([, v]) => v),
+    items: st.map((x) => [x.item.name, intervalText(x.item).replace(/^var /, ""), x.lastDate ? `${fmtDate(x.lastDate)}${x.lastMil != null ? `, ${fmt(x.lastMil)} mil` : ""}` : "–", x.unknown ? "–" : dueText(x) || "–"]),
+    rows: ents.map((e) => [fmtDate(e.date), e.odometer != null ? `${fmt(e.odometer)} mil` : "–", what(e), e.note || "", e.workshop || e.place || "", e.amount != null ? `${fmtKr(e.amount)} kr` : ""]),
+    total: `${fmtKr(ents.reduce((a, e) => a + (e.amount || 0), 0))} kr`,
+  };
+}
+function serviceBookHtml(d) {
+  const S2 = (x) => esc(String(x ?? ""));
+  const rows = Array.isArray(d.rows) ? d.rows : [];
   return `<div class="pb">
-    <header class="pb-head"><div><h1>Servicebok</h1><p>${esc(carName(c))}${c.plate ? ` · ${esc(String(c.plate).toUpperCase())}` : ""}</p></div><p class="pb-date">Utskriven ${esc(fmtDate(todayStr()))}<br>Bildagboken</p></header>
-    <table class="pb-facts">${facts.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</table>
-    ${st.length ? `<h2>Underhåll</h2><table class="pb-table"><thead><tr><th>Punkt</th><th>Intervall</th><th>Senast</th><th>Nästa</th></tr></thead><tbody>
-      ${st.map((x) => `<tr><td>${esc(x.item.name)}</td><td>${esc(intervalText(x.item).replace(/^var /, ""))}</td><td>${esc(x.lastDate ? `${fmtDate(x.lastDate)}${x.lastMil != null ? `, ${fmt(x.lastMil)} mil` : ""}` : "–")}</td><td>${esc(x.unknown ? "–" : dueText(x) || "–")}</td></tr>`).join("")}
+    <header class="pb-head"><div><h1>Servicebok</h1><p>${S2(d.car)}${d.plate ? ` · ${S2(d.plate)}` : ""}</p></div><p class="pb-date">Utskriven ${S2(fmtDate(d.made || todayStr()))}<br>Bildagboken</p></header>
+    <table class="pb-facts">${(d.facts || []).map(([k, v]) => `<tr><th>${S2(k)}</th><td>${S2(v)}</td></tr>`).join("")}</table>
+    ${(d.items || []).length ? `<h2>Underhåll</h2><table class="pb-table"><thead><tr><th>Punkt</th><th>Intervall</th><th>Senast</th><th>Nästa</th></tr></thead><tbody>
+      ${d.items.map((r) => `<tr>${r.slice(0, 4).map((v) => `<td>${S2(v)}</td>`).join("")}</tr>`).join("")}
     </tbody></table>` : ""}
     <h2>Utfört arbete</h2>
-    ${ents.length ? `<table class="pb-table"><thead><tr><th>Datum</th><th>Mätarställning</th><th>Vad</th><th>Var</th><th class="r">Kostnad</th></tr></thead><tbody>
-      ${ents.map((e) => `<tr><td>${esc(fmtDate(e.date))}</td><td>${e.odometer != null ? `${esc(fmt(e.odometer))} mil` : "–"}</td><td>${esc(what(e))}${e.note ? `<br><small>${esc(e.note)}</small>` : ""}</td><td>${esc(e.workshop || e.place || "")}</td><td class="r">${e.amount != null ? `${esc(fmtKr(e.amount))} kr` : ""}</td></tr>`).join("")}
-    </tbody><tfoot><tr><td colspan="4">Totalt ${ents.length} ${ents.length === 1 ? "post" : "poster"}</td><td class="r">${esc(fmtKr(total))} kr</td></tr></tfoot></table>`
+    ${rows.length ? `<table class="pb-table"><thead><tr><th>Datum</th><th>Mätarställning</th><th>Vad</th><th>Var</th><th class="r">Kostnad</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td>${S2(r[0])}</td><td>${S2(r[1])}</td><td>${S2(r[2])}${r[3] ? `<br><small>${S2(r[3])}</small>` : ""}</td><td>${S2(r[4])}</td><td class="r">${S2(r[5])}</td></tr>`).join("")}
+    </tbody><tfoot><tr><td colspan="4">Totalt ${rows.length} ${rows.length === 1 ? "post" : "poster"}</td><td class="r">${S2(d.total)}</td></tr></tfoot></table>`
       : `<p>Inga service, egna jobb, däckbyten eller besiktningar är loggade än.</p>`}
   </div>`;
+}
+
+// Länk till en köpare: en kopia av serviceboken som vem som helst med länken kan läsa, men inte ändra.
+// Kopian uppdateras bara när ni trycker Uppdatera, och den tas bort när ni slutar dela.
+async function shareServiceBook() {
+  const c = car();
+  const token = c.shareToken || randomId(10) + randomId(10);
+  await setDoc(doc(db, "shares", token), { householdId: S.hid, carId: c.id, createdBy: uid(), updatedAt: Date.now(), data: serviceBookData(c) });
+  if (!c.shareToken) { c.shareToken = token; await updateDoc(ref("cars", c.id), { shareToken: token }); }
+  render();
+  return token;
+}
+const shareUrl = (token) => `${location.origin}${location.pathname}?visa=${token}`;
+function shareCardHtml(c) {
+  if (!c.shareToken) return `<button class="btn-soft" type="button" data-act="share-book">${icon("next", 16)} Dela med en köpare</button>`;
+  return `</div><div class="share-box">
+      <p class="label">Delad med en länk</p>
+      <p class="share-url">${esc(shareUrl(c.shareToken).replace(/^https?:\/\//, ""))}</p>
+      <div class="ask" style="margin-top:8px">
+        <button class="btn-soft" type="button" data-act="share-copy">Kopiera länken</button>
+        <button class="btn-soft" type="button" data-act="share-book">Uppdatera</button>
+        <button class="link danger" type="button" data-act="share-stop">Sluta dela</button>
+      </div>
+      <p class="hint">Den som har länken kan läsa serviceboken, men inte se resten av appen eller ändra något. Tryck Uppdatera efter nya poster.</p>`;
+}
+// Sidan köparen ser: bara serviceboken, utan inloggning.
+const viewToken = new URLSearchParams(location.search).get("visa");
+async function renderShared(token) {
+  setScreen("shared", `<p class="loading">Hämtar serviceboken …</p>`);
+  try {
+    const snap = await getDoc(doc(db, "shares", token));
+    if (!snap.exists()) return setScreen("shared", `<div class="card empty"><b>Länken gäller inte längre</b>Ägaren har slutat dela serviceboken.</div>`);
+    const d = snap.data().data || {};
+    document.title = `Servicebok ${d.car || ""}`.trim();
+    setScreen("shared", `<div class="card shared-book">${serviceBookHtml(d)}</div>
+      <div class="ask" style="justify-content:center"><button class="btn primary" type="button" data-act="print-shared">${icon("print", 18)} Skriv ut eller spara som PDF</button></div>
+      <p class="hint" style="text-align:center">Delad från Bildagboken. Uppdaterad ${esc(fmtDate(ymd(new Date(snap.data().updatedAt || Date.now()))))}.</p>`);
+  } catch (e) {
+    setScreen("shared", `<div class="card empty"><b>Serviceboken gick inte att hämta</b>${esc(e.code === "permission-denied" ? "Länken gäller inte." : "Kontrollera nätet och försök igen.")}</div>`);
+  }
 }
 function printServiceBook() {
   const c = car();
   if (!c) return;
   document.getElementById("print-root")?.remove();
-  document.body.insertAdjacentHTML("beforeend", `<div id="print-root">${serviceBookHtml(c)}</div>`);
+  document.body.insertAdjacentHTML("beforeend", `<div id="print-root">${serviceBookHtml(serviceBookData(c))}</div>`);
   const done = () => { document.getElementById("print-root")?.remove(); window.removeEventListener("afterprint", done); };
   window.addEventListener("afterprint", done);
   const old = document.title;
@@ -1350,7 +1501,7 @@ async function scanReceipt(file) {
     const text = await readReceiptText(file, (p) => { if ($("#receipt-label")) $("#receipt-label").textContent = `Läser kvittot … ${Math.round(p * 100)} %`; });
     const r = parseReceipt(text);
     const filled = [];
-    const set = (id, v) => { const x = document.getElementById(id); if (x && v != null && v !== "") { x.value = v; x.dispatchEvent(new Event("input", { bubbles: true })); return true; } return false; };
+    const set = (id, v) => { const x = document.getElementById(id); if (x && v != null && v !== "") { x.value = v; x.classList.add("from-receipt"); x.dispatchEvent(new Event("input", { bubbles: true })); return true; } return false; };
     if (r.amount != null && set("ef-amount", fmtKr(r.amount).replace(/\s/g, " "))) filled.push(`${fmtKr(r.amount)} kr`);
     if (r.date && r.date <= todayStr() && set("ef-date", r.date)) { filled.push(fmtDateShort(r.date)); const d = $("#ef-date"); if (d) markDateQuick(d); }
     if (r.place) {
@@ -1430,18 +1581,20 @@ function viewOverview() {
     </div>
   </article>`);
 
-  parts.push(fuelCard(c));
+  parts.push("<!--card:fuel-->", fuelCard(c));
 
   const dls = deadlines(c);
-  parts.push(`<article class="card">
+  parts.push("<!--card:koll-->", `<article class="card">
     <h2>Att hålla koll på</h2>
-    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...odoReminder(c), ...budgetReminder(c), ...dls])}
+    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...todoReminders(c), ...odoReminder(c), ...budgetReminder(c), ...docReminders(c), ...dls])}
     ${!c.besiktning && !c.forsakringDatum ? `<div class="ask"><button class="btn-soft" type="button" data-act="edit-car" data-section="dates">Lägg till besiktning, försäkring och skatt</button></div>` : ""}
-    <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
+    <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button>
+      ${allCalendarEvents().length > 1 ? `<button class="btn-soft" type="button" data-act="calendar-all">Lägg allt i kalendern</button>` : ""}</div>
   </article>`);
 
-  parts.push(todoCard(c));
-  parts.push(recentCard(c));
+  parts.push("<!--card:todo-->", todoCard(c));
+  parts.push("<!--card:recent-->", recentCard(c));
+  parts.push("<!--card:maint-->");
 
   // Underhåll: de punkter som är närmast att bytas, med samma staplar som under Bilen.
   const st = allItemStatus(c);
@@ -1473,11 +1626,11 @@ function viewOverview() {
   const eco = economy(carEntries());
   const maxBar = Math.max(1, ...eco.bars.map((b) => b.sum));
   const hasCosts = carEntries().some((e) => e.amount > 0);
-  parts.push(`<article class="card">
+  parts.push("<!--card:eco-->", `<article class="card">
     <h2>Ekonomi <button class="link" type="button" data-go="ekonomi">Visa alla</button></h2>
     ${hasCosts ? `<div class="eco">
       <div class="stat"><div class="label">${MONTHS[new Date().getMonth()].replace(/^./, (x) => x.toUpperCase())}</div><div class="n">${fmtKr(eco.thisMonth)} <small>kr</small></div></div>
-      <div class="stat"><div class="label">Snitt per månad</div><div class="n">${(() => { const y = yearAverage(carEntries().filter((e) => e.amount > 0 && e.date), new Date().getFullYear()); return y.total ? fmt(y.avg) : "–"; })()} <small>kr</small></div></div>
+      <div class="stat"><div class="label">Snitt per månad</div><div class="n">${(() => { const y = yearAverage(carEntries().filter((e) => e.amount > 0 && e.date), new Date().getFullYear()); return y.total ? fmtKr(y.avg) : "–"; })()} <small>kr</small></div></div>
       <div class="bars" aria-label="Kostnad per månad de senaste sex månaderna">
         ${eco.bars.map((b) => `<div class="bar${b.now ? " now" : ""}">${b.sum ? `<b>${fmt(b.sum / 1000, 1)}k</b>` : ""}<i style="height:${Math.round((b.sum / maxBar) * 70)}%"></i><span>${b.label}</span></div>`).join("")}
       </div>
@@ -1489,7 +1642,7 @@ function viewOverview() {
   </article>`);
 
   const tips = tipsFor(c);
-  parts.push(`<article class="card">
+  parts.push("<!--card:tips-->", `<article class="card">
     <h2>Tips för ${esc(carName(c))}</h2>
     <div class="recs">${tips.map((t) => `<div class="rec"><span class="sev ${t.sev === "high" ? "high" : t.sev === "mid" ? "mid" : ""}"></span><div><b>${esc(t.title)}</b><p>${esc(t.text)}</p></div></div>`).join("")}</div>
     <div class="ask">
@@ -1497,9 +1650,44 @@ function viewOverview() {
       <small>Kopierar en fråga med er bil och historik som du klistrar in i Claude.</small>
     </div>
   </article>`);
-  parts.push(inviteCard());
-  parts.push(installCard());
-  return parts.join("");
+  parts.push("<!--card:end-->", inviteCard(), installCard());
+  return arrangeCards(parts);
+}
+
+// Korten på Översikt i den ordning man valt under Inställningar, utan de man har dolt.
+const CARD_NAMES = { fuel: "Bränsle", koll: "Att hålla koll på", todo: "Att göra", recent: "Senaste", maint: "Underhåll", eco: "Ekonomi", tips: "Tips" };
+function cardPrefs() {
+  let p = {};
+  try { p = JSON.parse(pref.get("cards") || "{}"); } catch { p = {}; }
+  const order = (p.order || []).filter((k) => CARD_NAMES[k]);
+  for (const k of Object.keys(CARD_NAMES)) if (!order.includes(k)) order.push(k);
+  return { order, hidden: (p.hidden || []).filter((k) => CARD_NAMES[k]) };
+}
+function arrangeCards(parts) {
+  const head = [], tail = [], byKey = {};
+  let key = null;
+  for (const x of parts) {
+    const m = typeof x === "string" && x.match(/^<!--card:(\w+)-->$/);
+    if (m) { key = m[1]; continue; }
+    if (key === null) head.push(x);
+    else if (key === "end") tail.push(x);
+    else (byKey[key] = byKey[key] || []).push(x);
+  }
+  const { order, hidden } = cardPrefs();
+  return [...head, ...order.filter((k) => !hidden.includes(k)).flatMap((k) => byKey[k] || []), ...tail].join("");
+}
+function cardsSettingsCard() {
+  const { order, hidden } = cardPrefs();
+  return `<div class="card">
+    <h2>Översikten</h2>
+    <p class="muted">Välj vilka kort som syns och i vilken ordning. Gäller den här telefonen.</p>
+    <div class="card-order">${order.map((k, i) => `<div class="card-row">
+      <label class="check"><input type="checkbox" data-act="card-toggle" data-id="${k}"${hidden.includes(k) ? "" : " checked"}> ${esc(CARD_NAMES[k])}</label>
+      <span class="row-actions">
+        <button class="icon-btn sm" type="button" data-act="card-move" data-id="${k}" data-d="-1" aria-label="Flytta ${esc(CARD_NAMES[k])} upp"${i === 0 ? " disabled" : ""}>${icon("up", 16)}</button>
+        <button class="icon-btn sm" type="button" data-act="card-move" data-id="${k}" data-d="1" aria-label="Flytta ${esc(CARD_NAMES[k])} ner"${i === order.length - 1 ? " disabled" : ""}>${icon("down", 16)}</button>
+      </span></div>`).join("")}</div>
+  </div>`;
 }
 
 // "Uppdaterad för 3 veckor sedan" under mätarställningen. Orange efter en månad.
@@ -1540,6 +1728,7 @@ function recentCard(c) {
   const items = [
     ...S.entries.filter((e) => e.carId === c.id && isRecentDate(e)).map((e) => ({ ts: tsMs(e.createdAt), who: e.createdBy, text: activityText(e), act: "open-entry", id: e.id, date: e.date })),
     ...(c.bookings || []).filter((b) => b.createdAt).map((b) => ({ ts: tsMs(b.createdAt), who: b.createdBy, text: bookingActivity(b), act: "open-booking", id: b.id, date: b.date })),
+    ...bookingFeed().filter((e) => e.carId === c.id && (e._todo || e._doc)).map((e) => { const [act, id] = feedAct(e); return { ts: tsMs(e.createdAt), who: e.createdBy, text: activityText(e), act, id, date: e.date }; }),
   ].sort((a, b) => b.ts - a.ts).slice(0, 3);
   if (!items.length) return "";
   return `<article class="card">
@@ -1620,7 +1809,17 @@ function logListHtml() {
     const name = MONTHS[m - 1].replace(/^./, (x) => x.toUpperCase());
     return y === new Date().getFullYear() ? name : `${name} ${y}`;
   };
-  const { html: upcoming, n: nUpcoming } = upcomingHtml(q);
+  const { html: upcoming0, n: nUpcoming0 } = upcomingHtml(q);
+  // Vid sökning: även att göra och dokument.
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const hitText = (t) => words.length && words.every((w) => String(t || "").toLowerCase().includes(w));
+  const c0 = car();
+  const extra = q ? [
+    ...(c0?.todos || []).filter((t) => hitText(t.text)).map((t) => ({ icon: "todo", title: t.text, sub: t.done ? "Att göra · klart" : "Att göra", level: "none", label: "", act: "go-view", id: "oversikt" })),
+    ...(c0?.docs || []).filter((d) => hitText(d.title)).map((d) => ({ icon: "doc", title: d.title, sub: "Dokument", level: "none", label: "", act: "open-doc", id: d.id })),
+  ] : [];
+  const upcoming = (extra.length ? `<div class="card"><div class="rows">${extra.map(rowHtml).join("")}</div></div>` : "") + upcoming0;
+  const nUpcoming = nUpcoming0 + extra.length;
   const hits = ents.length + nUpcoming;
   // Summa för det som visas, när man har filtrerat eller sökt: i år och totalt.
   const paid = (S.filter !== "alla" || q) ? ents.filter((e) => e.amount > 0) : [];
@@ -1666,10 +1865,14 @@ function monthLabelLong(key) {
 function catRows(list, total, monthKey) {
   const cats = {}, count = {};
   for (const e of list) { const k = catOf(e); cats[k] = (cats[k] || 0) + e.amount; count[k] = (count[k] || 0) + 1; }
-  return Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<button class="dl as-btn" type="button" data-act="open-cat" data-id="${esc(k)}" data-month="${monthKey}">
+  const c = car();
+  return Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([k, v]) => {
+    const bi = catBudgetInfo(c, k, monthKey);
+    return `<button class="dl as-btn" type="button" data-act="open-cat" data-id="${esc(k)}" data-month="${monthKey}">
     <span class="dl-ic">${icon(CAT_ICON[k] || "receipt", 20)}</span>
-    <span><span class="dl-t">${esc(k)}</span><span class="dl-s">${total ? fmt((v / total) * 100) : 0} % · ${count[k]} st</span></span>
-    <span class="dl-v">${fmtKr(v)} kr ›</span></button>`).join("");
+    <span><span class="dl-t">${esc(k)}</span><span class="dl-s">${total ? fmt((v / total) * 100) : 0} % · ${count[k]} st${bi ? ` · budget ${esc(fmtKr(bi.budget))} kr` : ""}</span>${bi ? `<span class="wear ${bi.level}"><i style="width:${Math.min(100, bi.frac * 100).toFixed(1)}%"></i></span>` : ""}</span>
+    <span class="dl-v">${fmtKr(v)} kr ›</span></button>`;
+  }).join("");
 }
 
 // Snitt per månad för ett år: på de månader som har passerat, från första loggade månaden om bilen började loggas samma år.
@@ -1739,8 +1942,8 @@ function viewEconomy() {
         ${navBtn("eco-step", 1, "Nästa månad", sel >= nowKey)}
       </div>
       <div class="eco-big">${fmtKr(monthTotal)} <small>kr</small></div>
-      ${bi ? budgetBar(bi) : ""}
-      <div class="ask" style="justify-content:center;margin:6px 0 12px"><button class="link" type="button" data-act="budget-edit">${c?.budget ? "Ändra budget" : "Sätt en månadsbudget"}</button></div>
+      ${c?.budget ? `<div class="budget-head"><span class="label">Budget ${esc(fmtKr(c.budget))} kr per månad</span><button class="link" type="button" data-act="budget-edit">Ändra</button></div>${budgetBar(bi)}`
+        : `<div class="ask" style="justify-content:center;margin:0 0 12px"><button class="btn-soft" type="button" data-act="budget-edit">Sätt en månadsbudget</button></div>`}
       ${monthList.length
         ? `<p class="muted" style="text-align:center;margin:0 0 10px">${monthList.length === 1 ? "1 post" : `${monthList.length} poster`}</p><div class="rows">${catRows(monthList, monthTotal, sel)}</div>`
         : `<p class="muted" style="text-align:center">Inga kostnader loggade i ${esc(MONTHS[Number(sel.slice(5, 7)) - 1])}.</p>`}
@@ -1761,12 +1964,31 @@ function viewEconomy() {
       </div>
       <div class="eco" style="margin-top:12px">
         <div class="stat"><div class="label">Totalt ${year}</div><div class="n">${fmtKr(yearTotal)} <small>kr</small></div>${delta(yearTotal, prevTotal)}</div>
-        <div class="stat"><div class="label">Snitt per månad</div><div class="n">${yearTotal ? fmt(yearAvg) : "–"} <small>kr</small></div></div>
+        <div class="stat"><div class="label">Snitt per månad</div><div class="n">${yearTotal ? fmtKr(yearAvg) : "–"} <small>kr</small></div></div>
         <div class="stat"><div class="label">Kostnad per mil</div><div class="n">${driven && yearTotal ? fmt(yearTotal / driven, 2) : "–"} <small>kr</small></div>${driven && prevDriven && prevTotal ? delta(yearTotal / driven, prevTotal / prevDriven) : ""}</div>
         <div class="stat"><div class="label">Körsträcka</div><div class="n">${driven != null ? fmt(driven) : "–"} <small>mil</small></div>${delta(driven, prevDriven)}</div>
       </div>
       <p class="hint" style="margin-top:10px">Tryck på en stapel för att se den månaden. Kostnad per mil räknas på körsträckan mellan årets loggade mätarställningar.</p>
     </div>
+    ${(() => {
+      const tanks = carEntries().filter((e) => e.type === "tank" && (e.date || "").startsWith(`${year}-`)).sort((a, b) => a.date.localeCompare(b.date));
+      if (tanks.length < 2) return "";
+      const paidT = tanks.filter((e) => e.amount > 0);
+      const sum = paidT.reduce((a, e) => a + e.amount, 0);
+      const gaps = tanks.slice(1).map((e, i) => (parseDate(e.date) - parseDate(tanks[i].date)) / 864e5);
+      const gap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+      const st = {};
+      for (const e of tanks) if (e.station) st[e.station] = (st[e.station] || 0) + 1;
+      const fav = Object.entries(st).sort((a, b) => b[1] - a[1])[0];
+      const max = paidT.reduce((m, e) => (e.amount > (m?.amount || 0) ? e : m), null);
+      return `<div class="card"><h2>Tankningar ${year}</h2><dl class="detail-list">
+        <div><dt>Antal</dt><dd>${tanks.length} st</dd></div>
+        ${paidT.length ? `<div><dt>Snitt per tankning</dt><dd>${esc(fmtKr(sum / paidT.length))} kr</dd></div>` : ""}
+        <div><dt>Tankar ungefär</dt><dd>${gap < 1.5 ? "varje dag" : `var ${Math.round(gap)}:e dag`}</dd></div>
+        ${max ? `<div><dt>Dyraste</dt><dd>${esc(fmtKr(max.amount))} kr, ${esc(fmtDateShort(max.date))}</dd></div>` : ""}
+        ${fav ? `<div><dt>Oftast hos</dt><dd>${esc(fav[0])} (${fav[1]} gånger)</dd></div>` : ""}
+      </dl></div>`;
+    })()}
     ${yearTotal || yearFacts.length ? `<div class="card">
       <h2>Bilåret ${year} i siffror</h2>
       <dl class="detail-list">
@@ -1861,11 +2083,13 @@ function viewCar() {
         <span class="pill ${ended ? "none" : "ok"}">${ended ? "Avslutad" : "Pågår"}</span></button>`;
     }).join("")}</div></div>` : ""}
     <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
+    ${photosCard(c)}
     ${docsCard(c)}
     <div class="card">
       <h2>Servicebok</h2>
       <p class="muted">All service, egna jobb, däckbyten och besiktningar med datum, mätarställning och kostnad. Bra att visa en köpare eller verkstad.</p>
-      <div class="ask"><button class="btn-soft" type="button" data-act="print-book">${icon("print", 16)} Skriv ut eller spara som PDF</button></div>
+      <div class="ask"><button class="btn-soft" type="button" data-act="print-book">${icon("print", 16)} Skriv ut eller spara som PDF</button>
+      ${shareCardHtml(c)}</div>
     </div>
     <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
@@ -1895,7 +2119,8 @@ function viewNotifications() {
         const mine = e.createdBy === uid();
         const isNew = !mine && tsMs(e.createdAt) > seen;
         const otherCar = S.cars.length > 1 ? carName(S.cars.find((x) => x.id === e.carId)) : "";
-        return `<button class="entry" type="button" data-act="${e._booking ? "open-booking" : "open-entry"}" data-id="${esc(e.id)}" data-car="${esc(e.carId)}">
+        const [act, id] = feedAct(e);
+        return `<button class="entry" type="button" data-act="${act}" data-id="${esc(id)}" data-car="${esc(e.carId)}">
           <span class="avatar${mine ? " me" : ""}">${esc((mine ? myName() : memberName(e.createdBy)).slice(0, 1).toUpperCase())}</span>
           <span><span class="t">${esc(activityText(e))}</span><span class="m">${esc(timeAgo(tsMs(e.createdAt)))}${otherCar ? ` · ${esc(otherCar)}` : ""}</span></span>
           <span>${isNew ? `<span class="new-pill">Ny</span>` : ""}</span>
@@ -1950,6 +2175,7 @@ function viewSettings() {
       <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för er båda. Du får frågan en gång till innan något tas bort.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>
     </div>
+    ${cardsSettingsCard()}
     ${shortcutsCard()}
     <div class="card">
       <h2>Säkerhetskopia</h2>
@@ -2308,8 +2534,31 @@ function foldIcs(line) {
   return out.join("\r\n ");
 }
 
+// Flera händelser i en och samma kalenderfil.
+function buildIcsMany(evs) {
+  const bodies = evs.map((ev) => { const lines = buildIcs(ev).split("\r\n"); return lines.slice(lines.indexOf("BEGIN:VEVENT"), lines.lastIndexOf("END:VEVENT") + 1).join("\r\n"); });
+  return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Bildagboken//SV", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", ...bodies, "END:VCALENDAR"].join("\r\n");
+}
+function deadlineEvent(x, c) {
+  return {
+    uid: `${c.id}-${x.key}-${ymd(x.date)}`,
+    title: `${x.calTitle}: ${carName(c)}`,
+    date: x.date,
+    location: x.place,
+    description: [x.place ? x.sub.replace(` · ${x.place}`, "") : x.sub, c.plate ? `Reg.nr ${c.plate}` : null, "Inlagd från Bildagboken"].filter(Boolean).join("\n"),
+    alarm: "-P6DT15H",
+    fileName: `${x.title} ${ymd(x.date)}`,
+  };
+}
+// Alla kommande bokningar och sista datum för alla bilar, i en fil.
+function allCalendarEvents() {
+  return S.cars.flatMap((c) => [
+    ...(c.bookings || []).filter((b) => b.date >= todayStr()).map((b) => bookingCalendarEvent(b, c)),
+    ...deadlines(c).filter((x) => x.key && x.key !== "dack" && x.date && daysUntil(x.date) >= 0).map((x) => deadlineEvent(x, c)),
+  ]);
+}
 function addToCalendar(ev) {
-  const ics = buildIcs(ev);
+  const ics = ev._ics || buildIcs(ev);
   const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -2399,6 +2648,11 @@ function entryForm(type, e = {}, opts = {}) {
     case "tank": {
       const fuels = fuelOptions(c);
       body = `${amount("579", "Kostnad (kr)", " required", "Läs av pumpen med kameran: tryck i fältet, välj <b>Skanna text</b> och peka på totalsumman.")}
+        ${!e.id ? (() => {
+          const seen = new Set();
+          const last = S.entries.filter((x) => x.carId === c.id && x.type === "tank" && x.amount > 0).map((x) => x.amount).filter((a) => !seen.has(a) && seen.add(a)).slice(0, 3);
+          return last.length ? `<div class="date-quick">${last.map((a) => `<button type="button" class="chip-btn" data-act="amount-quick" data-v="${esc(fmtKr(a))}">${esc(fmtKr(a))} kr</button>`).join("")}</div>` : "";
+        })() : ""}
         <label class="check"><input type="checkbox" name="full" id="ef-full"${e.full === false ? "" : " checked"}> Tankade fullt</label>
         ${odo(false)}
         ${date}
@@ -3321,16 +3575,7 @@ const ACTIONS = {
     const c = car();
     const x = deadlines(c).find((d) => d.key === el.dataset.id);
     if (!x) return;
-    addToCalendar({
-      uid: `${c.id}-${x.key}-${ymd(x.date)}`,
-      title: `${x.calTitle}: ${carName(c)}`,
-      date: x.date,
-      location: x.place,
-      // Platsen står redan som plats i kalendern, så den behövs inte i beskrivningen också.
-      description: [x.place ? x.sub.replace(` · ${x.place}`, "") : x.sub, c.plate ? `Reg.nr ${c.plate}` : null, "Inlagd från Bildagboken"].filter(Boolean).join("\n"),
-      alarm: "-P6DT15H",
-      fileName: `${x.title} ${ymd(x.date)}`,
-    });
+    addToCalendar(deadlineEvent(x, c));
   },
   async "geo-fill"(el) {
     const input = document.getElementById(el.dataset.target);
@@ -3507,14 +3752,66 @@ const ACTIONS = {
     if (b) openMapChooser({ name: b.place, addr: b.addr, lat: b.lat, lon: b.lon, pid: b.placeId, directions: true });
   },
   "go-view"(el) { setView(el.dataset.id); },
+  async "share-book"(el) {
+    el.disabled = true;
+    try { const t = await shareServiceBook(); const ok = await copyText(shareUrl(t)); showToast(ok ? "Serviceboken är delad. Länken är kopierad." : "Serviceboken är delad"); }
+    catch (e) { console.error(e); showToast(e.code === "permission-denied" ? "Det gick inte att dela. Säkerhetsreglerna i Firebase behöver uppdateras." : "Det gick inte att dela just nu", 6000); }
+    finally { el.disabled = false; }
+  },
+  async "share-copy"() { const c = car(); if (!c?.shareToken) return; const ok = await copyText(shareUrl(c.shareToken)); showToast(ok ? "Länken är kopierad" : shareUrl(c.shareToken), ok ? 3500 : 9000); },
+  "share-stop"() {
+    const c = car();
+    if (!c?.shareToken) return;
+    deleteDoc(doc(db, "shares", c.shareToken)).catch(onWriteError);
+    c.shareToken = null;
+    updateDoc(ref("cars", c.id), { shareToken: null }).catch(onWriteError);
+    render();
+    showToast("Länken fungerar inte längre");
+  },
+  "print-shared"() {
+    const box = document.querySelector(".shared-book");
+    if (!box) return;
+    document.getElementById("print-root")?.remove();
+    document.body.insertAdjacentHTML("beforeend", `<div id="print-root">${box.innerHTML}</div>`);
+    window.addEventListener("afterprint", () => document.getElementById("print-root")?.remove(), { once: true });
+    setTimeout(() => window.print(), 50);
+  },
+  "calendar-all"() {
+    const evs = allCalendarEvents();
+    if (!evs.length) return showToast("Inget kommande att lägga i kalendern");
+    addToCalendar({ _ics: buildIcsMany(evs), fileName: "Bildagboken" });
+    showToast(`${evs.length} händelser till kalendern`);
+  },
   "budget-edit"() { budgetSheet(); },
   "todo-toggle"(el) {
     const c = car();
-    const list = (c.todos || []).map((t) => (t.id === el.dataset.id ? { ...t, done: !t.done, doneBy: !t.done ? uid() : null } : t));
+    const t = (c.todos || []).find((x) => x.id === el.dataset.id);
+    if (!t) return;
+    const list = (c.todos || []).map((x) => (x.id === t.id ? { ...x, done: !x.done, doneBy: !x.done ? uid() : null } : x));
     c.todos = list;
     updateDoc(ref("cars", c.id), { todos: list }).catch(onWriteError);
     render();
+    if (!t.done) showToast(`Klart: ${t.text}`, 6000, null, { label: "Logga det", fn: () => entryForm("eget", { title: t.text.replace(/^./, (x) => x.toUpperCase()) }) });
   },
+  "card-toggle"(el) {
+    const p = cardPrefs();
+    const hidden = p.hidden.includes(el.dataset.id) ? p.hidden.filter((k) => k !== el.dataset.id) : [...p.hidden, el.dataset.id];
+    pref.set("cards", JSON.stringify({ order: p.order, hidden }));
+    render();
+  },
+  "card-move"(el) {
+    const p = cardPrefs();
+    const i = p.order.indexOf(el.dataset.id), j = i + Number(el.dataset.d);
+    if (i < 0 || j < 0 || j >= p.order.length) return;
+    [p.order[i], p.order[j]] = [p.order[j], p.order[i]];
+    pref.set("cards", JSON.stringify(p));
+    render();
+    document.querySelector(`[data-act="card-move"][data-id="${el.dataset.id}"][data-d="${el.dataset.d}"]`)?.focus({ preventScroll: true });
+  },
+  "amount-quick"(el) { const a = $("#ef-amount"); if (a) { a.value = el.dataset.v; a.dispatchEvent(new Event("input", { bubbles: true })); } },
+  "budget-suggest"(el) { const b = $("#bu-budget"); if (b) b.value = el.dataset.v; },
+  "edit-doc"(el) { const d = (car()?.docs || []).find((x) => x.id === el.dataset.id); if (d) docForm(d); },
+  async "show-photos"() { S.showPhotos = true; render(); await loadPhotoGrid(); },
   "todo-clear"() {
     const c = car();
     const before = c.todos || [];
@@ -3961,6 +4258,7 @@ function updateNextInspection() {
 }
 
 function onInput(ev) {
+  if (ev.isTrusted && ev.target.classList?.contains("from-receipt")) ev.target.classList.remove("from-receipt");
   if (ev.target.id === "ef-recurring") {
     const b = $("#ef-rec-box"); if (b) b.hidden = !ev.target.checked;
     const lab = $("#ef-date")?.closest("label")?.querySelector("span");
@@ -4048,16 +4346,24 @@ function onChange(ev) {
 
 let toastTimer;
 // Meddelande längst ner. Med undo visas en Ångra-knapp så länge meddelandet syns.
-let toastUndo = null;
-function showToast(text, ms = 3500, undo = null) {
+let toastUndo = null, toastAction = null;
+function showToast(text, ms = 3500, undo = null, action = null) {
   const t = $("#toast");
-  t.innerHTML = `<span>${esc(text)}</span>${undo ? `<button class="toast-undo" type="button" id="toast-undo">Ångra</button>` : ""}`;
+  t.innerHTML = `<span>${esc(text)}</span>${undo ? `<button class="toast-undo" type="button" id="toast-undo">Ångra</button>` : ""}${action ? `<button class="toast-undo" type="button" id="toast-act">${esc(action.label)}</button>` : ""}`;
   t.hidden = false;
   toastUndo = undo;
+  toastAction = action;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; toastUndo = null; }, undo ? Math.max(ms, 6000) : ms);
+  toastTimer = setTimeout(() => { t.hidden = true; toastUndo = null; toastAction = null; }, undo || action ? Math.max(ms, 6000) : ms);
 }
 document.addEventListener("click", (ev) => {
+  if (ev.target.closest?.("#toast-act") && toastAction) {
+    const fn = toastAction.fn;
+    toastAction = null;
+    $("#toast").hidden = true;
+    fn();
+    return;
+  }
   if (ev.target.closest?.("#toast-undo") && toastUndo) {
     const fn = toastUndo;
     toastUndo = null;
@@ -4100,6 +4406,15 @@ function checkNewBookings(cars, first) {
       bookingsSeen.add(key);
       if (first || b.createdBy === uid()) continue;
       notify(`${bookingActivity(b)}${S.cars.length > 1 ? ` (${carName(c)})` : ""}`, `booking-${b.id}`);
+    }
+    for (const [kind, list] of [["t", c.todos || []], ["d", c.docs || []]]) {
+      for (const x of list) {
+        const key = `${c.id}/${kind}/${x.id}`;
+        if (bookingsSeen.has(key)) continue;
+        bookingsSeen.add(key);
+        if (first || x.by === uid() || !x.at) continue;
+        notify(activityText(kind === "t" ? { createdBy: x.by, _todo: x } : { createdBy: x.by, _doc: x }), `${kind}-${x.id}`);
+      }
     }
   }
 }
@@ -4254,7 +4569,9 @@ const initial = location.hash.slice(1);
 if (initial) S.view = initial;
 
 getRedirectResult(auth).catch((e) => renderLogin(authError(e)));
+if (viewToken) renderShared(viewToken);
 onAuthStateChanged(auth, (user) => {
+  if (viewToken) return;
   const changed = (user?.uid || null) !== (S.user?.uid || null);
   S.user = user;
   if (!user) { cleanup(); renderLogin(); return; }
