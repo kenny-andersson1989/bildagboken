@@ -720,3 +720,50 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .unit-row input { flex: 1; min-width: 0; }
 .unit-row select { flex: none; width: 84px; }
 .log-sum b { color: var(--ink); font-weight: 600; }
+/* Budget: stapel och text under månadens summa */
+.budget { margin: 10px 0 4px; }
+.budget .wear { height: 8px; border-radius: 4px; }
+.budget-t { display: block; font-size: 12.5px; color: var(--ink-2); margin-top: 6px; text-align: center; font-variant-numeric: tabular-nums; }
+.eco + .budget .budget-t, .card > .budget:last-child .budget-t { text-align: left; }
+/* Jämförelse med året innan */
+.delta { font-size: 11.5px; font-weight: 600; color: var(--ink-3); margin-top: 2px; }
+.delta.up { color: var(--accent-text); }
+.delta.down { color: var(--sage); }
+/* Att göra */
+.todos { display: flex; flex-direction: column; }
+.todo { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 44px; padding: 6px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.todo:first-child { border-top: 0; }
+.todo input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
+.todo-t { font-size: 14.5px; overflow-wrap: anywhere; }
+.todo small { font-size: 11.5px; color: var(--ink-3); }
+.todo.done .todo-t { text-decoration: line-through; color: var(--ink-3); }
+.todo-add { display: flex; gap: 8px; margin-top: 12px; }
+.todo-add input { flex: 1; min-width: 0; }
+/* Läs av kvitto */
+.receipt-btn { position: relative; cursor: pointer; }
+.receipt-btn.busy { opacity: .7; pointer-events: none; }
+.steps { margin: 8px 0 6px; padding-left: 20px; font-size: 13.5px; color: var(--ink-2); }
+.steps li { margin: 3px 0; }
+/* Servicebok: syns bara vid utskrift */
+#print-root { display: none; }
+@media print {
+  @page { margin: 16mm 14mm; }
+  body > *:not(#print-root) { display: none !important; }
+  body { background: #fff !important; color: #111; }
+  body::after { display: none; }
+  #print-root { display: block; font: 10.5pt/1.4 var(--f-body); color: #111; }
+  .pb-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 14px; }
+  .pb-head h1 { font: 700 22pt var(--f-display); margin: 0; }
+  .pb-head p { margin: 2px 0 0; }
+  .pb-date { text-align: right; font-size: 9pt; color: #555; }
+  .pb h2 { font: 700 13pt var(--f-display); margin: 18px 0 6px; }
+  .pb table { width: 100%; border-collapse: collapse; }
+  .pb-facts { width: auto !important; }
+  .pb-facts th { text-align: left; font-weight: 500; color: #555; padding: 2px 18px 2px 0; }
+  .pb-table th { text-align: left; font-size: 9pt; text-transform: uppercase; letter-spacing: .04em; color: #555; border-bottom: 1px solid #999; padding: 4px 6px 4px 0; }
+  .pb-table td { border-bottom: 1px solid #ddd; padding: 5px 6px 5px 0; vertical-align: top; }
+  .pb-table tr { break-inside: avoid; }
+  .pb-table tfoot td { font-weight: 700; border-bottom: 0; border-top: 1.5px solid #111; }
+  .pb .r { text-align: right; white-space: nowrap; }
+  .pb small { color: #555; }
+}
