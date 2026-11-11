@@ -923,3 +923,20 @@ button.hero-tile { cursor: pointer; }
 /* Bakgrundens färgtoning: exakt skärmens storlek, egen ritning, så att den inte får en kant när telefonen vrids */
 body::after { inset: auto; top: 0; left: 0; width: var(--vw, 100vw); height: var(--vh, 100vh); transform: translateZ(0); }
 @supports (height: 100lvh) { body::after { height: max(var(--vh, 100vh), 100lvh); } }
+/* Att göra och Anteckningar: kategorier */
+.todo-add { display: block; }
+.todo-row { display: flex; gap: 8px; align-items: stretch; }
+.todo-row input { flex: 1; min-width: 0; min-height: 50px; font-size: 16px; }
+.tag-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tag-pick .chip-btn { min-height: 32px; padding: 5px 11px; font-size: 12.5px; }
+.tag-pill { flex: none; border: 0; border-radius: 999px; padding: 4px 9px; font: 600 11.5px var(--f-body); white-space: nowrap; cursor: pointer; background: var(--track); color: var(--ink-2); }
+.tag-pill.tag-none { background: transparent; color: var(--ink-3); border: 1px dashed var(--line); }
+.tag-pill.tag-fel { background: var(--danger-soft); color: var(--danger); }
+.tag-pill.tag-besiktning { background: var(--sage-soft); color: var(--sage); }
+.tag-pill.tag-service { background: var(--warn-soft); color: var(--warn); }
+.tag-pill.tag-kopa { background: var(--accent-soft); color: var(--accent-text); }
+span.tag-pill { cursor: default; }
+.note-sum { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.note-sum .link { margin-left: auto; }
+.note-list { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.note-list .filters { margin-bottom: 6px; }

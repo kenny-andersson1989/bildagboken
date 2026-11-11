@@ -1292,20 +1292,74 @@ function saveBudget(form) {
 /* ----------------------------------------------------------- att göra */
 
 // Gemensam att göra-lista för bilen. Klara saker ligger kvar överstrukna tills någon rensar dem.
+// Listan med saker att göra, köpa eller laga. Samma lista på Översikt (Att göra) och under Bilen (Anteckningar).
+// Varje sak kan ha en kategori. Appen gissar kategorin medan man skriver, och man kan ändra den med ett tryck.
+const TODO_TAGS = [
+  { k: "fel", label: "Fel att laga" },
+  { k: "besiktning", label: "Inför besiktning" },
+  { k: "service", label: "Inför service" },
+  { k: "kopa", label: "Köpa" },
+];
+const tagLabel = (k) => TODO_TAGS.find((t) => t.k === k)?.label || "";
+function guessTag(text) {
+  const t = String(text || "").toLowerCase();
+  if (/besikt/.test(t)) return "besiktning";
+  if (/service|verkstad|mekonom|oljebyte/.test(t)) return "service";
+  if (/trasig|sönder|knack|läck|gnissl|skrap|låter|ljud|lyser|varningslampa|felkod|funkar inte|fungerar inte|går inte|spricka|rost|buckla|repa|skada|slitna|glapp|vibrer|drar åt/.test(t)) return "fel";
+  if (/köp|handla|beställ|spolarvätska|torkarblad|glödlampa|lampa|olja|kylarvätska|avfrostning|isskrapa|säkring|batteri/.test(t)) return "kopa";
+  return "";
+}
+function todoItemsHtml(items) {
+  return `<div class="todos">${items.map((t) => `<label class="todo${t.done ? " done" : ""}">
+      <input type="checkbox" class="vh" data-act="todo-toggle" data-id="${esc(t.id)}"${t.done ? " checked" : ""}><span class="box" aria-hidden="true"></span>
+      <span class="todo-t">${esc(t.text)}</span>
+      <button type="button" class="tag-pill${t.tag ? ` tag-${t.tag}` : " tag-none"}" data-act="todo-retag" data-id="${esc(t.id)}" aria-label="Kategori: ${esc(tagLabel(t.tag) || "ingen")}. Tryck för att byta.">${esc(tagLabel(t.tag) || "+ kategori")}</button></label>`).join("")}</div>`;
+}
+function todoFormHtml() {
+  return `<form class="todo-add" data-form="todo" data-keep novalidate>
+      <div class="todo-row">
+        <input name="text" id="todo-text" placeholder="Något att göra, köpa eller laga" autocomplete="off" enterkeyhint="done" aria-label="Ny sak">
+        <button class="todo-btn" type="submit" aria-label="Lägg till">${icon("plus", 20)}</button>
+      </div>
+      <input type="hidden" name="tag" id="todo-tag" value="">
+      <div class="tag-pick" role="group" aria-label="Kategori">${TODO_TAGS.map((t) => `<button type="button" class="chip-btn" data-act="todo-tag" data-v="${t.k}" aria-pressed="false">${esc(t.label)}</button>`).join("")}</div>
+    </form>`;
+}
 function todoCard(c) {
   const list = c.todos || [];
   const open = list.filter((t) => !t.done), done = list.filter((t) => t.done);
   return `<article class="card">
     <h2>Att göra ${done.length ? `<button class="link" type="button" data-act="todo-clear">Rensa klara</button>` : ""}</h2>
-    ${list.length ? `<div class="todos">${[...open, ...done].map((t) => `<label class="todo${t.done ? " done" : ""}">
-        <input type="checkbox" class="vh" data-act="todo-toggle" data-id="${esc(t.id)}"${t.done ? " checked" : ""}><span class="box" aria-hidden="true"></span>
-        <span class="todo-t">${esc(t.text)}</span><small>${esc(todoWho(t))}</small></label>`).join("")}</div>`
-      : `<p class="muted">Saker som ska göras med bilen, till exempel köpa torkarblad eller boka service. Ni ser samma lista.</p>`}
-    <form class="todo-add" data-form="todo" data-keep novalidate>
-      <input name="text" id="todo-text" placeholder="Något att göra" autocomplete="off" enterkeyhint="done" aria-label="Ny sak att göra">
-      <button class="todo-btn" type="submit" aria-label="Lägg till">${icon("plus", 20)}</button>
-    </form>
+    ${list.length ? todoItemsHtml([...open, ...done]) : `<p class="muted">Saker att göra, köpa eller laga på bilen. Ni ser samma lista, och den finns också under Bilen → Anteckningar.</p>`}
+    ${todoFormHtml()}
   </article>`;
+}
+// Under Anteckningar: ihopfällt syns bara hur många saker det finns per kategori, utfällt hela listan med filter.
+function notesListHtml(c) {
+  const list = c.todos || [];
+  const open = list.filter((t) => !t.done), done = list.filter((t) => t.done);
+  const count = (k) => open.filter((t) => (t.tag || "") === k).length;
+  const groups = [...TODO_TAGS.map((t) => [t.k, t.label, count(t.k)]), ["", "Övrigt", count("")]].filter(([, , n]) => n);
+  if (!S.notesOpen) {
+    return `<div class="note-sum">
+      ${groups.map(([k, l, n]) => `<span class="tag-pill${k ? ` tag-${k}` : " tag-none"}">${esc(l)} ${n}</span>`).join("")}
+      <button class="link" type="button" data-act="notes-toggle">${open.length ? `Visa listan (${open.length})` : "Lägg till något att göra, köpa eller laga"}</button>
+    </div>`;
+  }
+  const f = S.noteFilter || "alla";
+  const shown = [...open, ...done].filter((t) => f === "alla" || (t.tag || "") === (f === "ovrigt" ? "" : f));
+  return `<div class="note-list">
+    <div class="filters" role="group" aria-label="Visa kategori">
+      <button type="button" data-act="note-filter" data-f="alla" aria-pressed="${f === "alla"}">Alla ${open.length}</button>
+      ${groups.map(([k, l, n]) => `<button type="button" data-act="note-filter" data-f="${k || "ovrigt"}" aria-pressed="${f === (k || "ovrigt")}">${esc(l)} ${n}</button>`).join("")}
+    </div>
+    ${shown.length ? todoItemsHtml(shown) : `<p class="muted" style="margin-top:8px">Inget här än.</p>`}
+    ${todoFormHtml()}
+    <div class="ask" style="justify-content:space-between">
+      <button class="link" type="button" data-act="notes-toggle">Visa färre</button>
+      ${done.length ? `<button class="link" type="button" data-act="todo-clear">Rensa klara</button>` : ""}
+    </div>
+  </div>`;
 }
 // Vem som lade till saken, eller vem den gäller om den är riktad till någon.
 // Saker som någon har bett dig om syns också under Att hålla koll på.
@@ -1320,7 +1374,8 @@ function saveTodo(form) {
   const text = String(new FormData(form).get("text") || "").trim();
   if (!text) return;
   const c = car();
-  const list = [...(c.todos || []), { id: "t" + randomId(8), text, done: false, by: uid(), at: Date.now() }];
+  const tag = String(new FormData(form).get("tag") || "") || guessTag(text) || null;
+  const list = [...(c.todos || []), { id: "t" + randomId(8), text, done: false, by: uid(), at: Date.now(), tag }];
   c.todos = list;
   updateDoc(ref("cars", c.id), { todos: list }).catch(onWriteError);
   form.reset();
@@ -2269,6 +2324,7 @@ function viewCar() {
       ${specs.length ? `<div class="spec">${specs.map(([k, v]) => `<div><div class="label">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("")}</div>` : ""}
       ${freeLines.length ? `<div class="notes"${specs.length ? ' style="margin-top:10px"' : ""}>${freeLines.map((l) => `<p>${esc(l)}</p>`).join("")}</div>` : ""}
       ${!specs.length && !freeLines.length ? `<p class="muted">Skriv det ni vill komma ihåg om bilen, till exempel oljetyp, däckdimension eller var reservnyckeln ligger.</p>` : ""}
+      ${notesListHtml(c)}
     </div>
     <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
@@ -4087,6 +4143,25 @@ const ACTIONS = {
     showToast(`${evs.length} händelser till kalendern`);
   },
   "budget-edit"() { budgetSheet(); },
+  "notes-toggle"() { S.notesOpen = !S.notesOpen; render(); if (S.notesOpen && !(car()?.todos || []).length) $("#todo-text")?.focus(); },
+  "note-filter"(el) { S.noteFilter = el.dataset.f; render(); },
+  "todo-tag"(el) {
+    const form = el.closest("form");
+    const hid = form?.querySelector("#todo-tag");
+    if (!hid) return;
+    hid.value = hid.value === el.dataset.v ? "" : el.dataset.v;
+    form.dataset.manual = "1";
+    form.querySelectorAll("[data-act=todo-tag]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === hid.value)));
+  },
+  "todo-retag"(el, ev) {
+    ev?.preventDefault?.(); ev?.stopPropagation?.();
+    const c = car();
+    const order = ["", ...TODO_TAGS.map((t) => t.k)];
+    const list = (c.todos || []).map((t) => (t.id === el.dataset.id ? { ...t, tag: order[(order.indexOf(t.tag || "") + 1) % order.length] || null } : t));
+    c.todos = list;
+    updateDoc(ref("cars", c.id), { todos: list }).catch(onWriteError);
+    render();
+  },
   "todo-toggle"(el) {
     const c = car();
     const t = (c.todos || []).find((x) => x.id === el.dataset.id);
@@ -4563,6 +4638,14 @@ function updateNextInspection() {
 }
 
 function onInput(ev) {
+  if (ev.target.id === "todo-text") {
+    const form = ev.target.closest("form");
+    if (form && form.dataset.manual !== "1") {
+      const g = guessTag(ev.target.value);
+      form.querySelector("#todo-tag").value = g;
+      form.querySelectorAll("[data-act=todo-tag]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === g)));
+    }
+  }
   if (ev.isTrusted && ev.target.classList?.contains("from-receipt")) ev.target.classList.remove("from-receipt");
   if (ev.target.id === "ef-recurring") {
     const b = $("#ef-rec-box"); if (b) b.hidden = !ev.target.checked;
