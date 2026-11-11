@@ -2135,7 +2135,7 @@ function viewCar() {
     </div>
     <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
-        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")], ["Senast tvättad", lastWash(c) ? [fmtDate(lastWash(c).date), lastWash(c).place].filter(Boolean).join(", ") : ""]]
+        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>
@@ -2876,9 +2876,36 @@ function loadMapKit() {
 const stripCountry = (a) => String(a || "").replace(/,?\s*(Sverige|Sweden)$/i, "").trim();
 
 // Sök företag eller adresser i Apple Maps, i Sverige.
+// Var sökningen ska utgå från, så att närmaste träffar kommer först.
+// Telefonens position om man tillåter det (sparas en stund), annars platser ni har sparat i appen, annars hela Sverige.
+let searchCenterCache = null;
+async function searchCenter() {
+  const fresh = (p) => p && Date.now() - p.at < 30 * 60000;
+  if (fresh(searchCenterCache)) return searchCenterCache;
+  try { const saved = JSON.parse(pref.get("searchPos") || "null"); if (fresh(saved)) return (searchCenterCache = saved); } catch { /* inget sparat */ }
+  if (pref.get("searchPosDenied") !== "1" && "geolocation" in navigator) {
+    try {
+      const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: false, timeout: 6000, maximumAge: 10 * 60000 }));
+      searchCenterCache = { lat: pos.coords.latitude, lon: pos.coords.longitude, at: Date.now(), gps: true };
+      pref.set("searchPos", JSON.stringify(searchCenterCache));
+      return searchCenterCache;
+    } catch (e) { if (e?.code === 1) pref.set("searchPosDenied", "1"); }
+  }
+  // Mitten av de platser ni har sparat (bokningar och poster med position).
+  const pts = [...S.cars.flatMap((c) => (c.bookings || []).filter((b) => b.lat != null).map((b) => [b.lat, b.lon])), ...S.entries.filter((e) => e.loc?.lat != null).map((e) => [e.loc.lat, e.loc.lon])];
+  if (pts.length) {
+    const mid = (i) => pts.map((p) => p[i]).sort((a, b) => a - b)[Math.floor(pts.length / 2)];
+    return (searchCenterCache = { lat: mid(0), lon: mid(1), at: Date.now() });
+  }
+  return null;
+}
 async function appleSearch(kind, q) {
   const mk = await loadMapKit();
-  const search = new mk.Search({ language: "sv-SE", region: new mk.CoordinateRegion(new mk.Coordinate(62.5, 16.5), new mk.CoordinateSpan(15, 20)) });
+  const center = await searchCenter();
+  const region = center
+    ? new mk.CoordinateRegion(new mk.Coordinate(center.lat, center.lon), new mk.CoordinateSpan(0.6, 1))
+    : new mk.CoordinateRegion(new mk.Coordinate(62.5, 16.5), new mk.CoordinateSpan(15, 20));
+  const search = new mk.Search({ language: "sv-SE", region });
   const data = await new Promise((resolve, reject) => {
     search.search(q, (err, d) => (err ? reject(err) : resolve(d)), { limitToCountries: "SE", language: "sv-SE" });
   });
@@ -2892,7 +2919,10 @@ async function appleSearch(kind, q) {
     return kind === "poi"
       ? (isPoi ? { title: pl.name, sub: addr, name: pl.name, addr, lat, lon, pid, tel, src: "apple" } : null)
       : { title: addr.split(", ")[0], sub: addr.split(", ").slice(1).join(", "), name: "", addr, lat, lon, pid: "", src: "apple" };
-  }).filter(Boolean);
+  }).filter(Boolean)
+    // Närmast först när vi vet var man är.
+    .map((x, i) => ({ x, i, d: center && x.lat != null ? distM(center, { lat: x.lat, lon: x.lon }) : i }))
+    .sort((a, b) => (center ? a.d - b.d : a.i - b.i)).map((o) => o.x);
 }
 
 // Sök i OpenStreetMap (Photon). Används när Apple Maps inte går att nå.
@@ -2900,7 +2930,8 @@ async function photonSearch(kind, q, signal) {
   const typedNo = (q.match(/\b(\d{1,4}[a-zA-Z]?)\b/) || [])[1] || "";
   // Kartan hittar inget om husnumret är med, så adresser söks utan nummer och numret läggs till efteråt.
   const searchQ = kind === "addr" && typedNo ? q.replace(new RegExp(`\\b${typedNo}\\b`), " ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim() : q;
-  const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(searchQ)}&limit=8&bbox=10.5,55.0,24.3,69.1`, { signal });
+  const center = await searchCenter().catch(() => null);
+  const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(searchQ)}&limit=8&bbox=10.5,55.0,24.3,69.1${center ? `&lat=${center.lat}&lon=${center.lon}&location_bias_scale=0.5` : ""}`, { signal });
   if (!res.ok) throw new Error("photon " + res.status);
   const j = await res.json();
   return (j.features || [])
