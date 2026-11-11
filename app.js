@@ -3111,10 +3111,29 @@ async function appleSearch(kind, q) {
     ? new mk.CoordinateRegion(new mk.Coordinate(center.lat, center.lon), new mk.CoordinateSpan(0.6, 1))
     : new mk.CoordinateRegion(new mk.Coordinate(62.5, 16.5), new mk.CoordinateSpan(15, 20));
   const search = new mk.Search({ language: "sv-SE", region });
-  const data = await new Promise((resolve, reject) => {
-    search.search(q, (err, d) => (err ? reject(err) : resolve(d)), { limitToCountries: "SE", language: "sv-SE" });
+  const opts = { limitToCountries: "SE", language: "sv-SE" };
+  const run = (query) => new Promise((resolve) => {
+    try { search.search(query, (err, d) => resolve(err ? [] : d?.places || []), opts); } catch { resolve([]); }
   });
-  return (data?.places || []).filter((pl) => !pl.countryCode || pl.countryCode === "SE").map((pl) => {
+  // Apple har två sökningar: vanlig sökning och förslag medan man skriver (som i Kartor-appen).
+  // Förslagen hittar oftare mindre företag, så båda används och träffarna slås ihop.
+  const suggest = () => new Promise((resolve) => {
+    if (typeof search.autocomplete !== "function") return resolve([]);
+    try { search.autocomplete(q, (err, d) => resolve(err ? [] : d?.results || []), opts); } catch { resolve([]); }
+  });
+  const [direct, suggestions] = await Promise.all([run(q), suggest()]);
+  const extra = [];
+  for (const r of suggestions.slice(0, 4)) {
+    // Ett förslag utan position söks upp, så att det får adress och plats på kartan.
+    const places = await run(r);
+    if (places[0]) extra.push(places[0]);
+  }
+  const seenPlace = new Set();
+  const places = [...direct, ...extra].filter((pl) => {
+    const key = `${pl.name}|${pl.coordinate?.latitude?.toFixed?.(4)}|${pl.coordinate?.longitude?.toFixed?.(4)}`;
+    return !seenPlace.has(key) && seenPlace.add(key);
+  });
+  return places.filter((pl) => !pl.countryCode || pl.countryCode === "SE").map((pl) => {
     const street = [pl.thoroughfare, pl.subThoroughfare].filter(Boolean).join(" ");
     const addr = stripCountry(pl.formattedAddress) || [street, [pl.postCode, pl.locality].filter(Boolean).join(" ")].filter(Boolean).join(", ");
     const isPoi = !!pl.pointOfInterestCategory || (pl.name && pl.name !== street && pl.name !== pl.locality);
@@ -3161,7 +3180,8 @@ async function placeSearch(kind, q) {
     let found;
     try { found = await appleSearch(kind, q); } catch { found = null; }
     if (signal.aborted) return;
-    if (!found) found = await photonSearch(kind, q, signal);
+    // Hittar Apple inget, eller svarar inte, provas OpenStreetMap.
+    if (!found || !found.length) found = await photonSearch(kind, q, signal).catch(() => found || []);
     if (input.value.trim() !== q) return;
     const seen = new Set();
     const list = found.filter((x) => x.title && !seen.has(x.title + x.sub) && seen.add(x.title + x.sub)).slice(0, 6);
