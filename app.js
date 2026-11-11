@@ -2507,6 +2507,20 @@ function openSheet(title, body, { back = null, backId = null } = {}) {
   sheet.addEventListener("touchcancel", end);
 })();
 
+// iPhone tappar ibland bort var skärmens nederkant är när rutor öppnas och stängs, eller när
+// tangentbordet försvinner, och lägger då menyn längst ner mitt på sidan. Det här lägger tillbaka den.
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+function nudgeFixed() {
+  requestAnimationFrame(() => {
+    window.scrollTo(window.scrollX, window.scrollY);
+    nav.style.transform = "translateZ(0)";
+    requestAnimationFrame(() => { nav.style.transform = ""; });
+  });
+}
+document.addEventListener("focusout", (ev) => { if (ev.target.matches?.("input, textarea, select")) setTimeout(nudgeFixed, 60); });
+window.visualViewport?.addEventListener("resize", () => setTimeout(nudgeFixed, 60));
+window.addEventListener("pageshow", nudgeFixed);
+
 function closeSheet(fromBack = false) {
   if (sheetHistory) {
     if (!fromBack && history.state?.bdSheet) { ignorePops++; history.back(); }
@@ -2516,6 +2530,7 @@ function closeSheet(fromBack = false) {
   scrim.hidden = true;
   sheet.innerHTML = "";
   document.body.style.overflow = "";
+  setTimeout(nudgeFixed, 30);
   const back = sheetReturnFocus;
   sheetReturnFocus = null;
   if (back && document.contains(back) && back !== document.body) back.focus({ preventScroll: true });
@@ -4005,7 +4020,7 @@ const ACTIONS = {
     const picks = document.getElementById(el.dataset.target + "-picks");
     if (picks) picks.hidden = true;
   },
-  "toggle-koll"() { S.kollAll = !S.kollAll; render(); },
+  "toggle-koll"() { S.kollAll = !S.kollAll; render(); nudgeFixed(); },
   "toggle-maint"() { S.maintAll = !S.maintAll; render(); },
   "hide-maint-hint"(el) { pref.set("maintHintHidden." + S.carId, el.dataset.n); render(); },
   "book-inspection"() { bookingForm({ kind: "besiktning" }); },
