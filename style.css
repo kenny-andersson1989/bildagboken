@@ -839,3 +839,16 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 @media (max-width: 759px) {
   .hero-media .car-fig, .hero-media .car-photo { margin: 0; }
 }
+/* Kompakt bilkort: bild och bränsle överst, mätarställning och bilen på en rad under */
+.hero { padding: 12px 12px 12px; }
+.hero-media { margin: 0 0 10px; }
+.hero .odo { align-items: center; padding-top: 10px; gap: 10px; }
+.odo-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.hero .odo-num { font-size: 26px; display: inline-flex; align-items: baseline; }
+.hero .odo-num svg { align-self: center; margin-left: 4px; color: var(--ink-3); }
+.hero .odo-age { display: block; margin-top: 0; }
+.hero-car { text-align: right; min-width: 0; }
+.hero-name { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.hero-name b { font-family: var(--f-display); font-size: 16px; font-weight: 700; }
+.hero-car .sub { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+.fuel-name { font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }

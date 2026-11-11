@@ -1073,18 +1073,13 @@ function fuelGauge(c) {
   const p = draft ?? fuelPct(f);
   const v = p ?? 0;
   return `<div class="fuel-col">
+    <span class="fuel-end fuel-name">Bränsle</span>
     <span class="fuel-end">Full</span>
     <div class="fuel-v ${p == null ? "unset" : pctClass(v)}" id="fuel-v" role="slider" tabindex="0" aria-label="Bränsle kvar i tanken" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(v)}" aria-valuetext="${esc(p == null ? "Inte angivet" : pctText(v))}">
       <i style="height:${v}%"></i><b>${p == null ? "?" : Math.round(v)}</b>
     </div>
     <span class="fuel-end">Tom</span>
   </div>`;
-}
-function fuelLine(c) {
-  const f = c.fuelLevel, p = fuelPct(f);
-  if (p == null) return `<div class="odo-age">Dra i stapeln för att visa hur mycket bränsle som finns kvar</div>`;
-  const what = p > 0 && p < 100 ? `Bränsle ${Math.round(p)} %` : pctText(p);
-  return `<div class="odo-age${p <= 25 ? " old" : ""}" id="fuel-line">${esc(what)}${p <= 25 ? " · tanka snart" : ""} · ${esc(`av ${whoName(f.by) === "Du" ? "dig" : whoName(f.by)} ${timeAgo(tsMs(f.at)).toLowerCase()}`)}</div>`;
 }
 // Bokningar visas i flödet som poster av typen "bokning", så att de kan sorteras ihop med loggarna.
 // Det som inte är poster men ändå ska synas för den andra: bokningar, att göra och dokument.
@@ -1628,12 +1623,8 @@ function viewOverview() {
     </button>`);
   }
 
+  // Bilkortet: bilden med bränslestapeln, och under den en rad med mätarställning till vänster och bilen till höger.
   parts.push(`<article class="card hero">
-    <div class="hero-top">
-      <div><h2>${esc(carName(c))}</h2>
-      <div class="sub">${esc([c.year, c.fuel, c.color].filter(Boolean).join(" · "))}</div></div>
-      ${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}
-    </div>
     <div class="hero-media">
       <label class="car-pick" title="Byt bild på bilen">
         ${carVisual(c)}
@@ -1643,8 +1634,13 @@ function viewOverview() {
       ${fuelGauge(c)}
     </div>
     <div class="odo">
-      <div><div class="label">Mätarställning</div><div class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span></div>${odoAgeHtml(c)}${fuelLine(c)}</div>
-      <button class="btn-soft" type="button" data-act="new-entry" data-type="matare">Uppdatera</button>
+      <button class="odo-btn" type="button" data-act="new-entry" data-type="matare" aria-label="Mätarställning ${odoOf(c) != null ? fmt(odoOf(c)) : "saknas"} mil. Tryck för att uppdatera.">
+        <span class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span>${icon("next", 14)}</span>${odoAgeHtml(c)}
+      </button>
+      <div class="hero-car">
+        <div class="hero-name">${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}<b>${esc(carName(c))}</b></div>
+        <div class="sub">${esc([c.year, c.fuel].filter(Boolean).join(" · "))}</div>
+      </div>
     </div>
   </article>`);
 
@@ -1770,7 +1766,7 @@ function odoAgeHtml(c) {
   if (!last?.date) return "";
   const ago = Math.max(0, -daysUntil(parseDate(last.date)));
   const when = ago === 0 ? "i dag" : ago === 1 ? "i går" : ago < 14 ? `för ${ago} dagar sedan` : ago < 60 ? `för ${Math.round(ago / 7)} veckor sedan` : `för ${daysText(ago)} sedan`;
-  return `<div class="odo-age${ago >= 30 ? " old" : ""}">Uppdaterad ${esc(when)}${ago >= 30 ? " · dags att uppdatera" : ""}</div>`;
+  return `<span class="odo-age${ago >= 30 ? " old" : ""}">Uppdaterad ${esc(when)}${ago >= 30 ? " · dags att uppdatera" : ""}</span>`;
 }
 
 // Att hålla koll på: bokningar, tvätt, brådskande och det som händer inom tre månader. Resten bakom "Visa fler".
