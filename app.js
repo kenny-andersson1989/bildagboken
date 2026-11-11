@@ -632,6 +632,10 @@ function bookingRows(c) {
       label: past ? "Logga" : days === 0 ? "I dag" : days === 1 ? "I morgon" : daysText(days),
       act: "open-booking",
       id: b.id,
+      quick: past ? "" : [
+        b.lat != null || b.addr || b.place ? `<button class="chip-btn" type="button" data-act="map-directions" data-id="${esc(b.id)}">${icon("pin", 14)} Vägbeskrivning</button>` : "",
+        b.phone ? `<a class="chip-btn" href="tel:${esc(String(b.phone).replace(/[^\d+]/g, ""))}">${icon("phone", 14)} Ring</a>` : "",
+      ].join(""),
     };
   });
 }
@@ -1061,8 +1065,12 @@ function rowHtml(x) {
     <span><span class="dl-t">${esc(x.title)}</span><span class="dl-s">${esc(x.sub || "")}</span></span>
     <span class="pill ${x.level}">${esc(x.label)}</span>`;
   return x.act
-    ? `<button class="dl as-btn" type="button" data-act="${x.act}" data-id="${esc(x.id)}">${inner}</button>`
+    ? `<button class="dl as-btn" type="button" data-act="${x.act}" data-id="${esc(x.id || "")}"${x.type ? ` data-type="${esc(x.type)}"` : ""}>${inner}</button>`
     : `<div class="dl">${inner}</div>`;
+}
+// En rad med eventuella snabbknappar under (vägbeskrivning och ring för en bokning).
+function rowWithQuick(x) {
+  return rowHtml(x) + (x.quick ? `<div class="row-quick">${x.quick}</div>` : "");
 }
 
 function installCard() {
@@ -1125,7 +1133,7 @@ function viewOverview() {
   const dls = deadlines(c);
   parts.push(`<article class="card">
     <h2>Att hålla koll på</h2>
-    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...dls])}
+    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...odoReminder(c), ...dls])}
     ${!c.besiktning && !c.forsakringDatum ? `<div class="ask"><button class="btn-soft" type="button" data-act="edit-car" data-section="dates">Lägg till besiktning, försäkring och skatt</button></div>` : ""}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
   </article>`);
@@ -1191,6 +1199,15 @@ function viewOverview() {
 }
 
 // "Uppdaterad för 3 veckor sedan" under mätarställningen. Orange efter en månad.
+// Påminnelse när mätarställningen inte har uppdaterats på en månad, så att underhållet räknas rätt.
+function odoReminder(c) {
+  const last = latestOdoEntry(c.id);
+  if (!last?.date) return [];
+  const ago = -daysUntil(parseDate(last.date));
+  if (ago < 30) return [];
+  return [{ icon: "gauge", title: "Dags att uppdatera mätarställningen", sub: `Senast ${fmtDateShort(last.date)}, ${fmt(last.odometer)} mil`, level: "soon", label: "Uppdatera", act: "new-entry", type: "matare", always: true, days: 0 }];
+}
+
 function odoAgeHtml(c) {
   const last = latestOdoEntry(c.id);
   if (!last?.date) return "";
@@ -1204,7 +1221,7 @@ function kollRowsHtml(rows) {
   const near = (x) => x.always || x.level === "urgent" || x.level === "soon" || (x.days != null && x.days <= 92);
   const shown = rows.filter(near), later = rows.filter((x) => !near(x));
   const all = S.kollAll;
-  return `<div class="rows">${[...shown, ...(all ? later : [])].map(rowHtml).join("")}</div>
+  return `<div class="rows">${[...shown, ...(all ? later : [])].map(rowWithQuick).join("")}</div>
     ${later.length ? `<button class="link" type="button" data-act="toggle-koll" style="margin-top:10px">${all ? "Visa färre" : `Visa ${later.length} till`}</button>` : ""}`;
 }
 
@@ -1301,7 +1318,14 @@ function logListHtml() {
   };
   const { html: upcoming, n: nUpcoming } = upcomingHtml(q);
   const hits = ents.length + nUpcoming;
-  const count = q ? `<p class="hint" style="margin:0 4px">${hits === 1 ? "1 träff" : `${hits} träffar`} för ”${esc(q)}”</p>` : "";
+  // Summa för det som visas, när man har filtrerat eller sökt: i år och totalt.
+  const paid = (S.filter !== "alla" || q) ? ents.filter((e) => e.amount > 0) : [];
+  const year = String(new Date().getFullYear());
+  const yearSum = paid.filter((e) => (e.date || "").startsWith(year)).reduce((a, e) => a + e.amount, 0);
+  const allSum = paid.reduce((a, e) => a + e.amount, 0);
+  const sumText = paid.length ? `${fmtKr(yearSum)} kr i år${allSum !== yearSum ? ` · ${fmtKr(allSum)} kr totalt` : ""}` : "";
+  const countText = q ? `${hits === 1 ? "1 träff" : `${hits} träffar`} för ”${esc(q)}”` : S.filter !== "alla" ? `${ents.length === 1 ? "1 post" : `${ents.length} poster`}` : "";
+  const count = countText ? `<p class="hint log-sum" style="margin:0 4px">${countText}${sumText ? ` · <b>${esc(sumText)}</b>` : ""}</p>` : "";
   if (!groups.length && upcoming) return count + upcoming;
   if (!groups.length) {
     return q
@@ -1630,6 +1654,30 @@ function openSheet(title, body, { back = null, backId = null } = {}) {
     if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
   }, 0);
 }
+// Dra rutan nedåt i handtaget eller rubriken för att stänga den, som i andra appar på telefonen.
+(() => {
+  let startY = null, dy = 0;
+  sheet.addEventListener("touchstart", (ev) => {
+    if (window.matchMedia("(min-width: 900px)").matches) return;
+    if (!ev.target.closest(".grab, .sheet-head") || ev.target.closest("button")) return;
+    startY = ev.touches[0].clientY; dy = 0; sheet.style.transition = "none";
+  }, { passive: true });
+  sheet.addEventListener("touchmove", (ev) => {
+    if (startY == null) return;
+    dy = Math.max(0, ev.touches[0].clientY - startY);
+    sheet.style.transform = `translateY(${dy}px)`;
+  }, { passive: true });
+  const end = () => {
+    if (startY == null) return;
+    startY = null;
+    sheet.style.transition = "transform .18s ease-out";
+    if (dy > 90) { sheet.style.transform = "translateY(100%)"; setTimeout(() => { closeSheet(); sheet.style.transform = ""; sheet.style.transition = ""; }, 170); }
+    else { sheet.style.transform = ""; setTimeout(() => { sheet.style.transition = ""; }, 200); }
+  };
+  sheet.addEventListener("touchend", end);
+  sheet.addEventListener("touchcancel", end);
+})();
+
 function closeSheet(fromBack = false) {
   if (sheetHistory) {
     if (!fromBack && history.state?.bdSheet) { ignorePops++; history.back(); }
@@ -1680,6 +1728,56 @@ function typePicker() {
   <p class="hint" style="margin-top:14px">Det du sparar syns direkt hos din sambo.</p>`);
 }
 
+// Snabbval under ett datumfält: I dag och I går.
+function dateQuick(target) {
+  return `<div class="date-quick" data-for="${target}">
+    <button type="button" class="chip-btn" data-act="date-quick" data-target="${target}" data-d="0">I dag</button>
+    <button type="button" class="chip-btn" data-act="date-quick" data-target="${target}" data-d="-1">I går</button>
+  </div>`;
+}
+function markDateQuick(input) {
+  const box = document.querySelector(`.date-quick[data-for="${input.id}"]`);
+  if (!box) return;
+  box.querySelectorAll("button").forEach((b) => {
+    const d = new Date(); d.setDate(d.getDate() + Number(b.dataset.d));
+    b.setAttribute("aria-pressed", String(input.value === ymd(d)));
+  });
+}
+
+// Förslag i textfälten från det ni har skrivit förut: verkstäder, mackar och platser, de vanligaste först.
+const SUGGEST_FIELDS = { "ef-workshop": ["workshop"], "ef-station": ["station"], "ef-place": ["place"] };
+function attachSuggestions(form, type) {
+  for (const [id, keys] of Object.entries(SUGGEST_FIELDS)) {
+    const input = form.querySelector("#" + id);
+    if (!input) continue;
+    const count = new Map();
+    for (const e of S.entries) {
+      if (e.carId !== S.carId || (id === "ef-place" && e.type !== type)) continue;
+      for (const k of keys) { const v = String(e[k] || "").trim(); if (v) count.set(v, (count.get(v) || 0) + 1); }
+    }
+    if (id === "ef-workshop") for (const b of car()?.bookings || []) if (b.place) count.set(b.place, (count.get(b.place) || 0) + 1);
+    const values = [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([v]) => v);
+    if (!values.length) continue;
+    const listId = id + "-list";
+    input.setAttribute("list", listId);
+    input.insertAdjacentHTML("afterend", `<datalist id="${listId}">${values.map((v) => `<option value="${esc(v)}"></option>`).join("")}</datalist>`);
+  }
+}
+
+// Bilden i en post i full storlek. Dubbeltryck zoomar, och man kan nypa för att zooma på telefonen.
+function openLightbox(src, alt = "") {
+  if (!src) return;
+  $("#lightbox")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Bild">
+    <button class="icon-btn lb-close" type="button" data-act="lightbox-close" aria-label="Stäng bilden">${icon("close", 18)}</button>
+    <div class="lb-scroll"><img src="${esc(src)}" alt="${esc(alt)}"></div>
+  </div>`);
+  const lb = $("#lightbox");
+  lb.querySelector("img").addEventListener("dblclick", (ev) => { ev.currentTarget.classList.toggle("zoomed"); });
+  lb.addEventListener("click", (ev) => { if (ev.target === lb || ev.target.classList.contains("lb-scroll")) lb.remove(); });
+  lb.querySelector(".lb-close").focus();
+}
+
 function field(label, input, hint = "") {
   return `<label class="field"><span>${label}</span>${input}${hint ? `<small>${hint}</small>` : ""}</label>`;
 }
@@ -1704,6 +1802,7 @@ function bookingForm(b = {}) {
         <input type="hidden" name="placeId" id="bk-pid" value="${esc(b.placeId || "")}">
         <input type="hidden" name="placeSrc" id="bk-src" value="${esc(b.geoSrc || "")}">
         <span class="suggest" id="bk-addr-suggest" role="listbox" hidden></span>`, "Med gatuadress hittar kartan rätt när bokningen ligger i kalendern.")}
+      ${field("Telefon", `<input type="tel" name="phone" id="bk-phone" value="${esc(b.phone || "")}" placeholder="Fylls i från kartan om det finns" autocomplete="off">`)}
       <div class="bk-map" id="bk-map" hidden>
         <div class="bk-map-inner" id="bk-map-inner"></div>
         <button class="bk-map-open" type="button" data-act="map-open" aria-label="Öppna platsen i en kartapp"><span>${icon("pin", 14)} Öppna i kartan</span></button>
@@ -1742,7 +1841,7 @@ function saveBooking(form, wantCalendar = false) {
     id, kind: str("kind") || "service", date, time: str("time") || null, place: str("place") || null,
     addr: str("placeAddr") || null, lat: lat ?? null, lon: lon ?? null,
     placeId: lat != null ? str("placeId") || null : null, geoSrc: lat != null ? str("placeSrc") || null : null,
-    note: str("note") || null,
+    note: str("note") || null, phone: str("phone") || null,
     // Vem som bokade och när behålls när bokningen ändras (visas under Senaste).
     createdBy: prev?.createdBy || uid(), createdAt: prev?.createdAt || Date.now(),
   });
@@ -1934,7 +2033,7 @@ function removeBooking(carId, bookingId) {
 function entryForm(type, e = {}, opts = {}) {
   const c = car();
   const v = (k) => esc(e[k] ?? "");
-  const date = field("Datum", `<input type="date" name="date" id="ef-date" required value="${esc(e.date || todayStr())}">`);
+  const date = field("Datum", `<input type="date" name="date" id="ef-date" required value="${esc(e.date || todayStr())}">`) + dateQuick("ef-date");
   const odo = (required = false) => field("Mätarställning (mil)", `<input name="odometer" id="ef-odometer" inputmode="numeric" ${required ? "required" : ""} placeholder="${odoOf(c) != null ? `Senast ${fmt(odoOf(c))}` : "Till exempel 21 480"}" value="${e.odometer ?? ""}">`);
   const amount = (example, label = "Kostnad (kr)", extra = "", hint = "") => field(label, `<input name="amount" id="ef-amount" inputmode="decimal"${extra} value="${e.amount ?? ""}" placeholder="Till exempel ${example}">`, hint);
   const note = field("Anteckning", `<textarea name="note" id="ef-note" rows="2">${v("note")}</textarea>`);
@@ -2024,6 +2123,8 @@ function entryForm(type, e = {}, opts = {}) {
       <button class="btn primary block" type="submit">Spara</button>
     </form>`, opts.back ? { back: opts.back, backId: opts.backId } : isEdit ? { back: "open-entry", backId: e.id } : { back: opts.bookingId ? null : "new-entry" });
   if (opts.recurringId) { const lab = $("#ef-date")?.closest("label")?.querySelector("span"); if (lab) lab.textContent = "Första betalningen"; }
+  const ef = $('form[data-form="entry"]');
+  if (ef) { attachSuggestions(ef, type); if ($("#ef-date")) markDateQuick($("#ef-date")); }
   // Sätt markören i första fältet bara på dator. På telefon öppnar det tangentbordet direkt och döljer formuläret.
   if (!window.matchMedia("(pointer: coarse)").matches) {
     if (type === "tank" && !isEdit) $("#ef-amount")?.focus({ preventScroll: true });
@@ -2104,8 +2205,9 @@ async function appleSearch(kind, q) {
     const isPoi = !!pl.pointOfInterestCategory || (pl.name && pl.name !== street && pl.name !== pl.locality);
     const lat = pl.coordinate?.latitude, lon = pl.coordinate?.longitude;
     const pid = pl.id || "";
+    const tel = pl.telephone || pl.phoneNumber || "";
     return kind === "poi"
-      ? (isPoi ? { title: pl.name, sub: addr, name: pl.name, addr, lat, lon, pid, src: "apple" } : null)
+      ? (isPoi ? { title: pl.name, sub: addr, name: pl.name, addr, lat, lon, pid, tel, src: "apple" } : null)
       : { title: addr.split(", ")[0], sub: addr.split(", ").slice(1).join(", "), name: "", addr, lat, lon, pid: "", src: "apple" };
   }).filter(Boolean);
 }
@@ -2145,7 +2247,7 @@ async function placeSearch(kind, q) {
     const seen = new Set();
     const list = found.filter((x) => x.title && !seen.has(x.title + x.sub) && seen.add(x.title + x.sub)).slice(0, 6);
     box.innerHTML = list.length
-      ? list.map((x) => `<button type="button" role="option" data-act="place-pick" data-kind="${kind}" data-name="${esc(x.name)}" data-addr="${esc(x.addr)}" data-lat="${x.lat ?? ""}" data-lon="${x.lon ?? ""}" data-pid="${esc(x.pid || "")}" data-src="${x.src || ""}"><b>${esc(x.title)}</b>${x.sub ? `<span>${esc(x.sub)}</span>` : ""}</button>`).join("")
+      ? list.map((x) => `<button type="button" role="option" data-act="place-pick" data-kind="${kind}" data-name="${esc(x.name)}" data-addr="${esc(x.addr)}" data-lat="${x.lat ?? ""}" data-lon="${x.lon ?? ""}" data-pid="${esc(x.pid || "")}" data-tel="${esc(x.tel || "")}" data-src="${x.src || ""}"><b>${esc(x.title)}</b>${x.sub ? `<span>${esc(x.sub)}</span>` : ""}</button>`).join("")
       : `<p class="hint">${kind === "poi" ? "Hittade inget företag med det namnet. Skriv namnet själv och fyll i adressen nedanför." : "Hittade ingen adress. Skriv den själv, den kommer ändå med i kalendern."}</p>`;
     box.hidden = false;
     input.setAttribute("aria-expanded", "true");
@@ -2229,8 +2331,11 @@ async function refreshBookingPlace() {
 // Välj kartapp: Apple Kartor eller Google Maps, med platsen ifylld.
 // Med Apples plats-id öppnas företagets egen sida i Apple Kartor (öppettider, telefon och vägbeskrivning).
 // Utan id söks företagets namn nära platsen, så att Kartor hittar företaget och inte bara sätter en nål.
-function openMapChooser({ name, addr, lat, lon, pid }) {
+function openMapChooser({ name, addr, lat, lon, pid, directions = false }) {
   const q = [name, addr].filter(Boolean).join(", ");
+  if (directions) return mapChoiceDialog("Vägbeskrivning", q,
+    `https://maps.apple.com/?${new URLSearchParams({ daddr: addr || q || `${lat},${lon}`, dirflg: "d", ...(lat != null ? { ll: `${lat},${lon}` } : {}) })}`,
+    `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q || `${lat},${lon}`)}&travelmode=driving`);
   const near = lat != null ? { sll: `${lat},${lon}` } : addr ? { near: addr } : {};
   const apple = pid
     ? `https://maps.apple.com/place?${new URLSearchParams({ "place-id": pid, ...(name ? { name } : {}) })}`
@@ -2238,10 +2343,13 @@ function openMapChooser({ name, addr, lat, lon, pid }) {
       ? `https://maps.apple.com/?${new URLSearchParams({ q: name, ...near })}`
       : `https://maps.apple.com/?${new URLSearchParams({ address: addr || `${lat},${lon}`, ...(lat != null ? { ll: `${lat},${lon}` } : {}) })}`;
   const google = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q || `${lat},${lon}`)}`;
+  mapChoiceDialog("Öppna i kartan", q, apple, google);
+}
+function mapChoiceDialog(title, q, apple, google) {
   document.getElementById("map-choice")?.remove();
   document.body.insertAdjacentHTML("beforeend", `<div class="confirm-scrim" id="map-choice-scrim" data-act="map-choice-close"></div>
     <div class="confirm" id="map-choice" role="dialog" aria-modal="true" aria-labelledby="map-choice-t">
-      <h3 id="map-choice-t">Öppna i kartan</h3>
+      <h3 id="map-choice-t">${esc(title)}</h3>
       ${q ? `<p style="margin:0 0 12px;color:var(--ink-2)">${esc(q)}</p>` : ""}
       <div class="form">
         <a class="btn primary block" href="${esc(apple)}" target="_blank" rel="noopener" data-act="map-choice-close">Apple Kartor</a>
@@ -2561,12 +2669,13 @@ function openEntry(id, { fromCat = null } = {}) {
     <div class="btn-row" style="margin-top:18px">
       <button class="btn primary" type="button" data-act="edit-entry" data-id="${esc(e.id)}">Ändra</button>
       <button class="btn danger" type="button" data-act="delete-entry" data-id="${esc(e.id)}">Ta bort</button>
-    </div>`, fromCat?.startsWith("item:") ? { back: "edit-item", backId: fromCat.slice(5) } : fromCat?.startsWith("part:") ? { back: "open-part", backId: fromCat.slice(5) } : fromCat ? { back: "open-cat", backId: fromCat } : {});
+    </div>
+    ${e.recurringId || e._virtual ? "" : `<button class="btn ghost block" type="button" data-act="log-again" data-id="${esc(e.id)}" style="margin-top:10px">${icon("plus", 18)} Logga igen</button>`}`, fromCat?.startsWith("item:") ? { back: "edit-item", backId: fromCat.slice(5) } : fromCat?.startsWith("part:") ? { back: "open-part", backId: fromCat.slice(5) } : fromCat ? { back: "open-cat", backId: fromCat } : {});
   if (e.photoId) {
     getDoc(ref("photos", e.photoId)).then((s) => {
       const box = $("#photo-box");
       if (!box) return;
-      box.innerHTML = s.exists() ? `<img class="photo" src="${esc(s.data().data)}" alt="Bifogad bild för ${esc(entryTitle(e))}">` : `<p class="hint">Bilden finns inte längre.</p>`;
+      box.innerHTML = s.exists() ? `<button class="photo-zoom" type="button" data-act="photo-zoom" aria-label="Visa bilden större"><img class="photo" src="${esc(s.data().data)}" alt="Bifogad bild för ${esc(entryTitle(e))}"></button>` : `<p class="hint">Bilden finns inte längre.</p>`;
     }).catch(() => { const box = $("#photo-box"); if (box) box.innerHTML = `<p class="hint">Bilden gick inte att hämta just nu.</p>`; });
   }
 }
@@ -2667,7 +2776,11 @@ function itemRowHtml(i) {
     <label class="field"><span>Namn</span><input name="name" value="${esc(i.name)}" required></label>
     <div class="row2">
       <label class="field"><span>Intervall (mil)</span><input name="mil" inputmode="numeric" value="${i.mil ?? ""}" placeholder="–"></label>
-      <label class="field"><span>Intervall (månader)</span><input name="months" inputmode="numeric" value="${i.months ?? ""}" placeholder="–"></label>
+      ${(() => {
+        const years = i.months && i.months % 12 === 0;
+        return `<label class="field"><span>Intervall (tid)</span><span class="unit-row"><input name="months" inputmode="numeric" value="${i.months ? (years ? i.months / 12 : i.months) : ""}" placeholder="–" aria-label="Intervall i tid">
+          <select name="monthsUnit" aria-label="Enhet"><option value="ar"${years || !i.months ? " selected" : ""}>år</option><option value="man"${i.months && !years ? " selected" : ""}>mån</option></select></span></label>`;
+      })()}
     </div>
     <div class="row2">
       <label class="field"><span>Senast bytt</span><input name="baseDate" type="date" value="${esc(i.baseDate || "")}"></label>
@@ -2833,16 +2946,20 @@ const ACTIONS = {
     c.recurring = list;
     closeSheet(); render(); showToast("Avslutad från och med i dag");
   },
-  async "delete-rec"(el) {
+  "delete-rec"(el) {
     const c = car();
     const r = (c.recurring || []).find((x) => x.id === el.dataset.id);
     if (!r) return;
-    const ok = await confirmDialog({ title: "Ta bort den återkommande parkeringen?", lines: ["Alla dess betalningar försvinner ur loggen och Ekonomi, även de som har varit. Vill du bara sluta betala, välj Avsluta i stället."] });
-    if (!ok) return;
     const list = (c.recurring || []).filter((x) => x.id !== r.id);
     updateDoc(ref("cars", c.id), { recurring: list }).catch(onWriteError);
     c.recurring = list;
-    closeSheet(); render(); showToast("Borttagen");
+    closeSheet(); render();
+    showToast("Den återkommande parkeringen är borttagen", 6000, () => {
+      const again = [...(c.recurring || []).filter((x) => x.id !== r.id), r];
+      c.recurring = again;
+      updateDoc(ref("cars", c.id), { recurring: again }).catch(onWriteError);
+      render();
+    });
   },
   "new-booking"() { bookingForm(); },
   "booking-calendar"(el) {
@@ -2917,6 +3034,7 @@ const ACTIONS = {
     set("bk-lon", el.dataset.lon);
     set("bk-pid", el.dataset.pid || "");
     set("bk-src", el.dataset.src || "");
+    if (el.dataset.tel && !$("#bk-phone")?.value.trim()) set("bk-phone", el.dataset.tel);
     showBookingMap();
     Object.values(PLACE_FIELDS).forEach((x) => {
       const b = document.getElementById(x.box); if (b) b.hidden = true;
@@ -2939,16 +3057,15 @@ const ACTIONS = {
   "toggle-koll"() { S.kollAll = !S.kollAll; render(); },
   "hide-maint-hint"(el) { pref.set("maintHintHidden." + S.carId, el.dataset.n); render(); },
   "book-inspection"() { bookingForm({ kind: "besiktning" }); },
-  async "deadline-remove"(el) {
+  "deadline-remove"(el) {
     const key = el.dataset.id;
     const fields = { besiktning: { besiktning: null }, forsakring: { forsakringDatum: null }, skatt: { skattManad: "av" } }[key];
     if (!fields) return;
-    const name = { besiktning: "sista dagen för besiktning", forsakring: "datumet för försäkringen", skatt: "månaden för skatten" }[key];
-    const ok = await confirmDialog({ title: `Ta bort ${name}?`, lines: ["Påminnelsen försvinner för er båda. Du kan lägga in det igen under Ändra datum."], warn: "" });
-    if (!ok) return;
-    updateDoc(ref("cars", S.carId), fields).catch(onWriteError);
+    const c = car(), carId = S.carId;
+    const before = Object.fromEntries(Object.keys(fields).map((k) => [k, c[k] ?? null]));
+    updateDoc(ref("cars", carId), fields).catch(onWriteError);
     closeSheet();
-    showToast("Datumet är borttaget");
+    showToast("Datumet är borttaget", 6000, () => updateDoc(ref("cars", carId), before).catch(onWriteError));
   },
   "open-cat"(el) {
     // Id:t kan bära med sig månaden ("Bränsle@@2026-11"), så att tillbaka från en post visar samma månad.
@@ -3004,38 +3121,58 @@ const ACTIONS = {
         showToast("Bokningen är borttagen");
     }
   },
-  async "delete-booking"(el) {
+  "delete-booking"(el) {
     const b = (car()?.bookings || []).find((x) => x.id === el.dataset.id);
     if (!b) return closeSheet();
-    const ok = await confirmDialog({
-      title: "Ta bort bokningen?",
-      lines: [`${BOOK_KINDS[b.kind] || "Bokning"} · ${bookingWhen(b)}`, b.place],
-    });
-    if (!ok) return;
-    removeBooking(S.carId, b.id);
+    const carId = S.carId;
+    removeBooking(carId, b.id);
     closeSheet();
-    showToast("Bokningen är borttagen");
+    showToast("Bokningen är borttagen", 6000, () => {
+      const c = S.cars.find((x) => x.id === carId);
+      if (!c) return;
+      const list = [...(c.bookings || []).filter((x) => x.id !== b.id), b];
+      c.bookings = list;
+      updateDoc(ref("cars", carId), { bookings: list }).catch(onWriteError);
+      render();
+    });
+  },
+  // Ny post med samma uppgifter som en tidigare, till exempel samma tvätt eller parkering. Datum, mätarställning och bild är nya.
+  "log-again"(el) {
+    const e = S.entries.find((x) => x.id === el.dataset.id);
+    if (!e) return;
+    const { id, date, odometer, photoId, createdAt, createdBy, tireAction, recurringId, ...rest } = e;
+    entryForm(e.type, rest, { back: "open-entry", backId: e.id });
+  },
+  "photo-zoom"(el) { openLightbox(el.querySelector("img")?.src, el.querySelector("img")?.alt); },
+  "lightbox-close"() { $("#lightbox")?.remove(); },
+  "date-quick"(el) {
+    const input = document.getElementById(el.dataset.target);
+    if (!input) return;
+    const d = new Date(); d.setDate(d.getDate() + Number(el.dataset.d || 0));
+    input.value = ymd(d);
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    markDateQuick(input);
+  },
+  "map-directions"(el) {
+    const b = (car()?.bookings || []).find((x) => x.id === el.dataset.id);
+    if (b) openMapChooser({ name: b.place, addr: b.addr, lat: b.lat, lon: b.lon, pid: b.placeId, directions: true });
   },
   "edit-entry"(el) {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (e) entryForm(e.type, e);
   },
-  async "delete-entry"(el) {
+  "delete-entry"(el) {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (!e) return closeSheet();
-    const detail = entryDetail(e);
-    const ok = await confirmDialog({
-      title: `Ta bort ${TYPE_DEFINITE[e.type] || "posten"}?`,
-      lines: [
-        [fmtDate(e.date), e.amount != null ? `${fmtKr(e.amount)} kr` : null, `loggad av ${whoName(e.createdBy).replace(/^Du$/, "dig")}`].filter(Boolean).join(" · "),
-        e.type === "eget" || e.type === "kostnad" ? entryTitle(e) : detail,
-      ],
-    });
-    if (!ok) return;
-    deleteDoc(ref("entries", e.id)).catch(onWriteError);
-    if (e.photoId) deleteDoc(ref("photos", e.photoId)).catch(() => {});
+    const { id, ...data } = e;
+    deleteDoc(ref("entries", id)).catch(onWriteError);
+    // Bilden tas bort först när det inte längre går att ångra.
+    const photoTimer = e.photoId ? setTimeout(() => deleteDoc(ref("photos", e.photoId)).catch(() => {}), 8000) : null;
     closeSheet();
-    showToast("Borttaget");
+    showToast(`${TYPE[e.type]?.label || "Posten"} är borttagen`, 6000, () => {
+      clearTimeout(photoTimer);
+      setDoc(ref("entries", id), clean(data)).catch(onWriteError);
+    });
   },
   filter(el) { S.filter = el.dataset.f; render(); },
   "clear-search"() {
@@ -3404,7 +3541,7 @@ function saveItems(form) {
       id: r.dataset.item,
       name: g("name"),
       mil: num(g("mil")),
-      months: num(g("months")),
+      months: num(g("months")) != null ? Math.round(num(g("months")) * (g("monthsUnit") === "man" ? 1 : 12)) || null : null,
       baseDate: g("baseDate") || null,
       baseMil: num(g("baseMil")),
     });
@@ -3489,6 +3626,7 @@ function onInput(ev) {
 }
 
 function onChange(ev) {
+  if (ev.target.id === "ef-date") markDateQuick(ev.target);
   if (ev.target.id === "bk-addr") geocodeBookingAddress();
   if ((ev.target.id === "ef-date" || ev.target.id === "ef-category") && $("#ef-nextBesiktning")) updateNextInspection();
   if (ev.target.id === "fuel-range") {
@@ -3515,13 +3653,25 @@ function onChange(ev) {
 /* --------------------------------------------------------- toast & notify */
 
 let toastTimer;
-function showToast(text, ms = 3500) {
+// Meddelande längst ner. Med undo visas en Ångra-knapp så länge meddelandet syns.
+let toastUndo = null;
+function showToast(text, ms = 3500, undo = null) {
   const t = $("#toast");
-  t.textContent = text;
+  t.innerHTML = `<span>${esc(text)}</span>${undo ? `<button class="toast-undo" type="button" id="toast-undo">Ångra</button>` : ""}`;
   t.hidden = false;
+  toastUndo = undo;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, ms);
+  toastTimer = setTimeout(() => { t.hidden = true; toastUndo = null; }, undo ? Math.max(ms, 6000) : ms);
 }
+document.addEventListener("click", (ev) => {
+  if (ev.target.closest?.("#toast-undo") && toastUndo) {
+    const fn = toastUndo;
+    toastUndo = null;
+    $("#toast").hidden = true;
+    fn();
+    showToast("Ångrat");
+  }
+});
 
 function notify(text, tag) {
   if (document.visibilityState === "visible") {
@@ -3681,6 +3831,7 @@ document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") { ev.preventDefault(); hideSuggestions(); document.getElementById(field.input).focus(); return; }
   }
   if (ev.key !== "Escape") return;
+  if (document.getElementById("lightbox")) return $("#lightbox").remove();
   if (document.getElementById("map-choice")) return ACTIONS["map-choice-close"]();
   if (!$("#confirm").hidden) return closeConfirm(false);
   if (!sheet.hidden) closeSheet();
@@ -3694,6 +3845,7 @@ window.addEventListener("popstate", () => {
     if (S.view && location.hash.slice(1) !== S.view) history.replaceState(null, "", "#" + S.view);
     return;
   }
+  $("#lightbox")?.remove();
   if (document.getElementById("map-choice")) ACTIONS["map-choice-close"]();
   if (!$("#confirm").hidden) closeConfirm(false);
   if (!sheet.hidden) closeSheet(true);
