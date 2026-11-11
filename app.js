@@ -561,7 +561,8 @@ function tireDeadline(c) {
     const oct1 = new Date(y, 9, 1), dec1 = new Date(y, 11, 1), apr1 = new Date(y, 3, 1);
     if (t >= oct1 && t < dec1) return { key: "dack", date: dec1, calTitle: "Vinterdäck ska vara på", icon: "tire", title: "Vinterdäck på", sub: "Senast 1 december · sommardäck sitter på", days: daysUntil(dec1) };
     if (t >= dec1 || t < apr1) return { icon: "tire", title: "Vinterdäck på", sub: "Krävs vid vinterväglag 1 december–31 mars", days: -1, label: "Nu", level: "urgent" };
-    return { icon: "tire", title: "Sommardäck sitter på", sub: "Nästa byte i oktober–november", days: daysUntil(new Date(y, 9, 15)), level: "ok" };
+    // Sommardäcken sitter på och det är inte dags att byta: ingen rad (vilka däck som sitter på syns under Bilen → Däck).
+    return null;
   }
   const mar15 = new Date(y, 2, 15), apr15 = new Date(y, 3, 15), oct1 = new Date(y, 9, 1);
   if (t > apr15 && t < oct1) {
@@ -572,11 +573,12 @@ function tireDeadline(c) {
   if (t >= mar15 && t <= apr15) {
     return { key: "dack", date: apr15, calTitle: studded ? "Dubbdäcken ska vara av" : "Dags för sommardäck", icon: "tire", title: "Sommardäck på", sub: studded ? "Dubbdäck av senast 15 april" : "Byt när vårvädret är stabilt", days: daysUntil(apr15) };
   }
-  return { icon: "tire", title: "Vinterdäck sitter på", sub: studded ? "Dubbdäck · av senast 15 april" : "Byt till sommardäck i april", days: null, label: "Klart", level: "ok" };
+  // Vinterdäcken sitter på och det är inte dags att byta: ingen rad.
+  return null;
 }
 
 function deadlines(c) {
-  const out = [tireDeadline(c)];
+  const out = [tireDeadline(c)].filter(Boolean);
   // Sista dagen för besiktning. Är en tid redan bokad (före sista dagen) syns den i bokningen i stället.
   const booked = (c.bookings || []).some((b) => b.kind === "besiktning" && b.date >= todayStr() && (!c.besiktning || b.date <= c.besiktning));
   if (c.besiktning && !booked) {
@@ -1962,7 +1964,9 @@ function odoAgeHtml(c) {
 // Att hålla koll på: bokningar, tvätt, brådskande och det som händer inom tre månader. Resten bakom "Visa fler".
 function kollRowsHtml(rows) {
   const near = (x) => x.always || x.level === "urgent" || x.level === "soon" || (x.days != null && x.days <= 92);
-  const shown = rows.filter(near), later = rows.filter((x) => !near(x));
+  // Det som är nära eller bråttom visas, men alltid minst tre saker om det finns så många.
+  let shown = rows.filter(near), later = rows.filter((x) => !near(x));
+  if (shown.length < 3) { shown = [...shown, ...later.slice(0, 3 - shown.length)]; later = later.slice(Math.max(0, 3 - rows.filter(near).length)); }
   const all = S.kollAll;
   return `<div class="rows">${[...shown, ...(all ? later : [])].map(rowWithQuick).join("")}</div>
     ${later.length ? `<button class="link" type="button" data-act="toggle-koll" style="margin-top:10px">${all ? "Visa färre" : `Visa ${later.length} till`}</button>` : ""}`;
