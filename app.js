@@ -2746,6 +2746,7 @@ function entryForm(type, e = {}, opts = {}) {
           <div id="ef-tirekind-box"${isSwap(actDefault) ? " hidden" : ""}>${field("Vilka däck?", `<select name="tireKind" id="ef-tireKind"><option value="">Välj</option><option value="sommar"${e.tireKind === "sommar" ? " selected" : ""}>Sommardäck</option><option value="vinter"${e.tireKind === "vinter" ? " selected" : ""}>Vinterdäck</option></select>`)}</div>
           ${field("Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}" placeholder="Valfritt">`)}
         </div>
+        ${field("Var", `<input name="place" id="ef-place" value="${v("place")}" placeholder="Valfritt, till exempel Mölndals däckservice" autocomplete="off">`)}
         ${amount("800")}${odo(false)}${date}${more()}`;
       break;
     }
@@ -2786,6 +2787,7 @@ function entryForm(type, e = {}, opts = {}) {
     <form class="form" data-form="entry" data-type="${type}"${isEdit ? ` data-id="${esc(e.id)}"` : ""}${opts.recurringId ? ` data-rec="${esc(opts.recurringId)}"` : ""}${opts.bookingId ? ` data-booking="${esc(opts.bookingId)}"` : ""} novalidate>
       ${!isEdit && RECEIPT_TYPES.includes(type) ? receiptButton() : ""}
       ${body}
+      ${e.loc ? `<input type="hidden" name="loc" value="${esc(JSON.stringify(e.loc))}">` : ""}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
     </form>`, opts.back ? { back: opts.back, backId: opts.backId } : isEdit ? { back: "open-entry", backId: e.id } : { back: opts.bookingId ? null : "new-entry" });
@@ -2931,6 +2933,10 @@ async function showBookingMap() {
   const lat = num($("#bk-lat")?.value), lon = num($("#bk-lon")?.value);
   if (lat == null || lon == null) { box.hidden = true; return; }
   box.hidden = false;
+  return miniMap(inner, lat, lon, $("#bk-place")?.value || "");
+}
+// Liten karta med en nål. Apple Maps om det går, annars OpenStreetMap.
+async function miniMap(inner, lat, lon, title = "") {
   try { bookingMap?.destroy?.(); } catch { /* redan borta */ }
   bookingMap = null;
   inner.innerHTML = "";
@@ -2946,7 +2952,7 @@ async function showBookingMap() {
       colorScheme: dark ? mk.Map?.ColorSchemes?.Dark : mk.Map?.ColorSchemes?.Light,
     });
     bookingMap.cameraDistance = 900;
-    bookingMap.addAnnotation(new mk.MarkerAnnotation(coord, { title: $("#bk-place")?.value || "", color: "#E77026" }));
+    bookingMap.addAnnotation(new mk.MarkerAnnotation(coord, { title, color: "#E77026" }));
   } catch (err) {
     console.warn("Apple-kartan kunde inte visas", err);
     const d = 0.004;
@@ -3161,6 +3167,9 @@ async function saveEntry(form) {
   const fd = new FormData(form);
   const str = (k) => String(fd.get(k) ?? "").trim();
   const data = { type, carId: existing?.carId || c.id, date: str("date") || todayStr(), note: str("note") || null };
+  try { const l = JSON.parse(str("loc") || "null"); if (l && typeof l === "object") data.loc = l; } catch { /* ingen plats */ }
+  const typedPlace = str("workshop") || str("place");
+  if (data.loc?.name && typedPlace && typedPlace !== data.loc.name) data.loc = null;
   data.odometer = num(fd.get("odometer"));
   if (fd.has("amount")) data.amount = num(fd.get("amount"));
 
@@ -3219,6 +3228,7 @@ async function saveEntry(form) {
       data.tireAction = str("tireAction");
       data.depth = num(fd.get("depth"));
       data.tireKind = data.tireAction === "till_vinter" ? "vinter" : data.tireAction === "till_sommar" ? "sommar" : str("tireKind") || null;
+      data.place = str("place") || null;
       break;
     case "tvatt":
       data.place = str("place") || null;
@@ -3310,6 +3320,32 @@ async function saveEntry(form) {
   if (!existing && S.view !== "oversikt" && S.view !== "logg") setView("logg");
 }
 
+// Var något gjordes: verkstaden, platsen eller namnet från bokningen.
+const PLACE_TYPES = ["service", "dack", "kostnad"];
+function entryPlaceName(e) {
+  if (!PLACE_TYPES.includes(e.type) && !e.loc) return "";
+  return e.loc?.name || e.workshop || e.place || (e.type === "kostnad" && e.category === "Besiktning" ? (e.title || "").replace(/^Besiktning hos /, "") : "") || "";
+}
+// Kartan i en post. Saknar posten position letas platsen upp i Apple Maps en gång och sparas.
+async function showEntryMap(e) {
+  const box = $("#en-map"), inner = $("#en-map-inner");
+  if (!box || !inner) return;
+  let loc = e.loc;
+  if (loc?.lat == null) {
+    const name = entryPlaceName(e);
+    if (!name || name === "Besiktning") return;
+    try {
+      const hit = (await appleSearch("poi", name))[0] || (await appleSearch("addr", name))[0];
+      if (!hit || hit.lat == null || !document.contains(box)) return;
+      loc = clean({ name: e.loc?.name || name, addr: e.loc?.addr || hit.addr || null, lat: hit.lat, lon: hit.lon, pid: hit.pid || null });
+      updateDoc(ref("entries", e.id), { loc }).catch(onWriteError);
+      e.loc = loc;
+    } catch { return; }
+  }
+  box.hidden = false;
+  miniMap(inner, loc.lat, loc.lon, loc.name || "");
+}
+
 function openEntry(id, { fromCat = null } = {}) {
   const e = S.entries.find((x) => x.id === id);
   if (!e) return;
@@ -3326,6 +3362,7 @@ function openEntry(id, { fromCat = null } = {}) {
     e.place ? ["Plats", e.place] : null,
     e.type === "parkering" && e.fine ? ["Typ", "P-bot eller felparkeringsavgift"] : null,
     e.workshop ? ["Verkstad", e.workshop] : null,
+    e.loc?.addr ? ["Adress", e.loc.addr] : null,
     e.category && e.type === "kostnad" ? ["Typ", e.category] : null,
     e.depth != null ? ["Mönsterdjup", `${fmt(e.depth, 1)} mm`] : null,
     ["service", "eget"].includes(e.type) && workOf(e, c).length ? ["Gjordes", workOf(e, c).map(workText).join(", ")] : null,
@@ -3333,12 +3370,17 @@ function openEntry(id, { fromCat = null } = {}) {
   ].filter(Boolean);
   openSheet(entryTitle(e), `
     <dl class="detail-list">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
+    ${entryPlaceName(e) ? `<div class="bk-map" id="en-map"${e.loc?.lat != null ? "" : " hidden"} style="margin-top:14px">
+      <div class="bk-map-inner" id="en-map-inner"></div>
+      <button class="bk-map-open" type="button" data-act="entry-map" data-id="${esc(e.id)}" aria-label="Öppna platsen i en kartapp"><span>${icon("pin", 14)} Öppna i kartan</span></button>
+    </div>` : ""}
     ${e.photoId ? `<div id="photo-box" style="margin-top:14px"><p class="hint">Hämtar bilden …</p></div>` : ""}
     <div class="btn-row" style="margin-top:18px">
       <button class="btn primary" type="button" data-act="edit-entry" data-id="${esc(e.id)}">Ändra</button>
       <button class="btn danger" type="button" data-act="delete-entry" data-id="${esc(e.id)}">Ta bort</button>
     </div>
     ${e.recurringId || e._virtual ? "" : `<button class="btn ghost block" type="button" data-act="log-again" data-id="${esc(e.id)}" style="margin-top:10px">${icon("plus", 18)} Logga igen</button>`}`, fromCat?.startsWith("item:") ? { back: "edit-item", backId: fromCat.slice(5) } : fromCat?.startsWith("part:") ? { back: "open-part", backId: fromCat.slice(5) } : fromCat ? { back: "open-cat", backId: fromCat } : {});
+  if (entryPlaceName(e)) showEntryMap(e);
   if (e.photoId) {
     getDoc(ref("photos", e.photoId)).then((s) => {
       const box = $("#photo-box");
@@ -3767,14 +3809,16 @@ const ACTIONS = {
     if (!b) return closeSheet();
     const note = b.note || null;
     const date = b.date <= todayStr() ? b.date : todayStr();
+    // Platsen från bokningen (namn, adress och position) följer med till posten, så att kartan syns i loggen.
+    const loc = b.place || b.addr ? clean({ name: b.place || null, addr: b.addr || null, lat: b.lat ?? null, lon: b.lon ?? null, pid: b.placeId || null }) : null;
     switch (b.kind) {
       case "service":
       case "reparation":
-        return entryForm("service", { date, workshop: b.place, note, title: b.kind === "reparation" ? "Reparation" : null }, { bookingId: b.id });
+        return entryForm("service", { date, workshop: b.place, note, loc, title: b.kind === "reparation" ? "Reparation" : null }, { bookingId: b.id });
       case "dack":
-        return entryForm("dack", { date, note: [b.place, note].filter(Boolean).join(" · ") || null }, { bookingId: b.id });
+        return entryForm("dack", { date, place: b.place || null, note, loc }, { bookingId: b.id });
       case "besiktning":
-        return entryForm("kostnad", { date, category: "Besiktning", title: b.place ? `Besiktning hos ${b.place}` : "Besiktning", note }, { bookingId: b.id });
+        return entryForm("kostnad", { date, category: "Besiktning", title: b.place ? `Besiktning hos ${b.place}` : "Besiktning", note, loc }, { bookingId: b.id });
       default:
         removeBooking(c.id, b.id);
         closeSheet();
@@ -3812,6 +3856,12 @@ const ACTIONS = {
     input.value = ymd(d);
     input.dispatchEvent(new Event("change", { bubbles: true }));
     markDateQuick(input);
+  },
+  "entry-map"(el) {
+    const e = S.entries.find((x) => x.id === el.dataset.id);
+    if (!e) return;
+    const l = e.loc || {};
+    openMapChooser({ name: l.name || entryPlaceName(e), addr: l.addr, lat: l.lat, lon: l.lon, pid: l.pid });
   },
   "map-directions"(el) {
     const b = (car()?.bookings || []).find((x) => x.id === el.dataset.id);
