@@ -998,3 +998,9 @@ input.ios-switch:focus-visible { outline: 2px solid var(--accent); outline-offse
 .login .login-sub { margin: 0 auto 6px; text-align: center; font-size: 15px; }
 .login .btn { margin: 0; }
 .login-art { display: block; width: min(78%, 300px); height: auto; margin: 4px auto 4px; border-radius: 22%; box-shadow: 0 18px 40px -18px rgba(30, 80, 160, .45); }
+/* Dra kort i ordning */
+.card-row { position: relative; border-radius: 999px; transition: transform .18s ease; }
+.card-row.dragging { z-index: 2; transition: none; background: var(--glass-strong); box-shadow: 0 10px 24px -8px rgba(0,0,0,.3); }
+.drag-handle { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-3); cursor: grab; touch-action: none; border-radius: 12px; }
+.drag-handle:active { cursor: grabbing; color: var(--ink); }
+.drag-handle:focus-visible { outline: 2px solid var(--accent); }
