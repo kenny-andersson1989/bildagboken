@@ -857,3 +857,5 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .hero > .hero-car .hero-name { justify-content: flex-start; }
 .hero > .hero-car .sub { margin-top: 0; text-align: right; white-space: nowrap; }
 .hero .odo > .odo-age { text-align: right; }
+/* Däck: när frågan om vilka däck är dold tar mönsterdjupet hela raden */
+#ef-tire-row:has(#ef-tirekind-box[hidden]) { grid-template-columns: 1fr; }

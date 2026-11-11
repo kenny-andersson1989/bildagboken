@@ -134,6 +134,8 @@ const TYPE = {
 };
 const FUELS = ["Bensin", "Diesel", "Flexifuel (bensin/E85)", "Laddhybrid", "Hybrid", "El"];
 const COST_CATS = ["Försäkring", "Skatt", "Besiktning", "Parkering", "Tvätt", "Tillbehör", "Övrigt"];
+// Vid ett byte vet appen vilka däck det gäller, så frågan "Vilka däck?" behövs bara för övriga däckposter.
+const isSwap = (a) => a === "till_vinter" || a === "till_sommar";
 const TIRE_ACTIONS = {
   till_vinter: "Bytte till vinterdäck",
   till_sommar: "Bytte till sommardäck",
@@ -2739,9 +2741,9 @@ function entryForm(type, e = {}, opts = {}) {
     case "dack": {
       const actDefault = e.tireAction || ((c.tiresOn || "sommar") === "sommar" ? "till_vinter" : "till_sommar");
       body = `${field("Vad gjordes?", `<select name="tireAction" id="ef-tireAction">${Object.entries(TIRE_ACTIONS).map(([k, l]) => `<option value="${k}"${actDefault === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
-        <div class="row2">
-          ${field("Gäller", `<select name="tireKind" id="ef-tireKind"><option value="">–</option><option value="sommar"${e.tireKind === "sommar" ? " selected" : ""}>Sommardäck</option><option value="vinter"${e.tireKind === "vinter" ? " selected" : ""}>Vinterdäck</option></select>`)}
-          ${field("Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}">`)}
+        <div class="row2" id="ef-tire-row">
+          <div id="ef-tirekind-box"${isSwap(actDefault) ? " hidden" : ""}>${field("Vilka däck?", `<select name="tireKind" id="ef-tireKind"><option value="">Välj</option><option value="sommar"${e.tireKind === "sommar" ? " selected" : ""}>Sommardäck</option><option value="vinter"${e.tireKind === "vinter" ? " selected" : ""}>Vinterdäck</option></select>`)}</div>
+          ${field("Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}" placeholder="Valfritt">`)}
         </div>
         ${amount("800")}${odo(false)}${date}${more()}`;
       break;
@@ -3215,7 +3217,7 @@ async function saveEntry(form) {
     case "dack":
       data.tireAction = str("tireAction");
       data.depth = num(fd.get("depth"));
-      data.tireKind = str("tireKind") || (data.tireAction === "till_vinter" ? "vinter" : data.tireAction === "till_sommar" ? "sommar" : null);
+      data.tireKind = data.tireAction === "till_vinter" ? "vinter" : data.tireAction === "till_sommar" ? "sommar" : str("tireKind") || null;
       break;
     case "tvatt":
       data.place = str("place") || null;
@@ -4371,6 +4373,7 @@ function onInput(ev) {
 }
 
 function onChange(ev) {
+  if (ev.target.id === "ef-tireAction") { const box = $("#ef-tirekind-box"); if (box) box.hidden = isSwap(ev.target.value); }
   if (ev.target.id === "ef-scan") { scanReceipt(ev.target.files?.[0]); ev.target.value = ""; }
   if (ev.target.id === "ef-date") markDateQuick(ev.target);
   if (ev.target.id === "bk-addr") geocodeBookingAddress();
