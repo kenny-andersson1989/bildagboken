@@ -772,9 +772,11 @@ function setFuelDraft(p) {
   S.fuelDraft = { carId: S.carId, pct: p };
   const bar = $("#fuel-v");
   if (!bar) return p;
-  bar.className = `fuel-v ${pctClass(p)}`;
-  bar.querySelector("i").style.height = p + "%";
-  bar.querySelector("b").textContent = p;
+  bar.classList.remove("unset");
+  bar.querySelector("i").style.clipPath = `inset(0 ${100 - p}% 0 0 round 10px)`;
+  bar.querySelector(".fuel-thumb").style.left = p + "%";
+  const t = $("#fuel-pct");
+  if (t) { t.textContent = `${p} %`; t.className = `fuel-pct ${pctClass(p)}`; }
   bar.setAttribute("aria-valuenow", p);
   bar.setAttribute("aria-valuetext", pctText(p));
   return p;
@@ -796,12 +798,12 @@ document.addEventListener("pointerdown", (ev) => {
   fuelDrag = bar;
   try { bar.setPointerCapture(ev.pointerId); } catch { /* äldre webbläsare */ }
   const r = bar.getBoundingClientRect();
-  setFuelDraft(((r.bottom - ev.clientY) / r.height) * 100);
+  setFuelDraft(((ev.clientX - r.left) / r.width) * 100);
 });
 document.addEventListener("pointermove", (ev) => {
   if (!fuelDrag) return;
   const r = fuelDrag.getBoundingClientRect();
-  setFuelDraft(((r.bottom - ev.clientY) / r.height) * 100);
+  setFuelDraft(((ev.clientX - r.left) / r.width) * 100);
 });
 const endFuelDrag = () => { if (!fuelDrag) return; fuelDrag = null; saveFuel(); };
 document.addEventListener("pointerup", endFuelDrag);
@@ -1069,18 +1071,18 @@ function carVisual(c) {
 const fuelPct = (f) => (f ? (typeof f.pct === "number" ? f.pct : typeof f.level === "number" ? f.level * 12.5 : null) : null);
 const pctText = (p) => (p <= 0 ? "Tom tank" : p >= 100 ? "Full tank" : `${Math.round(p)} %`);
 const pctClass = (p) => (p <= 25 ? "low" : p <= 50 ? "mid" : "ok");
+// Bränsleruta: stor siffra och en liggande stapel att dra i, från Tom till Full.
 function fuelGauge(c) {
   const f = c.fuelLevel;
   const draft = S.fuelDraft && S.fuelDraft.carId === c.id ? S.fuelDraft.pct : null;
   const p = draft ?? fuelPct(f);
   const v = p ?? 0;
-  return `<div class="fuel-col">
-    <span class="fuel-end fuel-name">Bränsle</span>
-    <span class="fuel-end">Full</span>
-    <div class="fuel-v ${p == null ? "unset" : pctClass(v)}" id="fuel-v" role="slider" tabindex="0" aria-label="Bränsle kvar i tanken" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(v)}" aria-valuetext="${esc(p == null ? "Inte angivet" : pctText(v))}">
-      <i style="height:${v}%"></i><b>${p == null ? "?" : Math.round(v)}</b>
+  return `<div class="hero-tile">
+    <div class="tile-top"><span class="label">Bränsle</span><span class="fuel-pct ${p == null ? "" : pctClass(v)}" id="fuel-pct">${p == null ? "–" : `${Math.round(v)} %`}</span></div>
+    <div class="fuel-h${p == null ? " unset" : ""}" id="fuel-v" role="slider" tabindex="0" aria-label="Bränsle kvar i tanken" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(v)}" aria-valuetext="${esc(p == null ? "Inte angivet" : pctText(v))}">
+      <i style="clip-path:inset(0 ${100 - v}% 0 0 round 10px)"></i><span class="fuel-thumb" style="left:${v}%"></span>
     </div>
-    <span class="fuel-end">Tom</span>
+    <div class="fuel-ends"><span>Tom</span><span>Full</span></div>
   </div>`;
 }
 // Bokningar visas i flödet som poster av typen "bokning", så att de kan sorteras ihop med loggarna.
@@ -1625,25 +1627,24 @@ function viewOverview() {
     </button>`);
   }
 
-  // Bilkortet: bilden med bränslestapeln, och under den en rad med mätarställning till vänster och bilen till höger.
+  // Bilkortet: namn och regnummer, bilden, och under den två rutor: mätarställning och bränsle.
   parts.push(`<article class="card hero">
     <div class="hero-car">
       <div class="hero-name">${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}<b>${esc(carName(c))}</b></div>
       <div class="sub">${esc([c.year, c.fuel].filter(Boolean).join(" · "))}</div>
     </div>
-    <div class="hero-media">
-      <label class="car-pick" title="Byt bild på bilen">
-        ${carVisual(c)}
-        <span class="cam" aria-hidden="true">${icon("camera", 19)}</span>
-        <input type="file" accept="image/*" id="hero-photo" class="vh" aria-label="Byt bild på bilen">
-      </label>
-      ${fuelGauge(c)}
-    </div>
-    <div class="odo">
-      <button class="odo-btn" type="button" data-act="new-entry" data-type="matare" aria-label="Mätarställning ${odoOf(c) != null ? fmt(odoOf(c)) : "saknas"} mil. Tryck för att uppdatera.">
-        <span class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span>${icon("next", 14)}</span>
+    <label class="car-pick" title="Byt bild på bilen">
+      ${carVisual(c)}
+      <span class="cam" aria-hidden="true">${icon("camera", 19)}</span>
+      <input type="file" accept="image/*" id="hero-photo" class="vh" aria-label="Byt bild på bilen">
+    </label>
+    <div class="hero-tiles">
+      <button class="hero-tile odo-tile" type="button" data-act="new-entry" data-type="matare" aria-label="Mätarställning ${odoOf(c) != null ? fmt(odoOf(c)) : "saknas"} mil. Tryck för att uppdatera.">
+        <span class="label">Mätarställning</span>
+        <span class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span></span>
+        ${odoAgeHtml(c).replace("</span>", " ›</span>")}
       </button>
-      ${odoAgeHtml(c)}
+      ${fuelGauge(c)}
     </div>
   </article>`);
 
