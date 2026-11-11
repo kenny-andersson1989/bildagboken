@@ -916,3 +916,10 @@ button.hero-tile { cursor: pointer; }
   .tab { padding: 7px 12px; font-size: 14px; }
   .tab-sep { margin-top: 6px; }
 }
+/* Ekonomi: samma kolumner som de andra sidorna (korten läggs i kortaste kolumnen) */
+@media (min-width: 760px) {
+  .app[data-screen="view-ekonomi"] { display: flex; flex-direction: column; grid-template-columns: none; }
+}
+/* Bakgrundens färgtoning: exakt skärmens storlek, egen ritning, så att den inte får en kant när telefonen vrids */
+body::after { inset: auto; top: 0; left: 0; width: var(--vw, 100vw); height: var(--vh, 100vh); transform: translateZ(0); }
+@supports (height: 100lvh) { body::after { height: max(var(--vh, 100vh), 100lvh); } }

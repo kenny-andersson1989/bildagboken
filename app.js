@@ -764,7 +764,7 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
 
 // På breda skärmar (surfplatta, dator och telefon på tvären) läggs korten i två kolumner.
 // Varje kort hamnar i den kolumn som är kortast, så att det inte blir tomma glapp.
-const COLUMN_SCREENS = ["view-oversikt", "view-bilen", "view-installningar"];
+const COLUMN_SCREENS = ["view-oversikt", "view-ekonomi", "view-bilen", "view-installningar"];
 function arrangeColumns() {
   if (!COLUMN_SCREENS.includes(app.dataset.screen) || !window.matchMedia("(min-width: 760px)").matches) return;
   const kids = [...app.children];
@@ -778,8 +778,16 @@ function arrangeColumns() {
   app.insertBefore(grid, cards[0]);
   for (const card of cards) (a.offsetHeight <= b.offsetHeight ? a : b).appendChild(card);
 }
-let columnsWide = null;
+let columnsWide = window.matchMedia("(min-width: 760px)").matches;
+// Bakgrundens färgtoning får skärmens verkliga mått, så att den fyller hela ytan även när telefonen vrids.
+function sizeBackground() {
+  document.documentElement.style.setProperty("--vh", window.innerHeight + "px");
+  document.documentElement.style.setProperty("--vw", window.innerWidth + "px");
+}
+sizeBackground();
+window.addEventListener("orientationchange", () => setTimeout(sizeBackground, 250));
 window.addEventListener("resize", () => {
+  sizeBackground();
   const wide = window.matchMedia("(min-width: 760px)").matches;
   if (columnsWide !== null && wide !== columnsWide) render();
   columnsWide = wide;
