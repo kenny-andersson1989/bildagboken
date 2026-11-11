@@ -879,21 +879,11 @@ function render() {
 }
 
 function renderLogin(error = "") {
-  // Välkomstsidan: en liten förhandsvisning av appen (bilkortet och en bokning), sedan rubrik och inloggning.
+  // Välkomstsidan: logotyp, bild, rubrik och inloggning.
   setScreen("login", `
     <section class="login">
       <h1 class="login-brand"><img class="login-logo" src="icons/logo.png" alt="Bildagboken" width="900" height="244"></h1>
-      <div class="lp" aria-hidden="true">
-        <div class="lp-card">
-          <div class="lp-top"><span class="lp-name"><span class="plate">ABC123</span><b>Din bil</b></span><small>2018 · Bensin</small></div>
-          <div class="lp-scene"><span class="lp-body"></span><span class="lp-tyre l"></span><span class="lp-tyre r"></span></div>
-          <div class="lp-tiles">
-            <div class="hero-tile"><span class="label">Mätarställning</span><span class="odo-num">12 480<span>mil</span></span></div>
-            <div class="hero-tile"><div class="tile-top"><span class="label">Bränsle</span><span class="fuel-pct ok">62 %</span></div><div class="fuel-h"><i style="clip-path:inset(0 38% 0 0 round 10px)"></i></div></div>
-          </div>
-        </div>
-        <div class="lp-note"><span class="dl-ic">${icon("calendar", 18)}</span><span><b>Service bokad</b><small>Fredag kl 09:00</small></span><span class="pill soon">3 dagar</span></div>
-      </div>
+      <img class="login-art" src="icons/welcome.webp" alt="" width="702" height="697">
       <h2 class="login-title">Håll koll på bilen,<br>tillsammans.</h2>
       <p class="login-sub">Tankning, service, däck, datum och kostnader. Alla ni som delar bilen ser samma sak.</p>
       <button class="btn apple block" type="button" data-act="login" data-provider="apple">${icon("apple", 20)} Logga in med Apple</button>
