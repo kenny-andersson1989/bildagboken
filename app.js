@@ -10,6 +10,7 @@ import {
   query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, writeBatch
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
+import { MAPKIT_TOKEN } from "./maps-config.js";
 
 const VERSION = "2.5";
 
@@ -1672,6 +1673,10 @@ function bookingForm(b = {}) {
         <input type="hidden" name="placeLat" id="bk-lat" value="${b.lat ?? ""}">
         <input type="hidden" name="placeLon" id="bk-lon" value="${b.lon ?? ""}">
         <span class="suggest" id="bk-addr-suggest" role="listbox" hidden></span>`, "Med gatuadress hittar kartan rätt när bokningen ligger i kalendern.")}
+      <div class="bk-map" id="bk-map" hidden>
+        <div class="bk-map-inner" id="bk-map-inner"></div>
+        <button class="bk-map-open" type="button" data-act="map-open" aria-label="Öppna platsen i en kartapp"><span>${icon("pin", 14)} Öppna i kartan</span></button>
+      </div>
       ${field("Anteckning", `<textarea name="note" id="bk-note" rows="2" placeholder="Till exempel lämna nyckeln i brevlådan">${esc(b.note || "")}</textarea>`)}
       <p class="err" id="form-err" hidden></p>
       <button class="btn ${isEdit ? "" : "primary "}block" type="submit">${isEdit ? "Spara ändringar" : "Spara bokningen"}</button>
@@ -1681,6 +1686,8 @@ function bookingForm(b = {}) {
         : `<button class="btn ghost block" type="submit" name="cal" value="1">${icon("calendar", 18)} Spara och lägg till i kalendern</button>`}
       <p class="hint">Bokningen syns för er båda under Att hålla koll på och bland påminnelserna dagen innan. Lägger du den i kalendern påminner telefonen dig också.</p>
     </form>`, { back: isEdit ? null : "new-entry" });
+  // Finns platsen redan med position visas kartan direkt.
+  showBookingMap();
   // Väljer man Besiktning och inte skrivit någon plats fylls bilens besiktningsstation i.
   const kindSel = $("#bk-kind"), placeIn = $("#bk-place");
   if (station && kindSel && placeIn) {
@@ -2025,40 +2032,158 @@ function addrOf(pr, typedNo = "") {
   return [[street, no].filter(Boolean).join(" "), [pr.postcode, cityOf(pr)].filter(Boolean).join(" ")].filter(Boolean).join(", ");
 }
 
+// Apple Maps via MapKit JS. Laddas först när den behövs. Utan token, eller om Apple inte svarar, används OpenStreetMap.
+let mapkitPromise = null;
+function loadMapKit() {
+  if (!MAPKIT_TOKEN) return Promise.reject(new Error("ingen token"));
+  if (window.mapkit?.Search && mapkitPromise) return mapkitPromise;
+  if (mapkitPromise) return mapkitPromise;
+  mapkitPromise = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { mapkitPromise = null; reject(new Error("timeout")); }, 10000);
+    window.__bdMapkitReady = () => {
+      try {
+        window.mapkit.init({ authorizationCallback: (done) => done(MAPKIT_TOKEN), language: "sv" });
+        clearTimeout(timer);
+        resolve(window.mapkit);
+      } catch (e) { clearTimeout(timer); mapkitPromise = null; reject(e); }
+    };
+    const sc = document.createElement("script");
+    sc.src = "https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.core.js";
+    sc.crossOrigin = "anonymous";
+    sc.async = true;
+    sc.dataset.callback = "__bdMapkitReady";
+    sc.dataset.libraries = "services,full-map";
+    sc.onerror = () => { clearTimeout(timer); mapkitPromise = null; reject(new Error("kunde inte ladda")); };
+    document.head.appendChild(sc);
+  });
+  return mapkitPromise;
+}
+
+const stripCountry = (a) => String(a || "").replace(/,?\s*(Sverige|Sweden)$/i, "").trim();
+
+// Sök företag eller adresser i Apple Maps, i Sverige.
+async function appleSearch(kind, q) {
+  const mk = await loadMapKit();
+  const search = new mk.Search({ language: "sv-SE", region: new mk.CoordinateRegion(new mk.Coordinate(62.5, 16.5), new mk.CoordinateSpan(15, 20)) });
+  const data = await new Promise((resolve, reject) => {
+    search.search(q, (err, d) => (err ? reject(err) : resolve(d)), { limitToCountries: "SE", language: "sv-SE" });
+  });
+  return (data?.places || []).filter((pl) => !pl.countryCode || pl.countryCode === "SE").map((pl) => {
+    const street = [pl.thoroughfare, pl.subThoroughfare].filter(Boolean).join(" ");
+    const addr = stripCountry(pl.formattedAddress) || [street, [pl.postCode, pl.locality].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+    const isPoi = !!pl.pointOfInterestCategory || (pl.name && pl.name !== street && pl.name !== pl.locality);
+    const lat = pl.coordinate?.latitude, lon = pl.coordinate?.longitude;
+    return kind === "poi"
+      ? (isPoi ? { title: pl.name, sub: addr, name: pl.name, addr, lat, lon } : null)
+      : { title: addr.split(", ")[0], sub: addr.split(", ").slice(1).join(", "), name: "", addr, lat, lon };
+  }).filter(Boolean);
+}
+
+// Sök i OpenStreetMap (Photon). Används när Apple Maps inte går att nå.
+async function photonSearch(kind, q, signal) {
+  const typedNo = (q.match(/\b(\d{1,4}[a-zA-Z]?)\b/) || [])[1] || "";
+  // Kartan hittar inget om husnumret är med, så adresser söks utan nummer och numret läggs till efteråt.
+  const searchQ = kind === "addr" && typedNo ? q.replace(new RegExp(`\\b${typedNo}\\b`), " ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim() : q;
+  const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(searchQ)}&limit=8&bbox=10.5,55.0,24.3,69.1`, { signal });
+  if (!res.ok) throw new Error("photon " + res.status);
+  const j = await res.json();
+  return (j.features || [])
+    .filter((x) => (x.properties?.countrycode || "SE") === "SE")
+    .filter((x) => (kind === "poi" ? !isStreet(x.properties) && !isArea(x.properties) && x.properties.name : !isArea(x.properties)))
+    .map((x) => {
+      const pr = x.properties;
+      const [lon, lat] = x.geometry?.coordinates || [];
+      const addr = addrOf(pr, typedNo);
+      return kind === "poi" ? { title: pr.name, sub: addr, name: pr.name, addr, lat, lon } : { title: addr.split(", ")[0], sub: addr.split(", ").slice(1).join(", "), name: "", addr, lat, lon };
+    });
+}
+
 async function placeSearch(kind, q) {
   const f = PLACE_FIELDS[kind];
   const input = document.getElementById(f.input), box = document.getElementById(f.box);
   if (!box || !input) return;
   placeAbort?.abort();
   placeAbort = new AbortController();
-  const typedNo = (q.match(/\b(\d{1,4}[a-zA-Z]?)\b/) || [])[1] || "";
+  const signal = placeAbort.signal;
   try {
-    // Kartan hittar inget om husnumret är med, så adresser söks utan nummer och numret läggs till efteråt.
-    const searchQ = kind === "addr" && typedNo ? q.replace(new RegExp(`\\b${typedNo}\\b`), " ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim() : q;
-    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(searchQ)}&limit=8&bbox=10.5,55.0,24.3,69.1`, { signal: placeAbort.signal });
-    if (!res.ok) throw new Error("photon " + res.status);
-    const j = await res.json();
+    let found;
+    try { found = await appleSearch(kind, q); } catch { found = null; }
+    if (signal.aborted) return;
+    if (!found) found = await photonSearch(kind, q, signal);
     if (input.value.trim() !== q) return;
     const seen = new Set();
-    const list = (j.features || [])
-      .filter((x) => (x.properties?.countrycode || "SE") === "SE")
-      .filter((x) => (kind === "poi" ? !isStreet(x.properties) && !isArea(x.properties) && x.properties.name : !isArea(x.properties)))
-      .map((x) => {
-        const pr = x.properties;
-        const [lon, lat] = x.geometry?.coordinates || [];
-        const addr = addrOf(pr, typedNo);
-        return kind === "poi" ? { title: pr.name, sub: addr, name: pr.name, addr, lat, lon } : { title: addr.split(", ")[0], sub: addr.split(", ").slice(1).join(", "), name: "", addr, lat, lon };
-      })
-      .filter((x) => x.title && !seen.has(x.title + x.sub) && seen.add(x.title + x.sub))
-      .slice(0, 5);
+    const list = found.filter((x) => x.title && !seen.has(x.title + x.sub) && seen.add(x.title + x.sub)).slice(0, 6);
     box.innerHTML = list.length
       ? list.map((x) => `<button type="button" role="option" data-act="place-pick" data-kind="${kind}" data-name="${esc(x.name)}" data-addr="${esc(x.addr)}" data-lat="${x.lat ?? ""}" data-lon="${x.lon ?? ""}"><b>${esc(x.title)}</b>${x.sub ? `<span>${esc(x.sub)}</span>` : ""}</button>`).join("")
-      : `<p class="hint">${kind === "poi" ? "Företaget finns inte i kartan. Skriv namnet själv och fyll i adressen nedanför." : "Hittade ingen gata. Skriv adressen själv, den kommer ändå med i kalendern."}</p>`;
+      : `<p class="hint">${kind === "poi" ? "Hittade inget företag med det namnet. Skriv namnet själv och fyll i adressen nedanför." : "Hittade ingen adress. Skriv den själv, den kommer ändå med i kalendern."}</p>`;
     box.hidden = false;
     input.setAttribute("aria-expanded", "true");
   } catch (e) {
     if (e.name !== "AbortError") { box.innerHTML = `<p class="hint">Sökningen fungerar inte just nu. Du kan skriva själv.</p>`; box.hidden = false; }
   }
+}
+
+// Liten karta under adressen i bokningen. Apple Maps om det går, annars en karta från OpenStreetMap.
+let bookingMap = null;
+async function showBookingMap() {
+  const box = $("#bk-map"), inner = $("#bk-map-inner");
+  if (!box || !inner) return;
+  const lat = num($("#bk-lat")?.value), lon = num($("#bk-lon")?.value);
+  if (lat == null || lon == null) { box.hidden = true; return; }
+  box.hidden = false;
+  try { bookingMap?.destroy?.(); } catch { /* redan borta */ }
+  bookingMap = null;
+  inner.innerHTML = "";
+  try {
+    const mk = await loadMapKit();
+    if (!document.contains(inner)) return;
+    const coord = new mk.Coordinate(lat, lon);
+    const dark = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+    bookingMap = new mk.Map(inner, {
+      center: coord, isScrollEnabled: false, isZoomEnabled: false, isRotationEnabled: false,
+      showsMapTypeControl: false, showsZoomControl: false, showsUserLocationControl: false,
+      showsCompass: mk.FeatureVisibility?.Hidden, showsScale: mk.FeatureVisibility?.Hidden,
+      colorScheme: dark ? mk.Map?.ColorSchemes?.Dark : mk.Map?.ColorSchemes?.Light,
+    });
+    bookingMap.cameraDistance = 900;
+    bookingMap.addAnnotation(new mk.MarkerAnnotation(coord, { title: $("#bk-place")?.value || "", color: "#E77026" }));
+  } catch (err) {
+    console.warn("Apple-kartan kunde inte visas", err);
+    const d = 0.004;
+    inner.innerHTML = `<iframe title="Karta" loading="lazy" referrerpolicy="no-referrer" src="https://www.openstreetmap.org/export/embed.html?bbox=${lon - d},${lat - d / 2},${lon + d},${lat + d / 2}&layer=mapnik&marker=${lat},${lon}"></iframe>`;
+  }
+}
+
+// Saknar adressen position (skriven för hand) letas den upp, så att kartan kan visas.
+async function geocodeBookingAddress() {
+  const addr = $("#bk-addr")?.value.trim();
+  if (!addr || num($("#bk-lat")?.value) != null) return;
+  let hit = null;
+  try { hit = (await appleSearch("addr", addr))[0]; } catch { /* försök med OpenStreetMap */ }
+  if (!hit) { try { hit = (await photonSearch("addr", addr))[0]; } catch { /* ingen träff */ } }
+  if (!hit || $("#bk-addr")?.value.trim() !== addr) return;
+  const set = (id, v) => { const x = document.getElementById(id); if (x) x.value = v ?? ""; };
+  set("bk-lat", hit.lat); set("bk-lon", hit.lon);
+  showBookingMap();
+}
+
+// Välj kartapp: Apple Kartor eller Google Maps, med platsen ifylld.
+function openMapChooser({ name, addr, lat, lon }) {
+  const q = [name, addr].filter(Boolean).join(", ");
+  const apple = `https://maps.apple.com/?${new URLSearchParams({ q: name || addr || "Plats", ...(addr ? { address: addr } : {}), ...(lat != null ? { ll: `${lat},${lon}` } : {}) })}`;
+  const google = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q || `${lat},${lon}`)}`;
+  document.getElementById("map-choice")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<div class="confirm-scrim" id="map-choice-scrim" data-act="map-choice-close"></div>
+    <div class="confirm" id="map-choice" role="dialog" aria-modal="true" aria-labelledby="map-choice-t">
+      <h3 id="map-choice-t">Öppna i kartan</h3>
+      ${q ? `<p style="margin:0 0 12px;color:var(--ink-2)">${esc(q)}</p>` : ""}
+      <div class="form">
+        <a class="btn primary block" href="${esc(apple)}" target="_blank" rel="noopener" data-act="map-choice-close">Apple Kartor</a>
+        <a class="btn ghost block" href="${esc(google)}" target="_blank" rel="noopener" data-act="map-choice-close">Google Maps</a>
+        <button class="btn ghost block" type="button" data-act="map-choice-close">Avbryt</button>
+      </div>
+    </div>`);
+  $("#map-choice a")?.focus();
 }
 
 /* ----------------------------------------------------------- plats (GPS) */
@@ -2724,10 +2849,18 @@ const ACTIONS = {
     if (el.dataset.addr || el.dataset.kind === "addr") set("bk-addr", el.dataset.addr);
     set("bk-lat", el.dataset.lat);
     set("bk-lon", el.dataset.lon);
+    showBookingMap();
     Object.values(PLACE_FIELDS).forEach((x) => {
       const b = document.getElementById(x.box); if (b) b.hidden = true;
       document.getElementById(x.input)?.setAttribute("aria-expanded", "false");
     });
+  },
+  "map-open"() {
+    openMapChooser({ name: $("#bk-place")?.value.trim(), addr: $("#bk-addr")?.value.trim(), lat: num($("#bk-lat")?.value), lon: num($("#bk-lon")?.value) });
+  },
+  "map-choice-close"() {
+    document.getElementById("map-choice")?.remove();
+    document.getElementById("map-choice-scrim")?.remove();
   },
   "geo-pick"(el) {
     const input = document.getElementById(el.dataset.target);
@@ -3240,6 +3373,7 @@ function onInput(ev) {
   if (ev.target.id === "bk-addr") {
     // Egen adress: positionen från ett tidigare förslag gäller inte längre.
     ["bk-lat", "bk-lon"].forEach((id) => { const x = document.getElementById(id); if (x) x.value = ""; });
+    const mb = $("#bk-map"); if (mb) mb.hidden = true;
     placeSearchSoon("addr");
   }
   if (ev.target.id === "ef-category") {
@@ -3287,6 +3421,7 @@ function onInput(ev) {
 }
 
 function onChange(ev) {
+  if (ev.target.id === "bk-addr") geocodeBookingAddress();
   if ((ev.target.id === "ef-date" || ev.target.id === "ef-category") && $("#ef-nextBesiktning")) updateNextInspection();
   if (ev.target.id === "fuel-range") {
     const l = Number(ev.target.value);
@@ -3478,6 +3613,7 @@ document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") { ev.preventDefault(); hideSuggestions(); document.getElementById(field.input).focus(); return; }
   }
   if (ev.key !== "Escape") return;
+  if (document.getElementById("map-choice")) return ACTIONS["map-choice-close"]();
   if (!$("#confirm").hidden) return closeConfirm(false);
   if (!sheet.hidden) closeSheet();
 });
