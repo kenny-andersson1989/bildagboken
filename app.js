@@ -3341,20 +3341,39 @@ function entryPlaceName(e) {
   return e.loc?.name || e.workshop || e.place || (e.type === "kostnad" && e.category === "Besiktning" ? (e.title || "").replace(/^Besiktning hos /, "") : "") || "";
 }
 // Kartan i en post. Saknar posten position letas platsen upp i Apple Maps en gång och sparas.
+// En adress med gata och nummer, inte bara en ort ("Kråketorpsgatan 20, 431 53 Mölndal").
+const hasStreet = (a) => /\d/.test(String(a || "").split(",")[0]);
 async function showEntryMap(e) {
   const box = $("#en-map"), inner = $("#en-map-inner");
   if (!box || !inner) return;
   let loc = e.loc;
-  if (loc?.lat == null) {
+  // Saknas position, eller är adressen bara en ort (då hittades staden i stället för företaget), letas platsen upp.
+  // Bara en träff med gatuadress godtas. Görs en gång per post.
+  if ((loc?.lat == null || !hasStreet(loc.addr)) && !loc?.checked) {
     const name = entryPlaceName(e);
-    if (!name || name === "Besiktning") return;
-    try {
-      const hit = (await appleSearch("poi", name))[0] || (await appleSearch("addr", name))[0];
-      if (!hit || hit.lat == null || !document.contains(box)) return;
-      loc = clean({ name: e.loc?.name || name, addr: e.loc?.addr || hit.addr || null, lat: hit.lat, lon: hit.lon, pid: hit.pid || null });
-      updateDoc(ref("entries", e.id), { loc }).catch(onWriteError);
-      e.loc = loc;
-    } catch { return; }
+    if (!name || name === "Besiktning") { if (loc?.lat == null) return; }
+    else {
+      try {
+        const city = loc?.addr && !hasStreet(loc.addr) ? loc.addr : "";
+        let hit = null;
+        for (const q of [name, city && `${name} ${city}`].filter(Boolean)) {
+          const list = [...(await appleSearch("poi", q)), ...(await appleSearch("addr", q))];
+          hit = list.find((x) => x.lat != null && hasStreet(x.addr));
+          if (hit) break;
+        }
+        if (!document.contains(box)) return;
+        loc = hit
+          ? clean({ name: e.loc?.name || name, addr: hit.addr, lat: hit.lat, lon: hit.lon, pid: hit.pid || null })
+          : loc?.lat != null ? { ...loc, checked: true } : null;
+        if (loc) { updateDoc(ref("entries", e.id), { loc }).catch(onWriteError); e.loc = loc; }
+        // Visa adressen i listan ovanför kartan när den har hittats.
+        const dd = [...document.querySelectorAll("#sheet .detail-list dt")].find((d) => d.textContent === "Adress");
+        if (hit && dd) dd.nextElementSibling.textContent = hit.addr;
+        else if (hit) document.querySelector("#sheet .detail-list")?.insertAdjacentHTML("beforeend", `<div><dt>Adress</dt><dd>${esc(hit.addr)}</dd></div>`);
+        if (!hit) dd?.parentElement.remove();
+      } catch { if (loc?.lat == null) return; }
+    }
+    if (!loc || loc.lat == null) return;
   }
   box.hidden = false;
   miniMap(inner, loc.lat, loc.lon, loc.name || "");
@@ -3376,7 +3395,7 @@ function openEntry(id, { fromCat = null } = {}) {
     e.place ? ["Plats", e.place] : null,
     e.type === "parkering" && e.fine ? ["Typ", "P-bot eller felparkeringsavgift"] : null,
     e.workshop ? ["Verkstad", e.workshop] : null,
-    e.loc?.addr ? ["Adress", e.loc.addr] : null,
+    hasStreet(e.loc?.addr) ? ["Adress", e.loc.addr] : null,
     e.category && e.type === "kostnad" ? ["Typ", e.category] : null,
     e.depth != null ? ["Mönsterdjup", `${fmt(e.depth, 1)} mm`] : null,
     ["service", "eget"].includes(e.type) && workOf(e, c).length ? ["Gjordes", workOf(e, c).map(workText).join(", ")] : null,
