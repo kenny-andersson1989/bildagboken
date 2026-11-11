@@ -1397,7 +1397,8 @@ function photosCard(c) {
     <p class="label" style="margin:0 0 8px">Bilder från loggen</p>
     ${S.showPhotos ? `<div class="photo-grid">${shown.map((e) => `<button type="button" class="pg" data-act="open-entry" data-id="${esc(e.id)}" aria-label="${esc(entryTitle(e))}, ${esc(fmtDateShort(e.date))}">
         ${gridPhotos.get(e.photoId) ? `<img src="${esc(gridPhotos.get(e.photoId))}" alt="">` : `<span class="pg-wait"></span>`}<span class="pg-d"><b>${esc(photoLabel(e))}</b>${esc(fmtDateShort(e.date))}</span></button>`).join("")}</div>
-      ${ents.length > shown.length ? `<p class="hint" style="margin-top:8px">De ${shown.length} senaste av ${ents.length} bilder.</p>` : ""}`
+      ${ents.length > shown.length ? `<p class="hint" style="margin-top:8px">De ${shown.length} senaste av ${ents.length} bilder.</p>` : ""}
+      <button class="link" type="button" data-act="hide-photos" style="margin-top:10px">Dölj bilderna</button>`
       : `<p class="muted">Kvitton och foton från loggen, i datumordning. ${ents.length === 1 ? "1 bild" : `${ents.length} bilder`}.</p>
       <div class="ask" style="margin-top:8px"><button class="btn-soft" type="button" data-act="show-photos">${icon("image", 16)} Visa bilderna</button></div>`}
   </div>`;
@@ -4303,6 +4304,7 @@ const ACTIONS = {
   "amount-quick"(el) { const a = $("#ef-amount"); if (a) { a.value = el.dataset.v; a.dispatchEvent(new Event("input", { bubbles: true })); } },
   "budget-suggest"(el) { const b = $("#bu-budget"); if (b) b.value = el.dataset.v; },
   "edit-doc"(el) { const d = (car()?.docs || []).find((x) => x.id === el.dataset.id); if (d) docForm(d); },
+  "hide-photos"() { S.showPhotos = false; render(); },
   async "show-photos"() { S.showPhotos = true; render(); await loadPhotoGrid(); },
   "todo-clear"() {
     const c = car();
