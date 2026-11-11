@@ -839,6 +839,8 @@ function render() {
     bell.setAttribute("aria-label", `Aviseringar${n ? `, ${n} nya` : ""}`);
   }
   ensureCarImage(car());
+  // Under Bilen hämtas PDF-verktyget i förväg, så att serviceboken kan delas direkt med ett tryck.
+  if (S.view === "bilen" && !pdfReady()) setTimeout(() => loadPdfLibs().catch(() => {}), 800);
   runLaunchAction();
 }
 
@@ -1422,7 +1424,26 @@ function serviceBookData(c) {
     total: `${fmtKr(ents.reduce((a, e) => a + (e.amount || 0), 0))} kr`,
   };
 }
+// Databasen kan inte spara listor i listor, så tabellerna sparas som listor med objekt.
+function serviceBookToStore(d) {
+  return {
+    car: d.car, plate: d.plate, made: d.made, total: d.total,
+    facts: d.facts.map(([k, v]) => ({ k, v: String(v ?? "") })),
+    items: d.items.map(([name, interval, last, next]) => ({ name, interval, last, next })),
+    rows: d.rows.map(([date, odo, what, note, place, cost]) => ({ date, odo, what, note, place, cost })),
+  };
+}
+function serviceBookFromStore(d) {
+  const arr = (x, keys) => (Array.isArray(x) ? x : x && typeof x === "object" ? keys.map((k) => x[k] ?? "") : []);
+  return {
+    ...d,
+    facts: (d.facts || []).map((x) => arr(x, ["k", "v"])),
+    items: (d.items || []).map((x) => arr(x, ["name", "interval", "last", "next"])),
+    rows: (d.rows || []).map((x) => arr(x, ["date", "odo", "what", "note", "place", "cost"])),
+  };
+}
 function serviceBookHtml(d) {
+  d = serviceBookFromStore(d);
   const S2 = (x) => esc(String(x ?? ""));
   const rows = Array.isArray(d.rows) ? d.rows : [];
   return `<div class="pb">
@@ -1444,7 +1465,7 @@ function serviceBookHtml(d) {
 async function shareServiceBook() {
   const c = car();
   const token = c.shareToken || randomId(10) + randomId(10);
-  await setDoc(doc(db, "shares", token), { householdId: S.hid, carId: c.id, createdBy: uid(), updatedAt: Date.now(), data: serviceBookData(c) });
+  await setDoc(doc(db, "shares", token), { householdId: S.hid, carId: c.id, createdBy: uid(), updatedAt: Date.now(), data: serviceBookToStore(serviceBookData(c)) });
   if (!c.shareToken) { c.shareToken = token; await updateDoc(ref("cars", c.id), { shareToken: token }); }
   render();
   return token;
@@ -1464,30 +1485,99 @@ function shareCardHtml(c) {
 }
 // Sidan köparen ser: bara serviceboken, utan inloggning.
 const viewToken = new URLSearchParams(location.search).get("visa");
+let sharedBookData = null;
 async function renderShared(token) {
   setScreen("shared", `<p class="loading">Hämtar serviceboken …</p>`);
   try {
     const snap = await getDoc(doc(db, "shares", token));
     if (!snap.exists()) return setScreen("shared", `<div class="card empty"><b>Länken gäller inte längre</b>Ägaren har slutat dela serviceboken.</div>`);
     const d = snap.data().data || {};
+    sharedBookData = d;
+    loadPdfLibs().catch(() => {});
     document.title = `Servicebok ${d.car || ""}`.trim();
     setScreen("shared", `<div class="card shared-book">${serviceBookHtml(d)}</div>
-      <div class="ask" style="justify-content:center"><button class="btn primary" type="button" data-act="print-shared">${icon("print", 18)} Skriv ut eller spara som PDF</button></div>
+      <div class="ask" style="justify-content:center"><button class="btn primary" type="button" data-act="print-shared">${icon("print", 18)} Dela eller spara som PDF</button></div>
       <p class="hint" style="text-align:center">Delad från Bildagboken. Uppdaterad ${esc(fmtDate(ymd(new Date(snap.data().updatedAt || Date.now()))))}.</p>`);
   } catch (e) {
     setScreen("shared", `<div class="card empty"><b>Serviceboken gick inte att hämta</b>${esc(e.code === "permission-denied" ? "Länken gäller inte." : "Kontrollera nätet och försök igen.")}</div>`);
   }
 }
+// Serviceboken som PDF, byggd i telefonen med jsPDF. Delas via telefonens delningsmeny
+// (Spara i Filer, Skriv ut, AirDrop, Mail) eller laddas ner på datorn.
+const PDF_LIBS = ["https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js", "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"];
+let pdfLibsPromise = null;
+function loadPdfLibs() {
+  if (window.jspdf?.jsPDF?.API?.autoTable) return Promise.resolve(window.jspdf.jsPDF);
+  if (pdfLibsPromise) return pdfLibsPromise;
+  const add = (src) => new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = src; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+  pdfLibsPromise = add(PDF_LIBS[0]).then(() => add(PDF_LIBS[1])).then(() => window.jspdf.jsPDF).catch((e) => { pdfLibsPromise = null; throw e; });
+  return pdfLibsPromise;
+}
+const pdfReady = () => !!window.jspdf?.jsPDF?.API?.autoTable;
+function serviceBookPdf(d0) {
+  const d = serviceBookFromStore(d0);
+  const t = (x) => String(x ?? "").replace(/[–—]/g, "-").replace(/›/g, ">");
+  const pdf = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+  const W = pdf.internal.pageSize.getWidth();
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(22); pdf.text("Servicebok", 14, 20);
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(12); pdf.text(t(`${d.car || ""}${d.plate ? ` · ${d.plate}` : ""}`), 14, 27);
+  pdf.setFontSize(9); pdf.setTextColor(110); pdf.text(t(`Utskriven ${fmtDate(d.made || todayStr())} · Bildagboken`), W - 14, 20, { align: "right" }); pdf.setTextColor(0);
+  pdf.setDrawColor(30); pdf.setLineWidth(0.6); pdf.line(14, 31, W - 14, 31);
+  const base = { margin: { left: 14, right: 14 }, styles: { font: "helvetica", fontSize: 9, cellPadding: 1.8, textColor: 20 }, headStyles: { fillColor: [35, 34, 33], textColor: 255, fontStyle: "bold" }, alternateRowStyles: { fillColor: [246, 243, 240] } };
+  pdf.autoTable({ ...base, startY: 35, theme: "plain", body: d.facts.map(([k, v]) => [t(k), t(v)]), columnStyles: { 0: { textColor: 110, cellWidth: 50 } } });
+  let y = pdf.lastAutoTable.finalY + 8;
+  if (d.items.length) {
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(13); pdf.text("Underhåll", 14, y);
+    pdf.autoTable({ ...base, startY: y + 3, head: [["Punkt", "Intervall", "Senast", "Nästa"]], body: d.items.map((r) => r.map(t)) });
+    y = pdf.lastAutoTable.finalY + 8;
+  }
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(13); pdf.text("Utfört arbete", 14, y);
+  if (d.rows.length) {
+    pdf.autoTable({ ...base, startY: y + 3, head: [["Datum", "Mätarställning", "Vad", "Var", "Kostnad"]],
+      body: d.rows.map((r) => [t(r[0]), t(r[1]), t(r[2]) + (r[3] ? `\n${t(r[3])}` : ""), t(r[4]), t(r[5])]),
+      foot: [[{ content: `Totalt ${d.rows.length} ${d.rows.length === 1 ? "post" : "poster"}`, colSpan: 4 }, t(d.total)]],
+      footStyles: { fillColor: [255, 255, 255], textColor: 20, fontStyle: "bold" }, columnStyles: { 4: { halign: "right" } } });
+  } else {
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(10); pdf.text("Inga service, egna jobb, däckbyten eller besiktningar är loggade än.", 14, y + 7);
+  }
+  return pdf.output("blob");
+}
+// Dela PDF:en (iPhone och Android) eller ladda ner den (dator). Måste anropas direkt från ett tryck.
+async function sharePdf(blob, name) {
+  const file = new File([blob], name, { type: "application/pdf" });
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name.replace(/\.pdf$/, "") }); return; }
+    catch (e) { if (e.name === "AbortError") return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+let pendingPdf = null;
+async function exportServiceBook(data, name) {
+  if (pdfReady()) return sharePdf(serviceBookPdf(data), name);
+  // Första gången hämtas PDF-verktyget (cirka 400 kB). Efter det behövs ett tryck till för att dela.
+  showToast("Gör i ordning PDF:en …");
+  try { await loadPdfLibs(); } catch { return printFallback(data); }
+  pendingPdf = { blob: serviceBookPdf(data), name };
+  openSheet("Serviceboken är klar", `<p class="muted">PDF:en är klar att dela. Välj Spara i Filer, Skriv ut eller skicka den direkt.</p>
+    <button class="btn primary block" type="button" data-act="pdf-share" style="margin-top:14px">${icon("print", 18)} Dela eller spara PDF</button>`);
+}
+// Om PDF-verktyget inte går att hämta: vanlig utskrift.
+function printFallback(data) {
+  document.getElementById("print-root")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<div id="print-root">${serviceBookHtml(data)}</div>`);
+  window.addEventListener("afterprint", () => document.getElementById("print-root")?.remove(), { once: true });
+  setTimeout(() => window.print(), 50);
+}
+const pdfName = (d) => `Servicebok ${d.car || ""}${d.plate ? " " + d.plate : ""}`.trim().replace(/[^\wåäöÅÄÖ -]/g, "") + ".pdf";
 function printServiceBook() {
   const c = car();
   if (!c) return;
-  document.getElementById("print-root")?.remove();
-  document.body.insertAdjacentHTML("beforeend", `<div id="print-root">${serviceBookHtml(serviceBookData(c))}</div>`);
-  const done = () => { document.getElementById("print-root")?.remove(); window.removeEventListener("afterprint", done); };
-  window.addEventListener("afterprint", done);
-  const old = document.title;
-  document.title = `Servicebok ${carName(c)}${c.plate ? " " + String(c.plate).toUpperCase() : ""}`;
-  setTimeout(() => { window.print(); document.title = old; }, 50);
+  const d = serviceBookData(c);
+  return exportServiceBook(d, pdfName(d));
 }
 
 /* --------------------------------------------------------- läsa kvitton */
@@ -2171,7 +2261,7 @@ function viewCar() {
     <div class="card">
       <h2>Servicebok</h2>
       <p class="muted">All service, egna jobb, däckbyten och besiktningar med datum, mätarställning och kostnad. Bra att visa en köpare eller verkstad.</p>
-      <div class="ask"><button class="btn-soft" type="button" data-act="print-book">${icon("print", 16)} Skriv ut eller spara som PDF</button>
+      <div class="ask"><button class="btn-soft" type="button" data-act="print-book">${icon("print", 16)} Dela eller spara som PDF</button>
       ${shareCardHtml(c)}</div>
     </div>`;
 }
@@ -3956,14 +4046,8 @@ const ACTIONS = {
     render();
     showToast("Länken fungerar inte längre");
   },
-  "print-shared"() {
-    const box = document.querySelector(".shared-book");
-    if (!box) return;
-    document.getElementById("print-root")?.remove();
-    document.body.insertAdjacentHTML("beforeend", `<div id="print-root">${box.innerHTML}</div>`);
-    window.addEventListener("afterprint", () => document.getElementById("print-root")?.remove(), { once: true });
-    setTimeout(() => window.print(), 50);
-  },
+  "print-shared"() { if (sharedBookData) exportServiceBook(sharedBookData, pdfName(sharedBookData)); },
+  "pdf-share"() { if (pendingPdf) { sharePdf(pendingPdf.blob, pendingPdf.name); closeSheet(); } },
   "calendar-all"() {
     const evs = allCalendarEvents();
     if (!evs.length) return showToast("Inget kommande att lägga i kalendern");
