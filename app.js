@@ -1914,14 +1914,23 @@ function viewOverview() {
 
 // Korten på Översikt i den ordning man valt under Inställningar, utan de man har dolt.
 const CARD_NAMES = { koll: "På gång", todo: "Att göra", recent: "Senaste", maint: "Underhåll", eco: "Ekonomi", tips: "Tips" };
-function cardPrefs() {
+// Korten som går att flytta, per vy. Översikt sparas under "cards" (som förut) och Bilen under "cards.bilen".
+const CARD_VIEWS = {
+  oversikt: { names: CARD_NAMES, pref: "cards", title: "Översikten" },
+  bilen: { names: { upp: "Uppgifter", maint: "Underhåll", dack: "Däck", media: "Bilder och dokument", book: "Servicebok" }, pref: "cards.bilen", title: "Bilen" },
+};
+function cardPrefs(view = "oversikt") {
+  const v = CARD_VIEWS[view];
   let p = {};
-  try { p = JSON.parse(pref.get("cards") || "{}"); } catch { p = {}; }
-  const order = (p.order || []).filter((k) => CARD_NAMES[k]);
-  for (const k of Object.keys(CARD_NAMES)) if (!order.includes(k)) order.push(k);
-  return { order, hidden: (p.hidden || []).filter((k) => CARD_NAMES[k]) };
+  try { p = JSON.parse(pref.get(v.pref) || "{}"); } catch { p = {}; }
+  const order = (p.order || []).filter((k) => v.names[k]);
+  for (const k of Object.keys(v.names)) if (!order.includes(k)) order.push(k);
+  return { order, hidden: (p.hidden || []).filter((k) => v.names[k]) };
 }
-function arrangeCards(parts) {
+function saveCardPrefs(view, p) { pref.set(CARD_VIEWS[view].pref, JSON.stringify(p)); }
+// Lägger korten i den sparade ordningen. Varje kort får data-card, så att det kan flyttas direkt på sidan.
+function arrangeCards(parts, view = "oversikt") {
+  if (typeof parts === "string") parts = parts.split(/(<!--card:\w+-->)/);
   const head = [], tail = [], byKey = {};
   let key = null;
   for (const x of parts) {
@@ -1931,8 +1940,9 @@ function arrangeCards(parts) {
     else if (key === "end") tail.push(x);
     else (byKey[key] = byKey[key] || []).push(x);
   }
-  const { order, hidden } = cardPrefs();
-  return [...head, ...order.filter((k) => !hidden.includes(k)).flatMap((k) => byKey[k] || []), ...tail].join("");
+  const { order, hidden } = cardPrefs(view);
+  const tag = (k, html) => String(html).replace(/^(\s*<(?:article|div)\b)/, `$1 data-card="${k}" data-view="${view}"`);
+  return [...head, ...order.filter((k) => !hidden.includes(k)).map((k) => tag(k, (byKey[k] || []).join(""))), ...tail].join("");
 }
 // Dra korten i ordning: håll i handtaget och dra raden upp eller ner. De andra raderna flyttar undan.
 let cardDrag = null;
@@ -1967,10 +1977,11 @@ const endCardDrag = () => {
   d.rows.forEach((r) => { r.style.transform = ""; });
   d.row.classList.remove("dragging");
   if (d.to === d.from) return;
-  const p = cardPrefs();
+  const view = d.list.dataset.view || "oversikt";
+  const p = cardPrefs(view);
   const [k] = p.order.splice(d.from, 1);
   p.order.splice(d.to, 0, k);
-  pref.set("cards", JSON.stringify(p));
+  saveCardPrefs(view, p);
   render();
 };
 document.addEventListener("pointerup", endCardDrag);
@@ -1980,22 +1991,144 @@ document.addEventListener("keydown", (ev) => {
   const h = ev.target.closest?.(".drag-handle");
   if (!h || !["ArrowUp", "ArrowDown"].includes(ev.key)) return;
   ev.preventDefault();
-  const p = cardPrefs();
+  const view = h.closest(".card-order")?.dataset.view || "oversikt";
+  const p = cardPrefs(view);
   const i = p.order.indexOf(h.dataset.id), j = i + (ev.key === "ArrowUp" ? -1 : 1);
   if (i < 0 || j < 0 || j >= p.order.length) return;
   [p.order[i], p.order[j]] = [p.order[j], p.order[i]];
-  pref.set("cards", JSON.stringify(p));
+  saveCardPrefs(view, p);
   render();
-  document.querySelector(`.drag-handle[data-id="${h.dataset.id}"]`)?.focus();
+  document.querySelector(`.card-order[data-view="${view}"] .drag-handle[data-id="${h.dataset.id}"]`)?.focus();
 });
-function cardsSettingsCard() {
-  const { order, hidden } = cardPrefs();
+/* ------------------------------------------- flytta kort direkt på sidan */
+
+// Som på iPhones hemskärm: håll fingret på ett kort tills korten vibrerar, dra sedan korten dit du vill.
+// Klar (eller ett tryck bredvid korten) sparar ordningen.
+let arranging = null;      // vilken vy som är i flyttläge
+let pressTimer = null, pressStart = null, dragCard = null, suppressClick = false;
+const ARRANGE_VIEWS = { oversikt: "view-oversikt", bilen: "view-bilen" };
+function enterArrange(view) {
+  arranging = view;
+  document.body.classList.add("arranging");
+  navigator.vibrate?.(12);
+  document.getElementById("arrange-bar")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<div class="arrange-bar" id="arrange-bar" role="status">
+    <span>Dra korten dit du vill ha dem</span><button class="btn primary" type="button" id="arrange-done">Klar</button></div>`);
+}
+function exitArrange(save = true) {
+  if (!arranging) return;
+  const view = arranging;
+  arranging = null;
+  document.body.classList.remove("arranging");
+  document.getElementById("arrange-bar")?.remove();
+  if (save) {
+    // Ordningen som den syns: uppifrån och ner, vänster före höger.
+    const els = [...app.querySelectorAll(`[data-card][data-view="${view}"]`)];
+    const pos = new Map(els.map((el) => [el, el.getBoundingClientRect()]));
+    const shown = els.sort((a, b) => (Math.abs(pos.get(a).top - pos.get(b).top) < 24 ? pos.get(a).left - pos.get(b).left : pos.get(a).top - pos.get(b).top)).map((el) => el.dataset.card);
+    const p = cardPrefs(view);
+    const rest = p.order.filter((k) => !shown.includes(k));
+    saveCardPrefs(view, { ...p, order: [...shown, ...rest] });
+  }
+  render();
+}
+function cardAt(target) {
+  const el = target.closest?.("[data-card]");
+  return el && app.contains(el) && ARRANGE_VIEWS[el.dataset.view] === app.dataset.screen ? el : null;
+}
+function startCardDrag(el, x, y) {
+  const r = el.getBoundingClientRect();
+  dragCard = { el, dx: x - r.left, dy: y - r.top };
+  el.classList.add("lifted");
+  navigator.vibrate?.(8);
+}
+function moveCardDrag(x, y) {
+  const d = dragCard;
+  if (!d) return;
+  d.el.style.transform = "";
+  const base = d.el.getBoundingClientRect();
+  // Byt plats med kortet som fingret är över.
+  const others = [...app.querySelectorAll(`[data-card][data-view="${arranging}"]`)].filter((e) => e !== d.el);
+  for (const o of others) {
+    const r = o.getBoundingClientRect();
+    if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+    const before = y < r.top + r.height / 2;
+    if (before && o.previousElementSibling !== d.el) o.parentElement.insertBefore(d.el, o);
+    else if (!before && o.nextElementSibling !== d.el) o.parentElement.insertBefore(d.el, o.nextElementSibling);
+    break;
+  }
+  const now = d.el.getBoundingClientRect();
+  d.el.style.transform = `translate(${x - d.dx - now.left}px, ${y - d.dy - now.top}px)`;
+  // Rulla sidan när kortet dras nära kanten.
+  if (y < 90) window.scrollBy(0, -12); else if (y > innerHeight - 130) window.scrollBy(0, 12);
+  void base;
+}
+function endCardDrag2() {
+  if (!dragCard) return;
+  dragCard.el.classList.remove("lifted");
+  dragCard.el.style.transform = "";
+  dragCard = null;
+}
+// Fingret: håll still en stund för att börja. Rör man fingret direkt är det en vanlig rullning.
+document.addEventListener("touchstart", (ev) => {
+  if (ev.touches.length !== 1) return;
+  const el = cardAt(ev.target);
+  if (!el) return;
+  const t = ev.touches[0];
+  pressStart = { x: t.clientX, y: t.clientY, el };
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => {
+    if (!pressStart) return;
+    if (!arranging) { enterArrange(el.dataset.view); suppressClick = true; }
+    startCardDrag(el, pressStart.x, pressStart.y);
+  }, arranging ? 180 : 480);
+}, { passive: true });
+document.addEventListener("touchmove", (ev) => {
+  const t = ev.touches[0];
+  if (dragCard) { ev.preventDefault(); moveCardDrag(t.clientX, t.clientY); return; }
+  if (pressStart && Math.hypot(t.clientX - pressStart.x, t.clientY - pressStart.y) > 10) { clearTimeout(pressTimer); pressStart = null; }
+}, { passive: false });
+const touchEnd = () => { clearTimeout(pressTimer); pressStart = null; if (dragCard) { endCardDrag2(); suppressClick = true; } };
+document.addEventListener("touchend", touchEnd);
+document.addEventListener("touchcancel", touchEnd);
+// Musen (dator): håll inne knappen på ett kort.
+document.addEventListener("mousedown", (ev) => {
+  if (ev.button !== 0 || ("ontouchstart" in window && ev.sourceCapabilities?.firesTouchEvents)) return;
+  const el = cardAt(ev.target);
+  if (!el) return;
+  pressStart = { x: ev.clientX, y: ev.clientY, el };
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => {
+    if (!pressStart) return;
+    if (!arranging) { enterArrange(el.dataset.view); suppressClick = true; }
+    startCardDrag(el, pressStart.x, pressStart.y);
+  }, arranging ? 120 : 480);
+});
+document.addEventListener("mousemove", (ev) => {
+  if (dragCard) { ev.preventDefault(); moveCardDrag(ev.clientX, ev.clientY); return; }
+  if (pressStart && Math.hypot(ev.clientX - pressStart.x, ev.clientY - pressStart.y) > 6) { clearTimeout(pressTimer); pressStart = null; }
+});
+document.addEventListener("mouseup", () => { clearTimeout(pressTimer); pressStart = null; if (dragCard) { endCardDrag2(); suppressClick = true; } });
+// I flyttläget gör knapparna på korten ingenting. Klar eller ett tryck bredvid korten avslutar.
+document.addEventListener("click", (ev) => {
+  if (ev.target.closest?.("#arrange-done")) { ev.preventDefault(); exitArrange(true); return; }
+  if (suppressClick) { suppressClick = false; ev.preventDefault(); ev.stopPropagation(); return; }
+  if (!arranging) return;
+  if (ev.target.closest?.("#arrange-bar")) return;
+  ev.preventDefault(); ev.stopPropagation();
+  if (!ev.target.closest?.("[data-card]")) exitArrange(true);
+}, true);
+document.addEventListener("contextmenu", (ev) => { if (cardAt(ev.target)) ev.preventDefault(); });
+
+function cardsSettingsCard(view = "oversikt") {
+  const v = CARD_VIEWS[view];
+  const { order, hidden } = cardPrefs(view);
   return `<div class="card">
-    <h2>Översikten</h2>
-    <p class="muted">Välj vilka kort som syns. Håll i handtaget och dra för att ändra ordningen. Gäller den här telefonen.</p>
-    <div class="card-order" id="card-order">${order.map((k) => `<div class="card-row" data-key="${k}">
-      <label class="check"><input type="checkbox" data-act="card-toggle" data-id="${k}"${hidden.includes(k) ? "" : " checked"}> ${esc(CARD_NAMES[k])}</label>
-      <button class="drag-handle" type="button" data-id="${k}" aria-label="Flytta ${esc(CARD_NAMES[k])}. Dra, eller använd piltangenterna.">${icon("grip", 20)}</button>
+    <h2>${esc(v.title)}</h2>
+    <p class="muted">Välj vilka kort som syns. Håll i handtaget och dra för att ändra ordningen.${view === "oversikt" ? " Du kan också hålla fingret på ett kort direkt på sidan." : ""} Gäller den här telefonen.</p>
+    <div class="card-order" data-view="${view}">${order.map((k) => `<div class="card-row" data-key="${k}">
+      <label class="check"><input type="checkbox" data-act="card-toggle" data-view="${view}" data-id="${k}"${hidden.includes(k) ? "" : " checked"}> ${esc(v.names[k])}</label>
+      <button class="drag-handle" type="button" data-id="${k}" aria-label="Flytta ${esc(v.names[k])}. Dra, eller använd piltangenterna.">${icon("grip", 20)}</button>
     </div>`).join("")}</div>
   </div>`;
 }
@@ -2375,18 +2508,18 @@ function viewCar() {
     const low = depth != null && depth < (k === "vinter" ? 4 : 3);
     return `<div class="dl"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div></div><span class="pill ${low ? "soon" : on ? "ok" : "none"}">${low ? "Slitna" : on ? "På" : "Förråd"}</span></div>`;
   }).join("");
-  return `${subHeader([c.year, c.fuel].filter(Boolean).join(" · "), carName(c))}
+  return arrangeCards(`${subHeader([c.year, c.fuel].filter(Boolean).join(" · "), carName(c))}
     <div class="car-chips" role="group" aria-label="Välj bil">
       ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon("car", 16)}${esc(carName(x))}</button>`).join("")}
       <button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>
     </div>
-    <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
+    <!--card:upp--><div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
         ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkringsbolag", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>
-    <div class="card" id="underhall" style="scroll-margin-top:16px">
+    <!--card:maint--><div class="card" id="underhall" style="scroll-margin-top:16px">
       <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
       <div class="rows">${st.filter((s) => s.item.mil || s.item.months || s.lastDate).map((s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
       ${(() => {
@@ -2398,14 +2531,14 @@ function viewCar() {
       })()}
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
-    <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
-    ${docsCard(c)}
-    <div class="card">
+    <!--card:dack--><div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
+    <!--card:media-->${docsCard(c)}
+    <!--card:book--><div class="card">
       <h2>Servicebok</h2>
       <p class="muted">All service, egna jobb, däckbyten och besiktningar med datum, mätarställning och kostnad. Bra att visa en köpare eller verkstad.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="print-book">${icon("print", 16)} Dela eller spara som PDF</button>
       ${shareCardHtml(c)}</div>
-    </div>`;
+    </div>`, "bilen");
 }
 
 function viewNotifications() {
@@ -2484,7 +2617,8 @@ function viewSettings() {
       <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för alla ni som delar bilen. Du får frågan en gång till innan något tas bort.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>
     </div>
-    ${cardsSettingsCard()}
+    ${cardsSettingsCard("oversikt")}
+    ${cardsSettingsCard("bilen")}
     ${shortcutsCard()}
     <div class="card">
       <h2>Säkerhetskopia</h2>
@@ -3992,6 +4126,7 @@ function readCarForm(form) {
 /* ----------------------------------------------------------------- actions */
 
 function setView(v) {
+  if (arranging) exitArrange(true);
   rememberPrev(v);
   S.view = v;
   if (location.hash !== "#" + v) history.replaceState(history.state, "", "#" + v);
@@ -4342,9 +4477,10 @@ const ACTIONS = {
     if (!t.done) showToast(`Klart: ${t.text}`, 6000, null, { label: "Logga det", fn: () => entryForm("eget", { title: t.text.replace(/^./, (x) => x.toUpperCase()) }) });
   },
   "card-toggle"(el) {
-    const p = cardPrefs();
+    const view = el.dataset.view || "oversikt";
+    const p = cardPrefs(view);
     const hidden = p.hidden.includes(el.dataset.id) ? p.hidden.filter((k) => k !== el.dataset.id) : [...p.hidden, el.dataset.id];
-    pref.set("cards", JSON.stringify({ order: p.order, hidden }));
+    saveCardPrefs(view, { order: p.order, hidden });
     render();
   },
   "card-move"(el) {
