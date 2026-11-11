@@ -2937,7 +2937,8 @@ async function refreshBookingPlace() {
 function openMapChooser({ name, addr, lat, lon, pid, directions = false }) {
   const q = [name, addr].filter(Boolean).join(", ");
   if (directions) return mapChoiceDialog("Vägbeskrivning", q,
-    `https://maps.apple.com/?${new URLSearchParams({ daddr: addr || q || `${lat},${lon}`, dirflg: "d", ...(lat != null ? { ll: `${lat},${lon}` } : {}) })}`,
+    // Apples nya kartlänkar: /directions med destination och färdsätt. Med plats-id hittar Kartor rätt företag.
+    `https://maps.apple.com/directions?${new URLSearchParams({ destination: addr || q || `${lat},${lon}`, ...(pid ? { "destination-place-id": pid } : {}), mode: "driving" }).toString().replace(/\+/g, "%20")}`,
     `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q || `${lat},${lon}`)}&travelmode=driving`);
   const near = lat != null ? { sll: `${lat},${lon}` } : addr ? { near: addr } : {};
   const apple = pid
