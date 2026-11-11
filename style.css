@@ -296,7 +296,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .filters button { flex: none; border: 1px solid var(--glass-edge); background: var(--glass); color: var(--ink-2); font: 500 13px var(--f-body); padding: 8px 14px; border-radius: var(--r-chip); cursor: pointer; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .filters button[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .month { font-family: var(--f-display); font-weight: 700; font-size: 14px; color: var(--ink-3); margin: 6px 4px -4px; }
-.entry { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 0; border: 0; border-top: 1px solid var(--line); background: none; width: 100%; text-align: left; cursor: pointer; }
+.entry { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 8px 0; border: 0; border-top: 1px solid var(--line); background: none; width: 100%; text-align: left; cursor: pointer; }
 .entry:first-child { border-top: 0; padding-top: 0; }
 .entry:last-child { padding-bottom: 0; }
 .entry > span { display: block; min-width: 0; }
@@ -740,8 +740,9 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .todo-t { font-size: 14.5px; overflow-wrap: anywhere; }
 .todo small { font-size: 11.5px; color: var(--ink-3); }
 .todo.done .todo-t { text-decoration: line-through; color: var(--ink-3); }
-.todo-add { display: flex; gap: 8px; margin-top: 12px; }
-.todo-add input { flex: 1; min-width: 0; }
+.todo-add { display: flex; gap: 8px; margin-top: 12px; align-items: stretch; }
+.todo-add input { flex: 1; min-width: 0; min-height: 50px; font-size: 16px; }
+.todo-btn { flex: none; width: 50px; border: 0; border-radius: 16px; background: var(--accent-soft); color: var(--accent-text); display: grid; place-items: center; cursor: pointer; }
 /* Läs av kvitto */
 .receipt-btn { position: relative; cursor: pointer; }
 .receipt-btn.busy { opacity: .7; pointer-events: none; }
@@ -809,3 +810,12 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .shared-book .pb-table tfoot td { font-weight: 700; border-bottom: 0; }
 .shared-book .r { text-align: right; white-space: nowrap; }
 .shared-book small { color: var(--ink-3); }
+
+/* Loggen lite tätare: mindre ikon och luft, samma textstorlek */
+.entry > .dl-ic, .entry > .avatar { width: 34px; height: 34px; border-radius: 10px; }
+.entry > .avatar { border-radius: 50%; }
+.entry .m { margin-top: 2px; }
+.log-list { gap: 10px; }
+.log-list .card { padding-top: 12px; padding-bottom: 12px; }
+/* Anteckningar om bilen */
+.notes p { margin: 0 0 4px; font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
