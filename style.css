@@ -852,3 +852,8 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .hero-name b { font-family: var(--f-display); font-size: 16px; font-weight: 700; }
 .hero-car .sub { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
 .fuel-name { font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+/* Bilens namn och regnummer överst i kortet, på en rad */
+.hero > .hero-car { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; margin-bottom: 10px; }
+.hero > .hero-car .hero-name { justify-content: flex-start; }
+.hero > .hero-car .sub { margin-top: 0; text-align: right; white-space: nowrap; }
+.hero .odo > .odo-age { text-align: right; }

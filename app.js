@@ -1625,6 +1625,10 @@ function viewOverview() {
 
   // Bilkortet: bilden med bränslestapeln, och under den en rad med mätarställning till vänster och bilen till höger.
   parts.push(`<article class="card hero">
+    <div class="hero-car">
+      <div class="hero-name">${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}<b>${esc(carName(c))}</b></div>
+      <div class="sub">${esc([c.year, c.fuel].filter(Boolean).join(" · "))}</div>
+    </div>
     <div class="hero-media">
       <label class="car-pick" title="Byt bild på bilen">
         ${carVisual(c)}
@@ -1635,12 +1639,9 @@ function viewOverview() {
     </div>
     <div class="odo">
       <button class="odo-btn" type="button" data-act="new-entry" data-type="matare" aria-label="Mätarställning ${odoOf(c) != null ? fmt(odoOf(c)) : "saknas"} mil. Tryck för att uppdatera.">
-        <span class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span>${icon("next", 14)}</span>${odoAgeHtml(c)}
+        <span class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span>${icon("next", 14)}</span>
       </button>
-      <div class="hero-car">
-        <div class="hero-name">${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}<b>${esc(carName(c))}</b></div>
-        <div class="sub">${esc([c.year, c.fuel].filter(Boolean).join(" · "))}</div>
-      </div>
+      ${odoAgeHtml(c)}
     </div>
   </article>`);
 
