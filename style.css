@@ -8,12 +8,16 @@
   --glass-edge: rgba(255, 255, 255, .85);
   --input: rgba(255, 255, 255, .8);
   --ink: #232221;
-  --ink-2: #5d5853;
-  --ink-3: #8a8179;
+  --ink-2: #534e49;
+  --ink-3: #6B635C;
   --line: rgba(35, 34, 33, .1);
   --accent: #E77026;
   --accent-ink: #ffffff;
   --accent-soft: rgba(231, 112, 38, .14);
+  /* Orange text på ljus botten: mörkare än accenten, så att den går att läsa. */
+  --accent-text: #AD4C17;
+  --danger: #B93A24;
+  --danger-soft: rgba(185, 58, 36, .1);
   --sage: #5E786F;
   --sage-soft: rgba(107, 133, 127, .16);
   --sand: #BFAE9E;
@@ -46,6 +50,9 @@
     --accent: #F08443;
     --accent-ink: #1b1209;
     --accent-soft: rgba(240, 132, 67, .16);
+    --accent-text: #F08443;
+    --danger: #F07A63;
+    --danger-soft: rgba(240, 122, 99, .14);
     --sage: #8FAAA3;
     --sage-soft: rgba(143, 170, 163, .16);
     --sand: #8a7d71;
@@ -73,6 +80,9 @@
   --accent: #F08443;
   --accent-ink: #1b1209;
   --accent-soft: rgba(240, 132, 67, .16);
+  --accent-text: #F08443;
+  --danger: #F07A63;
+  --danger-soft: rgba(240, 122, 99, .14);
   --sage: #8FAAA3;
   --sage-soft: rgba(143, 170, 163, .16);
   --sand: #8a7d71;
@@ -95,7 +105,7 @@
 .car-chips::-webkit-scrollbar { display: none; }
 .car-chips button { flex: none; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--glass-edge); background: var(--glass); color: var(--ink-2); font: 600 13px var(--f-body); padding: 8px 14px; border-radius: var(--r-chip); cursor: pointer; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .car-chips button[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
-.car-chips button.add { color: var(--accent); border-style: dashed; border-color: var(--accent); background: transparent; }
+.car-chips button.add { color: var(--accent-text); border-color: transparent; background: var(--accent-soft); backdrop-filter: none; -webkit-backdrop-filter: none; }
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -162,7 +172,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   min-width: 0;
 }
 .card h2 { margin: 0 0 12px; font-family: var(--f-display); font-size: 17px; font-weight: 700; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-wrap: balance; }
-.link { font-family: var(--f-body); font-size: 13px; font-weight: 500; color: var(--accent); text-decoration: none; background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap; }
+.link { font-family: var(--f-body); font-size: 13px; font-weight: 600; color: var(--accent-text); text-decoration: none; background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap; position: relative; }
+/* Textlänkar är små, men tryckytan är minst 44 punkter hög. */
+.link::after { content: ""; position: absolute; left: -8px; right: -8px; top: 50%; height: 44px; transform: translateY(-50%); }
 .label { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
 .muted { color: var(--ink-3); font-size: 13.5px; margin: 0; }
 .empty { text-align: center; padding: 26px 12px; color: var(--ink-2); }
@@ -171,7 +183,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 /* activity card */
 .toast { display: flex; gap: 12px; align-items: center; padding: 12px 14px; width: 100%; text-align: left; cursor: pointer; }
 .avatar { width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center; font-family: var(--f-display); font-weight: 700; font-size: 14px; background: var(--sage-soft); color: var(--sage); }
-.avatar.me { background: var(--accent-soft); color: var(--accent); }
+.avatar.me { background: var(--accent-soft); color: var(--accent-text); }
 .avatar.sys { background: var(--warn-soft); color: var(--warn); }
 .toast p { margin: 0; font-size: 14px; min-width: 0; }
 .toast time { display: block; font-size: 12px; color: var(--ink-3); }
@@ -193,7 +205,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .vh { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip: rect(0 0 0 0); }
 .row-actions { display: flex; align-items: center; gap: 10px; }
-.link.danger { color: var(--accent); }
+.link.danger { color: var(--danger); }
 .car-fig { margin: 12px 0 8px; position: relative; }
 .car-photo { display: block; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 16px; background: var(--track); }
 .car-fig figcaption { position: absolute; right: 8px; bottom: 8px; }
@@ -201,7 +213,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .odo { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .odo-num { font-family: var(--f-display); font-weight: 800; font-size: 34px; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .odo-num span { font-size: 15px; font-weight: 600; color: var(--ink-3); margin-left: 4px; }
-.btn-soft { border: 0; cursor: pointer; font: 600 13px var(--f-body); color: var(--accent); background: var(--accent-soft); padding: 9px 14px; border-radius: var(--r-chip); white-space: nowrap; }
+.btn-soft { border: 0; cursor: pointer; font: 600 13px var(--f-body); color: var(--accent-text); background: var(--accent-soft); padding: 9px 14px; border-radius: var(--r-chip); white-space: nowrap; }
 
 /* service gauge */
 .facts { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -226,7 +238,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dl-v { font-family: var(--f-display); font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pill { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: var(--r-chip); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pill.soon { background: var(--warn-soft); color: var(--warn); }
-.pill.urgent { background: var(--accent-soft); color: var(--accent); }
+.pill.urgent { background: var(--accent-soft); color: var(--accent-text); }
 .pill.ok { background: var(--sage-soft); color: var(--sage); }
 .pill.none { background: var(--track); color: var(--ink-3); }
 
@@ -257,7 +269,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .btn { border: 0; cursor: pointer; font: 600 15px var(--f-body); padding: 12px 18px; border-radius: var(--r-chip); background: var(--ink); color: var(--ground); display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); }
 .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
-.btn.danger { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.btn.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
 .btn.block { width: 100%; }
 .btn[disabled] { opacity: .55; cursor: default; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -279,6 +291,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 /* log list */
 .filters { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; margin: 0 -2px; }
 .filters::-webkit-scrollbar { display: none; }
+/* Fler filter åt höger: kanten tonas ut så att man ser att raden går att svepa. */
+.filters.more, .car-chips.more { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
 .filters button { flex: none; border: 1px solid var(--glass-edge); background: var(--glass); color: var(--ink-2); font: 500 13px var(--f-body); padding: 8px 14px; border-radius: var(--r-chip); cursor: pointer; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .filters button[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .month { font-family: var(--f-display); font-weight: 700; font-size: 14px; color: var(--ink-3); margin: 6px 4px -4px; }
@@ -291,7 +305,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .entry .d { display: block; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
 .entry .m { font-size: 12px; color: var(--ink-3); margin-top: 3px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .who { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: var(--r-chip); background: var(--sage-soft); color: var(--sage); }
-.who.me { background: var(--accent-soft); color: var(--accent); }
+.who.me { background: var(--accent-soft); color: var(--accent-text); }
 .entry .amt { font-family: var(--f-display); font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* car facts */
@@ -320,25 +334,25 @@ input::placeholder, textarea::placeholder { color: var(--ink-3); }
 fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 legend { font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 0; margin-bottom: 8px; }
 .checks { display: flex; flex-wrap: wrap; gap: 8px; }
-.check { display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: var(--r-chip); border: 1px solid var(--line); background: var(--input); font-size: 14px; cursor: pointer; }
+.check { display: inline-flex; align-items: center; gap: 8px; padding: 11px 14px; min-height: 44px; border-radius: var(--r-chip); border: 1px solid var(--line); background: var(--input); font-size: 14px; cursor: pointer; }
 /* Kryssknappar ser ut som filterknapparna: orange när de är valda, med en bock. */
 .check { position: relative; user-select: none; -webkit-user-select: none; transition: background .15s, border-color .15s, color .15s; }
 .check input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
-.check::before { content: ""; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--ink-3); flex: none; box-sizing: border-box; }
-.check:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.check::before { content: ""; width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--ink-3); flex: none; box-sizing: border-box; }
+.check:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 .check:has(input:checked)::before { content: "✓"; border: 0; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 800; display: grid; place-items: center; line-height: 1; }
 .check:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .section-t { font-family: var(--f-display); font-weight: 700; font-size: 16px; margin: 6px 0 -4px; }
-.err { color: var(--accent); font-size: 13.5px; margin: 0; }
+.err { color: var(--accent-text); font-size: 13.5px; margin: 0; }
 .photo-in { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; border: 1px dashed var(--line); background: var(--input); cursor: pointer; color: var(--ink-2); font-size: 14px; }
 .photo-in input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.photo-in svg { color: var(--accent); flex: none; }
+.photo-in svg { color: var(--accent-text); flex: none; }
 .photo { border-radius: 16px; width: 100%; display: block; }
 .odo-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 14px; background: var(--input); border: 1px solid var(--line); }
 .odo-row b { font-family: var(--f-display); font-size: 18px; font-variant-numeric: tabular-nums; }
 .big-input { font-family: var(--f-display); font-weight: 700; font-size: 26px; padding: 14px 16px; }
 details.more { border-top: 1px solid var(--line); padding-top: 12px; }
-details.more summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--accent); list-style: none; padding: 4px 0; }
+details.more summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--accent-text); list-style: none; padding: 4px 0; }
 details.more summary::-webkit-details-marker { display: none; }
 details.more summary::after { content: " ▾"; }
 details.more[open] summary::after { content: " ▴"; }
@@ -370,7 +384,7 @@ details.more > .form { margin-top: 12px; }
 }
 .tab { border: 0; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; font: 500 11px var(--f-body); color: var(--ink-3); padding: 6px 0; border-radius: 18px; }
 .tab[aria-current="page"] { color: var(--ink); }
-.tab[aria-current="page"] svg { color: var(--accent); }
+.tab[aria-current="page"] svg { color: var(--accent-text); }
 .fab { justify-self: center; width: 54px; height: 54px; border-radius: 50%; border: 0; cursor: pointer; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; box-shadow: 0 10px 24px -8px var(--accent); margin-top: -22px; }
 
 /* sheet */
@@ -392,7 +406,7 @@ details.more > .form { margin-top: 12px; }
 .sheet-head .icon-btn { width: 38px; height: 38px; }
 .types { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .types button { border: 1px solid var(--line); background: var(--input); border-radius: 18px; padding: 14px 6px; display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; font: 500 13px var(--f-body); color: var(--ink); }
-.types button svg { color: var(--accent); }
+.types button svg { color: var(--accent-text); }
 .hint { font-size: 12.5px; color: var(--ink-3); margin: 0; }
 .detail-list { display: flex; flex-direction: column; gap: 10px; margin: 0; }
 .detail-list div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
@@ -411,7 +425,7 @@ details.more > .form { margin-top: 12px; }
 #confirm-body p { margin: 0 0 6px; color: var(--ink-2); font-size: 14.5px; }
 #confirm-body p.warn { color: var(--ink-3); font-size: 13px; margin-top: 10px; }
 .confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
-.btn.solid-danger { background: #C8432B; color: #fff; }
+.btn.solid-danger { background: var(--danger); color: #fff; }
 @media (prefers-reduced-motion: no-preference) {
   .confirm:not([hidden]) { animation: pop .18s ease-out; }
   @keyframes pop { from { transform: translate(-50%, -46%); opacity: 0; } to { transform: translate(-50%, -50%); opacity: 1; } }
@@ -450,8 +464,9 @@ input[type="range"].fuel-range:focus-visible { outline: 2px solid var(--accent);
 /* toast message */
 .toast-msg {
   position: fixed; z-index: 20; left: 50%; transform: translateX(-50%);
-  top: calc(12px + env(safe-area-inset-top, 0px));
+  bottom: calc(96px + env(safe-area-inset-bottom, 0px));
   width: min(440px, calc(100% - 32px));
+  display: flex; align-items: center; gap: 12px;
   background: var(--ink); color: var(--ground); border-radius: 16px; padding: 12px 16px;
   font-size: 14px; box-shadow: var(--shadow);
   /* Släpp igenom tryck, så att knapparna under meddelandet fungerar medan det syns. */
@@ -462,10 +477,10 @@ input[type="range"].fuel-range:focus-visible { outline: 2px solid var(--accent);
   .sheet:not([hidden]) { animation: up .25s ease-out; }
   .toast-msg:not([hidden]) { animation: drop .25s ease-out; }
   @keyframes up { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
-  @keyframes drop { from { transform: translate(-50%, -10px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+  @keyframes drop { from { transform: translate(-50%, 10px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
 }
 .tire-head { font-weight: 700; font-size: 14.5px; margin: 10px 0 -4px; padding-top: 12px; border-top: 1px solid var(--line); }
-.tire-head .tire-on { color: var(--accent); font-weight: 600; }
+.tire-head .tire-on { color: var(--accent-text); font-weight: 600; }
 /* Ingen nivå angiven: knoppen syns svagt tills man drar i den. */
 input[type="range"].fuel-range.unset::-webkit-slider-thumb { opacity: .35; }
 input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
@@ -574,7 +589,9 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
   .sheet { padding-top: 0; }
   .sheet-head { top: 0; padding-top: 14px; }
   .confirm { left: calc(50% + var(--side) / 2); }
-  .toast-msg { left: calc(50% + var(--side) / 2); }
+  .toast-msg { left: calc(50% + var(--side) / 2); bottom: 24px; }
+  /* Aviseringar och Inställningar finns i sidomenyn, så ikonerna uppe till höger behövs inte. */
+  .top-actions { display: none; }
 }
 @media (min-width: 900px) and (prefers-reduced-motion: no-preference) {
   .sheet:not([hidden]) { animation: pop .2s ease-out; }
@@ -592,7 +609,7 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 /* Fält med platsknapp */
 .geo-row { display: flex; gap: 8px; align-items: stretch; }
 .geo-row input { flex: 1; }
-.geo-btn { flex: none; width: 48px; border-radius: 14px; border: 1px solid var(--line); background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.geo-btn { flex: none; width: 48px; border-radius: 14px; border: 1px solid var(--line); background: var(--accent-soft); color: var(--accent-text); display: grid; place-items: center; cursor: pointer; padding: 0; }
 .geo-btn.busy svg { animation: geo-pulse 1s ease-in-out infinite; }
 @keyframes geo-pulse { 50% { opacity: .35; } }
 .geo-picks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -601,7 +618,7 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 
 /* Mätarställningens ålder */
 .odo-age { font-size: 12px; color: var(--ink-3); margin-top: 6px; }
-.odo-age.old { color: var(--accent); font-weight: 600; }
+.odo-age.old { color: var(--accent-text); font-weight: 600; }
 
 /* Mindre bild på bilen i mobilen, så att mer syns direkt */
 @media (max-width: 759px) {
@@ -646,7 +663,7 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .ybar i.zero { background: var(--track); opacity: 1; height: 3px !important; }
 .ybar.sel i { background: var(--accent); opacity: 1; }
 .ybar span { font-size: 11px; color: var(--ink-3); font-weight: 600; order: 2; }
-.ybar.sel span { color: var(--accent); }
+.ybar.sel span { color: var(--accent-text); }
 .ybar:disabled { cursor: default; opacity: .4; }
 
 /* "Det här gjordes": ikryssad rad visar åtgärd och position */
@@ -665,7 +682,7 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .w-sides label { position: relative; }
 .w-sides input { position: absolute; opacity: 0; pointer-events: none; }
 .w-sides span { display: inline-block; padding: 5px 10px; border-radius: var(--r-chip); border: 1px dashed var(--line); background: transparent; font: 500 12.5px var(--f-body); color: var(--ink-2); cursor: pointer; }
-.w-sides input:checked + span { border-style: solid; border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.w-sides input:checked + span { border-style: solid; border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
 .w-sides input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .w-add { margin-top: 10px; }
 /* Hjulen som bilen sedd uppifrån: fram överst, bak under */
@@ -675,7 +692,9 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .bk-map { position: relative; height: 150px; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); background: var(--track); margin-top: -4px; }
 .bk-map-inner, .bk-map-inner iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .bk-map-open { position: absolute; inset: 0; border: 0; background: transparent; cursor: pointer; display: flex; align-items: flex-end; justify-content: flex-end; padding: 8px; }
-.bk-map-open span { display: inline-flex; align-items: center; gap: 5px; background: var(--glass-strong); color: var(--accent); border: 1px solid var(--glass-edge); border-radius: var(--r-chip); padding: 5px 10px; font: 600 12.5px var(--f-body); box-shadow: var(--shadow); }
+.bk-map-open span { display: inline-flex; align-items: center; gap: 5px; background: var(--glass-strong); color: var(--accent-text); border: 1px solid var(--glass-edge); border-radius: var(--r-chip); padding: 5px 10px; font: 600 12.5px var(--f-body); box-shadow: var(--shadow); }
 #map-choice { z-index: 21; }
 #map-choice-scrim { z-index: 20; }
 #map-choice .btn { text-align: center; text-decoration: none; }
+/* Långa rubriker i rutorna kortas efter två rader. Hela rubriken finns som title. */
+#sheet-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

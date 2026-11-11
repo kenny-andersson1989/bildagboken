@@ -12,7 +12,7 @@ import {
 import { firebaseConfig } from "./firebase-config.js";
 import { MAPKIT_TOKEN } from "./maps-config.js";
 
-const VERSION = "2.5";
+const VERSION = "2.6";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -397,7 +397,7 @@ function entryDetail(e, c = car()) {
       if (e.station) bits.push(e.station);
       return bits.join(" · ");
     }
-    case "matare": return `${fmt(e.odometer)} mil`;
+    case "matare": return "";
     case "service":
     case "eget": return workOf(e, c).map(workText).join(", ") || e.note || "";
     case "dack": {
@@ -719,7 +719,7 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   }
   // Behåll sidledsscrollen i filter- och bilraderna när sidan ritas om.
   const keepScroll = {};
-  if (S.screen === key) app.querySelectorAll(".filters, .car-chips").forEach((el) => { keepScroll[el.className] = el.scrollLeft; });
+  if (S.screen === key) app.querySelectorAll(".filters, .car-chips").forEach((el) => { keepScroll[el.classList[0]] = el.scrollLeft; });
   // Behåll fokus och markören i ett fält (till exempel sökfältet) om sidan ritas om medan man skriver.
   const active = app.contains(document.activeElement) && document.activeElement.id ? document.activeElement : null;
   const caret = active && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
@@ -735,12 +735,13 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
     }
   }
   app.querySelectorAll(".filters, .car-chips").forEach((el) => {
-    if (keepScroll[el.className] != null) el.scrollLeft = keepScroll[el.className];
+    if (keepScroll[el.classList[0]] != null) el.scrollLeft = keepScroll[el.classList[0]];
     const sel = el.querySelector('[aria-pressed="true"]');
     if (sel) {
       const r = sel.getBoundingClientRect(), box = el.getBoundingClientRect();
       if (r.right > box.right || r.left < box.left) el.scrollLeft += r.left - box.left - (box.width - r.width) / 2;
     }
+    markMore(el);
   });
   app.classList.toggle("no-nav", !showNav);
   nav.hidden = !showNav;
@@ -751,6 +752,11 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
     });
   }
 }
+
+// Rader som går att svepa i sidled tonas ut i högerkanten så länge det finns mer att se.
+function markMore(el) { el.classList.toggle("more", el.scrollWidth - el.clientWidth - el.scrollLeft > 4); }
+document.addEventListener("scroll", (ev) => { if (ev.target.classList?.contains("filters") || ev.target.classList?.contains("car-chips")) markMore(ev.target); }, true);
+window.addEventListener("resize", () => app.querySelectorAll(".filters, .car-chips").forEach(markMore));
 
 function render() {
   if (!S.user) return renderLogin();
@@ -801,7 +807,7 @@ function renderOnboarding(error = "") {
       <h2>Gå med i en befintlig</h2>
       <label class="field"><span>Ditt namn</span><input name="name" id="ob-name2" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
       <label class="field"><span>Inbjudningskod</span><input name="code" id="ob-code" required maxlength="8" value="${esc(join)}" autocapitalize="characters" autocomplete="off" placeholder="Sex tecken" style="text-transform:uppercase;letter-spacing:.12em"></label>
-      <button class="btn block" type="submit">Gå med</button>
+      <button class="btn primary block" type="submit">Gå med</button>
     </form>
     ${error ? `<p class="err">${esc(error)}</p>` : ""}
     <button class="link" type="button" data-act="logout" style="align-self:center">Logga ut (${esc(S.user.email || "")})</button>`);
@@ -1063,10 +1069,12 @@ function installCard() {
   const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
   if (standalone || pref.get("installDismissed")) return "";
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const desktop = !ios && window.matchMedia("(pointer: fine)").matches;
   return `<article class="card">
-    <h2>Lägg appen på hemskärmen <button class="link" type="button" data-act="dismiss-install">Dölj</button></h2>
+    <h2>${desktop ? "Installera appen" : "Lägg appen på hemskärmen"} <button class="link" type="button" data-act="dismiss-install">Dölj</button></h2>
     <p class="muted">${ios
       ? "Tryck på Dela-knappen i Safari och välj <b>Lägg till på hemskärmen</b>. Då öppnas Bildagboken som en vanlig app."
+      : desktop ? "I Chrome och Edge finns en installera-knapp längst till höger i adressfältet. Då öppnas Bildagboken i ett eget fönster."
       : "Öppna webbläsarens meny och välj <b>Installera app</b> eller <b>Lägg till på startskärmen</b>."}</p>
   </article>`;
 }
@@ -1075,7 +1083,7 @@ function inviteCard() {
   if (!S.house || (S.house.members || []).length > 1) return "";
   return `<article class="card">
     <h2>Bjud in din sambo</h2>
-    <p class="muted">Ni delar allt i appen. Din sambo loggar in med sitt Google-konto och skriver in koden:</p>
+    <p class="muted">Ni delar allt i appen. Din sambo loggar in med Apple eller Google och skriver in koden:</p>
     <p class="code" style="margin:10px 0">${esc(S.house.inviteCode)}</p>
     <button class="btn-soft" type="button" data-act="copy-invite">Kopiera inbjudningslänk</button>
   </article>`;
@@ -1143,7 +1151,7 @@ function viewOverview() {
       <h2>Underhåll <button class="link" type="button" data-act="goto-maintenance">Visa alla</button></h2>
       <div class="rows">${top.map((x) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(x.item.id)}">
         <span class="dl-ic">${icon("wrench", 20)}</span>
-        <span><span class="dl-t">${esc(x.item.name)}</span><span class="dl-s">${esc(dueText(x))}</span>${wearBar(x)}</span>
+        <span><span class="dl-t">${esc(x.item.name)}</span><span class="dl-s">${esc(itemSubText(x))}</span>${wearBar(x)}</span>
         <span class="pill ${x.level}">${esc(x.label)}</span></button>`).join("")}</div>
       ${unknownCount && pref.get("maintHintHidden." + c.id) !== String(unknownCount) ? `<div class="ask"><button class="btn-soft" type="button" data-act="edit-items">Fyll i underhåll (${unknownCount} kvar)</button><button class="link" type="button" data-act="hide-maint-hint" data-n="${unknownCount}">Dölj</button></div>` : ""}
     </article>`);
@@ -1157,7 +1165,7 @@ function viewOverview() {
   parts.push(`<article class="card">
     <h2>Ekonomi <button class="link" type="button" data-go="ekonomi">Visa alla</button></h2>
     ${hasCosts ? `<div class="eco">
-      <div class="stat"><div class="label">${MONTHS[new Date().getMonth()].replace(/^./, (x) => x.toUpperCase())}</div><div class="n">${fmt(eco.thisMonth)} <small>kr</small></div></div>
+      <div class="stat"><div class="label">${MONTHS[new Date().getMonth()].replace(/^./, (x) => x.toUpperCase())}</div><div class="n">${fmtKr(eco.thisMonth)} <small>kr</small></div></div>
       <div class="stat"><div class="label">Snitt per månad</div><div class="n">${(() => { const y = yearAverage(carEntries().filter((e) => e.amount > 0 && e.date), new Date().getFullYear()); return y.total ? fmt(y.avg) : "–"; })()} <small>kr</small></div></div>
       <div class="bars" aria-label="Kostnad per månad de senaste sex månaderna">
         ${eco.bars.map((b) => `<div class="bar${b.now ? " now" : ""}">${b.sum ? `<b>${fmt(b.sum / 1000, 1)}k</b>` : ""}<i style="height:${Math.round((b.sum / maxBar) * 70)}%"></i><span>${b.label}</span></div>`).join("")}
@@ -1256,7 +1264,7 @@ function entryRow(e, fromCat = null) {
     <span class="dl-ic">${icon(TYPE[e.type]?.icon || "list", 20)}</span>
     <span><span class="t">${esc(entryTitle(e))}</span>${d ? `<span class="d">${esc(d)}</span>` : ""}
       <span class="m"><span class="who${mine ? " me" : ""}">${esc(whoName(e.createdBy))}</span>${esc(fmtDateShort(e.date))}${e.odometer != null && e.type !== "matare" ? ` · ${fmt(e.odometer)} mil` : ""}${e.photoId ? " · bild" : ""}</span></span>
-    <span class="amt">${e.amount != null ? `${fmtKr(e.amount)} kr` : ""}</span>
+    <span class="amt">${e.amount != null ? `${fmtKr(e.amount)} kr` : e.type === "matare" && e.odometer != null ? `${fmt(e.odometer)} mil` : ""}</span>
   </button>`;
 }
 
@@ -1307,7 +1315,7 @@ function viewLog() {
   const filters = [["alla", "Alla"], ["tank", "Tankning"], ["service", "Service"], ["eget", "Eget jobb"], ["dack", "Däck"], ["tvatt", "Tvätt"], ["parkering", "Parkering"], ["kostnad", "Kostnad"], ["besiktning", "Besiktning"], ["matare", "Mätarställning"]];
   return `${subHeader("Allt som hänt med bilen", "Logg")}
     <label class="search">${icon("search", 18)}
-      <input type="search" id="log-search" placeholder="Sök i loggen, till exempel bromsar eller Mekonomen" value="${esc(S.query || "")}" autocomplete="off" enterkeyhint="search" aria-label="Sök i loggen">
+      <input type="search" id="log-search" placeholder="Sök, till exempel bromsar" value="${esc(S.query || "")}" autocomplete="off" enterkeyhint="search" aria-label="Sök i loggen">
       ${S.query ? `<button class="search-clear" type="button" data-act="clear-search" aria-label="Rensa sökningen">${icon("close", 14)}</button>` : ""}
     </label>
     <div class="filters" role="group" aria-label="Filtrera loggen">
@@ -1392,11 +1400,11 @@ function viewEconomy() {
           const key = `${year}-${pad(i + 1)}`;
           const future = key > nowKey;
           return `<button type="button" class="ybar${key === sel ? " sel" : ""}" data-act="eco-month" data-m="${key}"${future ? " disabled" : ""} aria-label="${esc(monthLabelLong(key))}: ${fmtKr(v)} kr" aria-pressed="${key === sel}">
-            <i${v ? "" : ' class="zero"'} style="height:${v ? Math.max(4, Math.round((v / max) * 100)) : 0}%"></i><span>${MONTHS_SHORT[i].slice(0, 1)}</span></button>`;
+            <i${v ? "" : ' class="zero"'} style="height:${v ? Math.max(4, Math.round((v / max) * 100)) : 0}%"></i><span>${MONTHS_SHORT[i]}</span></button>`;
         }).join("")}
       </div>
       <div class="eco" style="margin-top:12px">
-        <div class="stat"><div class="label">Totalt ${year}</div><div class="n">${fmt(yearTotal)} <small>kr</small></div></div>
+        <div class="stat"><div class="label">Totalt ${year}</div><div class="n">${fmtKr(yearTotal)} <small>kr</small></div></div>
         <div class="stat"><div class="label">Snitt per månad</div><div class="n">${yearTotal ? fmt(yearAvg) : "–"} <small>kr</small></div></div>
         <div class="stat"><div class="label">Kostnad per mil</div><div class="n">${driven && yearTotal ? fmt(yearTotal / driven, 2) : "–"} <small>kr</small></div></div>
         <div class="stat"><div class="label">Körsträcka</div><div class="n">${driven != null ? fmt(driven) : "–"} <small>mil</small></div></div>
@@ -1413,6 +1421,20 @@ function daysToDue(s, c) {
   const rate = milPerDay(c) || 1500 / 365;
   const ds = [s.remDays, s.remMil != null ? s.remMil / rate : null].filter((x) => x != null);
   return ds.length ? Math.min(...ds) : 1e6;
+}
+
+// Intervallet i text: "var 2 000 mil eller 1 år". Hela år skrivs i år, annars i månader.
+function monthsText(m) { return m % 12 === 0 ? `${m / 12} år` : `${m} mån`; }
+function intervalText(item) {
+  const t = [item.mil ? `${fmt(item.mil)} mil` : "", item.months ? monthsText(item.months) : ""].filter(Boolean).join(" eller ");
+  return t ? `var ${t}` : "inget intervall";
+}
+// Raden under en underhållspunkt, samma på Översikt och Bilen: nästa gräns om den är känd, annars intervallet.
+function itemSubText(s) {
+  if (s.noOdo) return `${intervalText(s.item)} · mätarställning saknas`;
+  if (s.noInterval) return s.lastDate ? `Senast ${fmtDateShort(s.lastDate)}` : "";
+  if (s.unknown) return `${intervalText(s.item)} · senaste byte okänt`;
+  return dueText(s) || intervalText(s.item);
 }
 
 // Nästa gräns i text: "Vid 23 700 mil eller senast juli 2027".
@@ -1457,9 +1479,7 @@ function viewCar() {
     </div>
     <div class="card" id="underhall" style="scroll-margin-top:16px">
       <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
-      <div class="rows">${st.filter((s) => s.item.mil || s.item.months || s.lastDate).map((s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc([
-        [s.item.mil ? `var ${fmt(s.item.mil)} mil` : "", s.item.months ? `${s.item.months >= 24 && s.item.months % 12 === 0 ? `${s.item.months / 12} år` : `${s.item.months} mån`}` : ""].filter(Boolean).join(" eller ") || "inget intervall",
-        s.noOdo ? "mätarställning saknas" : s.noInterval ? `senast ${fmtDateShort(s.lastDate)}` : s.unknown ? "senaste byte okänt" : s.lastDate ? `senast ${fmtDateShort(s.lastDate)}` : ""].filter(Boolean).join(" · "))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
+      <div class="rows">${st.filter((s) => s.item.mil || s.item.months || s.lastDate).map((s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
       ${(() => {
         const extras = extraParts(c);
         if (!extras.length) return "";
@@ -1536,7 +1556,7 @@ function viewSettings() {
       <h2>Namn</h2>
       <label class="field"><span>Hushållets namn</span><input name="house" id="st-house" required maxlength="40" value="${esc(S.house?.name || "")}"></label>
       <label class="field"><span>Ditt namn, så ser din sambo dig i appen</span><input name="name" id="st-name" required maxlength="30" value="${esc(myName())}"></label>
-      <button class="btn block" type="submit">Spara</button>
+      <button class="btn primary block" type="submit">Spara</button>
     </form>
     <div class="card">
       <h2>Utseende</h2>
@@ -1557,7 +1577,7 @@ function viewSettings() {
         <span class="row-actions">${x.id === S.carId ? `<span class="pill ok">Vald</span>` : `<button class="link" type="button" data-act="pick-car" data-id="${esc(x.id)}">Välj</button>`}
         <button class="link danger" type="button" data-act="delete-car" data-id="${esc(x.id)}" aria-label="Ta bort ${esc(carName(x))}">Ta bort</button></span></div>`).join("")}</div>
       <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för er båda. Du får frågan en gång till innan något tas bort.</p>
-      <div class="ask"><button class="btn-soft" type="button" data-act="add-car">Lägg till bil</button></div>
+      <div class="ask"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>
     </div>
     <div class="card">
       <h2>Säkerhetskopia</h2>
@@ -1574,7 +1594,7 @@ function viewSettings() {
           ${on ? `<span class="pill ok">Kopplat</span>` : `<button class="link" type="button" data-act="link-provider" data-provider="${k}">Koppla</button>`}</div>`;
       }).join("")}</div>
       <p class="hint" style="margin-top:10px">Koppla både Google och Apple så kan du logga in med vilket du vill och ändå se samma bilar och logg.</p>
-      <div class="ask"><button class="btn ghost" type="button" data-act="logout">Logga ut</button></div>
+      <div class="ask"><button class="btn ghost block" type="button" data-act="logout">Logga ut</button></div>
     </div>
     <p class="hint" style="text-align:center">Bildagboken ${VERSION}</p>`;
 }
@@ -1585,12 +1605,17 @@ const sheet = $("#sheet");
 const scrim = $("#scrim");
 
 let sheetReturnFocus = null;
+// En öppen ruta läggs i webbläsarens historik, så att bakåt (Android, svep i Safari) stänger rutan i stället för appen.
+let sheetHistory = null, ignorePops = 0;
 function openSheet(title, body, { back = null, backId = null } = {}) {
   if (sheet.hidden) sheetReturnFocus = document.activeElement;
+  if (!sheetHistory) {
+    try { history.pushState({ bdSheet: 1 }, "", location.href); sheetHistory = location.href; } catch { /* historiken går inte att ändra */ }
+  }
   sheet.innerHTML = `<div class="grab"></div>
     <div class="sheet-head">
       ${back ? `<button class="icon-btn" type="button" data-act="${back}"${backId ? ` data-id="${esc(backId)}"` : ""} aria-label="Tillbaka">${icon("back", 18)}</button>` : ""}
-      <h3 id="sheet-title">${esc(title)}</h3>
+      <h3 id="sheet-title" title="${esc(title)}">${esc(title)}</h3>
       <button class="icon-btn" type="button" data-act="close-sheet" aria-label="Stäng">${icon("close", 18)}</button>
     </div>${body}`;
   sheet.setAttribute("aria-labelledby", "sheet-title");
@@ -1605,7 +1630,11 @@ function openSheet(title, body, { back = null, backId = null } = {}) {
     if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
   }, 0);
 }
-function closeSheet() {
+function closeSheet(fromBack = false) {
+  if (sheetHistory) {
+    if (!fromBack && history.state?.bdSheet) { ignorePops++; history.back(); }
+    sheetHistory = null;
+  }
   sheet.hidden = true;
   scrim.hidden = true;
   sheet.innerHTML = "";
@@ -1661,13 +1690,13 @@ function bookingForm(b = {}) {
   const kinds = Object.entries(BOOK_KINDS);
   openSheet(isEdit ? `${BOOK_KINDS[b.kind] || "Bokning"} ${fmtDateShort(b.date)}` : "Bokad tid", `
     <form class="form" data-form="booking"${isEdit ? ` data-id="${esc(b.id)}"` : ""} novalidate>
-      ${isEdit ? `<button class="btn primary block" type="button" data-act="booking-done" data-id="${esc(b.id)}">${b.kind === "annat" ? "Klart, ta bort bokningen" : "Klart, logga det"}</button>` : ""}
+      ${isEdit ? `<button class="btn ghost block" type="button" data-act="booking-done" data-id="${esc(b.id)}">${b.kind === "annat" ? "Klart, ta bort bokningen" : "Klart, logga det"}</button>` : ""}
       ${field("Vad är bokat?", `<select name="kind" id="bk-kind">${kinds.map(([k, l]) => `<option value="${k}"${(b.kind || "service") === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
       <div class="row2">
         ${field("Datum", `<input type="date" name="date" id="bk-date" required value="${esc(b.date || "")}">`)}
         ${field("Tid", `<input type="time" name="time" id="bk-time" value="${esc(b.time || "")}">`)}
       </div>
-      ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Företagets namn, till exempel Mölndals däckservice" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-suggest" aria-expanded="false">
+      ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Till exempel Mölndals däckservice" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-suggest" aria-expanded="false">
         <span class="suggest" id="bk-suggest" role="listbox" hidden></span>`)}
       ${field("Adress", `<input name="placeAddr" id="bk-addr" value="${esc(b.addr || "")}" placeholder="Till exempel Kråketorpsgatan 20, Mölndal" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-addr-suggest" aria-expanded="false">
         <input type="hidden" name="placeLat" id="bk-lat" value="${b.lat ?? ""}">
@@ -1681,7 +1710,7 @@ function bookingForm(b = {}) {
       </div>
       ${field("Anteckning", `<textarea name="note" id="bk-note" rows="2" placeholder="Till exempel lämna nyckeln i brevlådan">${esc(b.note || "")}</textarea>`)}
       <p class="err" id="form-err" hidden></p>
-      <button class="btn ${isEdit ? "" : "primary "}block" type="submit">${isEdit ? "Spara ändringar" : "Spara bokningen"}</button>
+      <button class="btn primary block" type="submit">${isEdit ? "Spara ändringar" : "Spara bokningen"}</button>
       ${isEdit
         ? `<button class="btn ghost block" type="button" data-act="booking-calendar" data-id="${esc(b.id)}">${icon("calendar", 18)} Lägg till i kalendern</button>
            <button class="btn danger block" type="button" data-act="delete-booking" data-id="${esc(b.id)}">Ta bort bokningen</button>`
@@ -1907,32 +1936,29 @@ function entryForm(type, e = {}, opts = {}) {
   const v = (k) => esc(e[k] ?? "");
   const date = field("Datum", `<input type="date" name="date" id="ef-date" required value="${esc(e.date || todayStr())}">`);
   const odo = (required = false) => field("Mätarställning (mil)", `<input name="odometer" id="ef-odometer" inputmode="numeric" ${required ? "required" : ""} placeholder="${odoOf(c) != null ? `Senast ${fmt(odoOf(c))}` : "Till exempel 21 480"}" value="${e.odometer ?? ""}">`);
-  const amount = (label = "Kostnad (kr)") => field(label, `<input name="amount" id="ef-amount" inputmode="decimal" value="${e.amount ?? ""}">`);
+  const amount = (example, label = "Kostnad (kr)", extra = "", hint = "") => field(label, `<input name="amount" id="ef-amount" inputmode="decimal"${extra} value="${e.amount ?? ""}" placeholder="Till exempel ${example}">`, hint);
   const note = field("Anteckning", `<textarea name="note" id="ef-note" rows="2">${v("note")}</textarea>`);
   const photo = `<label class="photo-in">${icon("image", 22)}<span id="photo-label">${e.photoId ? "Bild bifogad. Välj en ny för att byta." : "Lägg till kvitto eller bild"}</span><input type="file" name="photo" id="ef-photo" accept="image/*"></label>`;
   // "Det här gjordes": underhållspunkterna (som förut) och egna delar. Ikryssad rad visar åtgärd och, där det passar, position.
   const workSection = ["service", "eget"].includes(type) ? workFormHtml(c, workOf(e, c)) : "";
   const items = workSection, parts = "";
+  // Anteckning och bild ligger under "Fler detaljer" i alla formulär, öppet om något redan är ifyllt.
+  const more = (extra = "", open = false) => `<details class="more"${open || e.note || e.photoId ? " open" : ""}>
+          <summary>Fler detaljer (valfritt)</summary>
+          <div class="form">${extra}${note}${photo}</div>
+        </details>`;
   let body = "";
   switch (type) {
     case "tank": {
       const fuels = fuelOptions(c);
-      const hasDetails = e.station || e.photoId;
-      body = `${field("Kostnad (kr)", `<input name="amount" id="ef-amount" inputmode="decimal" required value="${e.amount ?? ""}" placeholder="Till exempel 579" class="big-input">`,
-          "Läs av pumpen med kameran: tryck i fältet, välj <b>Skanna text</b> och peka på totalsumman.")}
+      body = `${amount("579", "Kostnad (kr)", " required", "Läs av pumpen med kameran: tryck i fältet, välj <b>Skanna text</b> och peka på totalsumman.")}
         <label class="check"><input type="checkbox" name="full" id="ef-full"${e.full === false ? "" : " checked"}> Tankade fullt</label>
         ${odo(false)}
         ${date}
-        <details class="more"${hasDetails ? " open" : ""}>
-          <summary>Fler detaljer (valfritt)</summary>
-          <div class="form">
-            <div class="row2">
+        ${more(`<div class="row2">
               ${field("Drivmedel", `<select name="fuel" id="ef-fuel">${fuels.map((f) => `<option${(e.fuel || pref.get("fuel." + c.id) || fuels[0]) === f ? " selected" : ""}>${esc(f)}</option>`).join("")}</select>`)}
               ${field("Station", geoInput("station", "ef-station", e.station, "fuel", ""))}
-            </div>
-            ${photo}
-          </div>
-        </details>`;
+            </div>`, !!e.station)}`;
       break;
     }
     case "matare":
@@ -1942,11 +1968,11 @@ function entryForm(type, e = {}, opts = {}) {
     case "service":
       body = `${items}${parts}
         ${field("Verkstad", `<input name="workshop" id="ef-workshop" value="${v("workshop")}" placeholder="Till exempel Mekonomen">`)}
-        ${amount()}${odo(false)}${date}${note}${photo}`;
+        ${amount("2 500")}${odo(false)}${date}${more()}`;
       break;
     case "eget":
       body = `${field("Vad gjorde du?", `<input name="title" id="ef-title" required value="${v("title")}" placeholder="Till exempel bytte glödlampa bak">`)}
-        ${items}${parts}${amount("Kostnad för delar (kr)")}${odo(false)}${date}${note}${photo}`;
+        ${items}${parts}${amount("450", "Kostnad för delar (kr)")}${odo(false)}${date}${more()}`;
       break;
     case "dack": {
       const actDefault = e.tireAction || ((c.tiresOn || "sommar") === "sommar" ? "till_vinter" : "till_sommar");
@@ -1955,17 +1981,17 @@ function entryForm(type, e = {}, opts = {}) {
           ${field("Gäller", `<select name="tireKind" id="ef-tireKind"><option value="">–</option><option value="sommar"${e.tireKind === "sommar" ? " selected" : ""}>Sommardäck</option><option value="vinter"${e.tireKind === "vinter" ? " selected" : ""}>Vinterdäck</option></select>`)}
           ${field("Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}">`)}
         </div>
-        ${amount()}${odo(false)}${date}${note}${photo}`;
+        ${amount("800")}${odo(false)}${date}${more()}`;
       break;
     }
     case "tvatt":
       body = `${field("Var", geoInput("place", "ef-place", e.place ?? (e.id ? "" : pref.get("wash." + c.id) || ""), "car_wash", "Till exempel Circle K Mölndal"))}
-        ${field("Kostnad (kr)", `<input name="amount" id="ef-amount" inputmode="decimal" value="${e.amount ?? ""}" placeholder="Till exempel 149">`)}
-        ${date}${note}${photo}`;
+        ${amount("149")}
+        ${date}${more()}`;
       break;
     case "parkering":
       body = `${field("Var", geoInput("place", "ef-place", e.place, "parking", "Till exempel Kungsgatan, Göteborg"))}
-        ${field("Kostnad (kr)", `<input name="amount" id="ef-amount" inputmode="decimal" value="${e.amount ?? ""}" placeholder="Till exempel 45">`)}
+        ${amount("45")}
         <label class="check"><input type="checkbox" name="fine" id="ef-fine"${e.fine ? " checked" : ""}> P-bot eller felparkeringsavgift</label>
         ${!e.id ? `<label class="check"><input type="checkbox" name="recurring" id="ef-recurring"${opts.recurringId ? " checked" : ""}> Återkommande (hyrd plats)</label>
         <div id="ef-rec-box"${opts.recurringId ? "" : " hidden"}>
@@ -1975,7 +2001,7 @@ function entryForm(type, e = {}, opts = {}) {
           </div>
           <p class="hint">Kostnaden ovan gäller per gång, och första betalningen anges nedanför. Den räknas in i Ekonomi och loggen varje gång, utan att du behöver logga den igen.</p>
         </div>` : ""}
-        ${date}${note}${photo}`;
+        ${date}${more()}`;
       break;
     case "kostnad":
       // Besiktning har en egen knapp i plusmenyn: då finns ingen Typ-lista, och Besiktning finns inte bland andra kostnader.
@@ -1983,10 +2009,10 @@ function entryForm(type, e = {}, opts = {}) {
         ? `<input type="hidden" name="category" id="ef-category" value="Besiktning">`
         : field("Typ", `<select name="category" id="ef-category">${COST_CATS.filter((k) => !["Tvätt", "Parkering", "Besiktning"].includes(k) || e.category === k).map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
         ${field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
-        ${amount()}${date}
+        ${amount(e.category === "Besiktning" ? "520" : "3 200")}${date}
         ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast (valfritt)", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(suggestNextInspection(e.date || todayStr(), c)) : ""}">`, "Uträknat från besiktningens datum. Kontrollera mot protokollet.")}</div>
         <p class="hint" id="ef-old-besikt" hidden>Det här är en äldre besiktning, så nästa datum behövs inte. Den sparas bara i loggen.</p>` : ""}
-        ${note}${photo}`;
+        ${more()}`;
       break;
   }
   const isEdit = !!e.id;
@@ -2533,7 +2559,7 @@ function openEntry(id, { fromCat = null } = {}) {
     <dl class="detail-list">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
     ${e.photoId ? `<div id="photo-box" style="margin-top:14px"><p class="hint">Hämtar bilden …</p></div>` : ""}
     <div class="btn-row" style="margin-top:18px">
-      <button class="btn" type="button" data-act="edit-entry" data-id="${esc(e.id)}">Ändra</button>
+      <button class="btn primary" type="button" data-act="edit-entry" data-id="${esc(e.id)}">Ändra</button>
       <button class="btn danger" type="button" data-act="delete-entry" data-id="${esc(e.id)}">Ta bort</button>
     </div>`, fromCat?.startsWith("item:") ? { back: "edit-item", backId: fromCat.slice(5) } : fromCat?.startsWith("part:") ? { back: "open-part", backId: fromCat.slice(5) } : fromCat ? { back: "open-cat", backId: fromCat } : {});
   if (e.photoId) {
@@ -2552,7 +2578,7 @@ function itemSheet(id) {
   if (!item) return;
   const st = itemStatus(item, c, carEntries());
   const history = carEntries().filter((e) => entryTouches(e, item)).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  const interval = [item.mil ? `var ${fmt(item.mil)} mil` : "", item.months ? (item.months >= 24 && item.months % 12 === 0 ? `${item.months / 12} år` : `${item.months} mån`) : ""].filter(Boolean).join(" eller ");
+  const interval = intervalText(item) === "inget intervall" ? "" : intervalText(item);
   const manual = item.baseDate && !history.some((e) => e.date >= item.baseDate);
   openSheet(item.name, `
     <dl class="detail-list">
@@ -2727,7 +2753,7 @@ function readCarForm(form) {
 function setView(v) {
   rememberPrev(v);
   S.view = v;
-  if (location.hash !== "#" + v) history.replaceState(null, "", "#" + v);
+  if (location.hash !== "#" + v) history.replaceState(history.state, "", "#" + v);
   render();
   window.scrollTo(0, 0);
   if (v === "aviseringar" && S.hid) {
@@ -2779,7 +2805,7 @@ const ACTIONS = {
     cleanup();
     await signOut(auth);
   },
-  "close-sheet": closeSheet,
+  "close-sheet"() { closeSheet(); },
   "new-entry"(el) {
     const t = el.dataset.type;
     // Besiktning är en kostnad av typen Besiktning, men har en egen knapp så att den är lätt att hitta.
@@ -3661,6 +3687,17 @@ document.addEventListener("keydown", (ev) => {
 });
 window.addEventListener("offline", () => showToast("Ingen kontakt med nätet. Det du sparar laddas upp när nätet är tillbaka.", 6000));
 window.addEventListener("online", () => showToast("Nätet är tillbaka"));
+window.addEventListener("popstate", () => {
+  if (ignorePops) {
+    // Rutan stängdes med en knapp och historiken backades ett steg. Byttes vyn under tiden ligger den kvar.
+    ignorePops--;
+    if (S.view && location.hash.slice(1) !== S.view) history.replaceState(null, "", "#" + S.view);
+    return;
+  }
+  if (document.getElementById("map-choice")) ACTIONS["map-choice-close"]();
+  if (!$("#confirm").hidden) closeConfirm(false);
+  if (!sheet.hidden) closeSheet(true);
+});
 window.addEventListener("hashchange", () => {
   const v = location.hash.slice(1);
   if (v && v !== S.view) { rememberPrev(v); S.view = v; render(); }
