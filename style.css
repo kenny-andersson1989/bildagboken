@@ -893,3 +893,9 @@ button.hero-tile { cursor: pointer; }
 @media (min-width: 900px) {
   .app[data-screen] > .mgrid, .mcol { gap: 16px; }
 }
+/* Dator: menyn och innehållet centreras tillsammans, så att menyn står bredvid kolumnerna */
+@media (min-width: 900px) {
+  :root { --offset: max(0px, (100vw - var(--side) - 1080px) / 2); }
+  .nav { left: var(--offset); }
+  .app:not(.no-nav) { margin-left: calc(var(--offset) + var(--side)); }
+}
