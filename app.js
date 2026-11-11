@@ -1364,7 +1364,7 @@ function notesListHtml(c) {
   </div>`;
 }
 // Vem som lade till saken, eller vem den gäller om den är riktad till någon.
-// Saker som någon har bett dig om syns också under Att hålla koll på.
+// Saker som någon har bett dig om syns också under På gång.
 function todoReminders(c) {
   return (c.todos || []).filter((t) => !t.done && t.to === uid() && t.by !== uid()).map((t) => ({ icon: "todo", title: t.text, sub: `${memberName(t.by)} bad dig`, level: "soon", label: "Att göra", act: "go-view", id: "oversikt", always: true, days: 0 }));
 }
@@ -1839,7 +1839,7 @@ function viewOverview() {
 
   const dls = deadlines(c);
   parts.push("<!--card:koll-->", `<article class="card">
-    <h2>Att hålla koll på</h2>
+    <h2>På gång</h2>
     ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...todoReminders(c), ...odoReminder(c), ...docReminders(c), ...dls])}
     ${!c.besiktning && !c.forsakringDatum ? `<div class="ask"><button class="btn-soft" type="button" data-act="edit-car" data-section="dates">Lägg till besiktning, försäkring och skatt</button></div>` : ""}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
@@ -1908,7 +1908,7 @@ function viewOverview() {
 }
 
 // Korten på Översikt i den ordning man valt under Inställningar, utan de man har dolt.
-const CARD_NAMES = { koll: "Att hålla koll på", todo: "Att göra", recent: "Senaste", maint: "Underhåll", eco: "Ekonomi", tips: "Tips" };
+const CARD_NAMES = { koll: "På gång", todo: "Att göra", recent: "Senaste", maint: "Underhåll", eco: "Ekonomi", tips: "Tips" };
 function cardPrefs() {
   let p = {};
   try { p = JSON.parse(pref.get("cards") || "{}"); } catch { p = {}; }
@@ -1961,7 +1961,7 @@ function odoAgeHtml(c) {
   return `<span class="odo-age${ago >= 30 ? " old" : ""}">Uppdaterad ${esc(when)}${ago >= 30 ? " · dags att uppdatera" : ""}</span>`;
 }
 
-// Att hålla koll på: bokningar, tvätt, brådskande och det som händer inom tre månader. Resten bakom "Visa fler".
+// På gång: bokningar, tvätt, brådskande och det som händer inom tre månader. Resten bakom "Visa fler".
 function kollRowsHtml(rows) {
   const near = (x) => x.always || x.level === "urgent" || x.level === "soon" || (x.days != null && x.days <= 92);
   // Det som är nära eller bråttom visas, men alltid minst tre saker om det finns så många.
@@ -2671,7 +2671,7 @@ function bookingForm(b = {}) {
         ? `<button class="btn ghost block" type="button" data-act="booking-calendar" data-id="${esc(b.id)}">${icon("calendar", 18)} Lägg till i kalendern</button>
            <button class="btn danger block" type="button" data-act="delete-booking" data-id="${esc(b.id)}">Ta bort bokningen</button>`
         : `<button class="btn ghost block" type="submit" name="cal" value="1">${icon("calendar", 18)} Spara och lägg till i kalendern</button>`}
-      <p class="hint">Bokningen syns för alla ni som delar bilen under Att hålla koll på och bland påminnelserna dagen innan. Lägger du den i kalendern påminner telefonen dig också.</p>
+      <p class="hint">Bokningen syns för alla ni som delar bilen under På gång och bland påminnelserna dagen innan. Lägger du den i kalendern påminner telefonen dig också.</p>
     </form>`, { back: isEdit ? null : "new-entry" });
   // Finns platsen redan med position visas kartan direkt.
   showBookingMap();
