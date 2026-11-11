@@ -883,3 +883,13 @@ button.hero-tile { cursor: pointer; }
 .types-head:first-of-type { margin-top: 0; }
 /* Bilder från loggen inne i kortet Bilder och dokument */
 .photos-part { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+/* Två kolumner där korten fylls på i den kortaste kolumnen (ersätter CSS-kolumner) */
+@media (min-width: 760px) {
+  .app[data-screen="view-oversikt"], .app[data-screen="view-bilen"], .app[data-screen="view-installningar"] { display: flex; flex-direction: column; columns: auto; }
+  .app[data-screen] > .mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; margin: 0; }
+  .mcol { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .mcol > * { margin: 0 !important; }
+}
+@media (min-width: 900px) {
+  .app[data-screen] > .mgrid, .mcol { gap: 16px; }
+}
