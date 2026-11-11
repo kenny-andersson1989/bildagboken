@@ -1117,11 +1117,16 @@ function headerMain() {
   const n = unseenFromOthers().length;
   return `<header class="top">
     <div class="hello"><small>${dateTxt}</small><h1>Hej ${esc(myName())}</h1></div>
-    <div class="top-actions">
+    ${topActions()}
+  </header>`;
+}
+// Aviseringar och Inställningar uppe till höger, på alla flikar.
+function topActions() {
+  const n = unseenFromOthers().length;
+  return `<div class="top-actions">
       <button class="icon-btn" type="button" data-go="aviseringar" aria-label="Aviseringar${n ? `, ${n} nya` : ""}">${icon("bell")}${n ? `<span class="badge">${n > 9 ? "9+" : n}</span>` : ""}</button>
       <button class="icon-btn" type="button" data-go="installningar" aria-label="Inställningar">${icon("gear")}</button>
-    </div>
-  </header>`;
+    </div>`;
 }
 
 // Rubrik för en vy. Med back visas samma tillbaka-pil som i formulären, till vänster, och den går till vyn man kom ifrån.
@@ -1131,6 +1136,7 @@ function subHeader(small, title, back = false) {
   return `<header class="top${back ? " has-back" : ""}">
     ${back ? `<button class="icon-btn back-btn" type="button" data-go="${to}" aria-label="Tillbaka till ${toName}">${icon("back", 18)}</button>` : ""}
     <div class="hello"><small>${esc(small)}</small><h1>${esc(title)}</h1></div>
+    ${back ? "" : topActions()}
   </header>`;
 }
 
@@ -1300,13 +1306,13 @@ function photosCard(c) {
   const ents = S.entries.filter((e) => e.carId === c.id && e.photoId).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   if (!ents.length) return "";
   const shown = ents.slice(0, 24);
-  return `<div class="card">
-    <h2>Bilder</h2>
+  return `<div class="photos-part">
+    <p class="label" style="margin:0 0 8px">Bilder från loggen</p>
     ${S.showPhotos ? `<div class="photo-grid">${shown.map((e) => `<button type="button" class="pg" data-act="open-entry" data-id="${esc(e.id)}" aria-label="${esc(entryTitle(e))}, ${esc(fmtDateShort(e.date))}">
         ${gridPhotos.get(e.photoId) ? `<img src="${esc(gridPhotos.get(e.photoId))}" alt="">` : `<span class="pg-wait"></span>`}<span class="pg-d">${esc(fmtDateShort(e.date))}</span></button>`).join("")}</div>
       ${ents.length > shown.length ? `<p class="hint" style="margin-top:8px">De ${shown.length} senaste av ${ents.length} bilder.</p>` : ""}`
       : `<p class="muted">Kvitton och foton från loggen, i datumordning. ${ents.length === 1 ? "1 bild" : `${ents.length} bilder`}.</p>
-      <div class="ask"><button class="btn-soft" type="button" data-act="show-photos">${icon("image", 16)} Visa bilderna</button></div>`}
+      <div class="ask" style="margin-top:8px"><button class="btn-soft" type="button" data-act="show-photos">${icon("image", 16)} Visa bilderna</button></div>`}
   </div>`;
 }
 async function loadPhotoGrid() {
@@ -1316,14 +1322,17 @@ async function loadPhotoGrid() {
   render();
 }
 
+// Bilder och dokument i samma kort: sparade dokument överst, bilderna från loggen under.
 function docsCard(c) {
   const docs = [...(c.docs || [])].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const photos = photosCard(c);
   return `<div class="card">
-    <h2>Dokument</h2>
+    <h2>Bilder och dokument</h2>
     ${docs.length ? `<div class="rows">${docs.map((d) => `<button class="dl as-btn" type="button" data-act="open-doc" data-id="${esc(d.id)}"><span class="dl-ic">${icon("doc", 20)}</span>
       <span><span class="dl-t">${esc(d.title)}</span><span class="dl-s">${esc(d.validTo ? `Gäller till ${fmtDateShort(d.validTo)}` : `Sparat ${fmtDateShort(d.date)} av ${whoName(d.by).replace(/^Du$/, "dig")}`)}</span></span>${docPill(d)}</button>`).join("")}</div>`
       : `<p class="muted">Fota försäkringsbrev, registreringsbevis, garantier och kvitton ni vill spara. Ni ser samma dokument.</p>`}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-doc">${icon("plus", 16)} Lägg till dokument</button></div>
+    ${photos}
   </div>`;
 }
 // Hur länge ett dokument (försäkring, garanti) gäller: som en pill i listan och en påminnelse när det närmar sig.
@@ -2133,9 +2142,15 @@ function viewCar() {
       ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon("car", 16)}${esc(carName(x))}</button>`).join("")}
       <button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>
     </div>
+    <div class="card">
+      <h2>Anteckningar <button class="link" type="button" data-act="edit-car" data-section="specs">Ändra</button></h2>
+      ${specs.length ? `<div class="spec">${specs.map(([k, v]) => `<div><div class="label">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("")}</div>` : ""}
+      ${freeLines.length ? `<div class="notes"${specs.length ? ' style="margin-top:10px"' : ""}>${freeLines.map((l) => `<p>${esc(l)}</p>`).join("")}</div>` : ""}
+      ${!specs.length && !freeLines.length ? `<p class="muted">Skriv det ni vill komma ihåg om bilen, till exempel oljetyp, däckdimension eller var reservnyckeln ligger.</p>` : ""}
+    </div>
     <div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
-        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
+        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkringsbolag", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>
@@ -2152,13 +2167,6 @@ function viewCar() {
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
     <div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
-    <div class="card">
-      <h2>Anteckningar <button class="link" type="button" data-act="edit-car" data-section="specs">Ändra</button></h2>
-      ${specs.length ? `<div class="spec">${specs.map(([k, v]) => `<div><div class="label">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("")}</div>` : ""}
-      ${freeLines.length ? `<div class="notes"${specs.length ? ' style="margin-top:10px"' : ""}>${freeLines.map((l) => `<p>${esc(l)}</p>`).join("")}</div>` : ""}
-      ${!specs.length && !freeLines.length ? `<p class="muted">Skriv det ni vill komma ihåg om bilen, till exempel oljetyp, däckdimension eller var reservnyckeln ligger.</p>` : ""}
-    </div>
-    ${photosCard(c)}
     ${docsCard(c)}
     <div class="card">
       <h2>Servicebok</h2>
