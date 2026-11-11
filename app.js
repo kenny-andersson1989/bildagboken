@@ -2005,6 +2005,9 @@ document.addEventListener("keydown", (ev) => {
 // Som på iPhones hemskärm: håll fingret på ett kort tills korten vibrerar, dra sedan korten dit du vill.
 // Klar (eller ett tryck bredvid korten) sparar ordningen.
 let arranging = null;      // vilken vy som är i flyttläge
+// Trycket som avslutar en lång tryckning eller en dragning ska inte räknas som ett klick. Gäller bara en kort stund.
+let suppressTimer = null;
+function suppressNextClick() { suppressClick = true; clearTimeout(suppressTimer); suppressTimer = setTimeout(() => { suppressClick = false; }, 450); }
 let pressTimer = null, pressStart = null, dragCard = null, suppressClick = false;
 const ARRANGE_VIEWS = { oversikt: "view-oversikt", bilen: "view-bilen" };
 function enterArrange(view) {
@@ -2079,7 +2082,7 @@ document.addEventListener("touchstart", (ev) => {
   clearTimeout(pressTimer);
   pressTimer = setTimeout(() => {
     if (!pressStart) return;
-    if (!arranging) { enterArrange(el.dataset.view); suppressClick = true; }
+    if (!arranging) { enterArrange(el.dataset.view); suppressNextClick(); }
     startCardDrag(el, pressStart.x, pressStart.y);
   }, arranging ? 180 : 480);
 }, { passive: true });
@@ -2088,7 +2091,7 @@ document.addEventListener("touchmove", (ev) => {
   if (dragCard) { ev.preventDefault(); moveCardDrag(t.clientX, t.clientY); return; }
   if (pressStart && Math.hypot(t.clientX - pressStart.x, t.clientY - pressStart.y) > 10) { clearTimeout(pressTimer); pressStart = null; }
 }, { passive: false });
-const touchEnd = () => { clearTimeout(pressTimer); pressStart = null; if (dragCard) { endCardDrag2(); suppressClick = true; } };
+const touchEnd = () => { clearTimeout(pressTimer); pressStart = null; if (dragCard) { endCardDrag2(); suppressNextClick(); } };
 document.addEventListener("touchend", touchEnd);
 document.addEventListener("touchcancel", touchEnd);
 // Musen (dator): håll inne knappen på ett kort.
@@ -2100,7 +2103,7 @@ document.addEventListener("mousedown", (ev) => {
   clearTimeout(pressTimer);
   pressTimer = setTimeout(() => {
     if (!pressStart) return;
-    if (!arranging) { enterArrange(el.dataset.view); suppressClick = true; }
+    if (!arranging) { enterArrange(el.dataset.view); suppressNextClick(); }
     startCardDrag(el, pressStart.x, pressStart.y);
   }, arranging ? 120 : 480);
 });
@@ -2108,15 +2111,16 @@ document.addEventListener("mousemove", (ev) => {
   if (dragCard) { ev.preventDefault(); moveCardDrag(ev.clientX, ev.clientY); return; }
   if (pressStart && Math.hypot(ev.clientX - pressStart.x, ev.clientY - pressStart.y) > 6) { clearTimeout(pressTimer); pressStart = null; }
 });
-document.addEventListener("mouseup", () => { clearTimeout(pressTimer); pressStart = null; if (dragCard) { endCardDrag2(); suppressClick = true; } });
-// I flyttläget gör knapparna på korten ingenting. Klar eller ett tryck bredvid korten avslutar.
+document.addEventListener("mouseup", () => { clearTimeout(pressTimer); pressStart = null; if (dragCard) { endCardDrag2(); suppressNextClick(); } });
+// I flyttläget gör knapparna på korten ingenting. Klar eller ett tryck (på ett kort eller bredvid) avslutar.
 document.addEventListener("click", (ev) => {
   if (ev.target.closest?.("#arrange-done")) { ev.preventDefault(); exitArrange(true); return; }
   if (suppressClick) { suppressClick = false; ev.preventDefault(); ev.stopPropagation(); return; }
   if (!arranging) return;
   if (ev.target.closest?.("#arrange-bar")) return;
+  // Ett tryck var som helst, på ett kort eller bredvid, avslutar flyttläget (en dragning räknas inte som tryck).
   ev.preventDefault(); ev.stopPropagation();
-  if (!ev.target.closest?.("[data-card]")) exitArrange(true);
+  exitArrange(true);
 }, true);
 document.addEventListener("contextmenu", (ev) => { if (cardAt(ev.target)) ev.preventDefault(); });
 
