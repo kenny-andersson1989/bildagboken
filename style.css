@@ -940,3 +940,6 @@ span.tag-pill { cursor: default; }
 .note-sum .link { margin-left: auto; }
 .note-list { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .note-list .filters { margin-bottom: 6px; }
+/* Datum och tid i samma fält */
+input[type="datetime-local"] { height: 46px; line-height: 1.2; }
+input[type="datetime-local"]::-webkit-date-and-time-value { text-align: left; min-height: 1.2em; }
