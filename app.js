@@ -2648,16 +2648,18 @@ function bookingForm(b = {}) {
       ${isEdit ? `<button class="btn ghost block" type="button" data-act="booking-done" data-id="${esc(b.id)}">${b.kind === "annat" ? "Klart, ta bort bokningen" : "Klart, logga det"}</button>` : ""}
       ${field("Vad är bokat?", `<select name="kind" id="bk-kind">${kinds.map(([k, l]) => `<option value="${k}"${(b.kind || "service") === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
       ${(() => {
-        // Datum i ett stort fält. Tiden väljs med knappar för vanliga tider (inget fönster öppnas),
-        // och Annan tid öppnar tidsväljaren för andra klockslag.
+        // Datum i ett stort fält och tiden i ett snurrhjul som i Apples egna appar. Heldag betyder ingen tid.
         const t = b.time || "";
-        const common = BOOK_TIMES.includes(t);
         return field("Datum", `<input type="date" name="date" id="bk-date" required value="${esc(b.date || "")}" class="big-date">`)
-          + `<div class="field"><span>Tid</span><div class="time-pick" role="group" aria-label="Tid">
-              <button type="button" class="chip-btn" data-act="bk-time" data-v="" aria-pressed="${!t}">Ingen tid</button>
-              ${BOOK_TIMES.map((x) => `<button type="button" class="chip-btn" data-act="bk-time" data-v="${x}" aria-pressed="${t === x}">${x}</button>`).join("")}
-              <label class="chip-btn time-other${t && !common ? " on" : ""}">${icon("calendar", 14)} <span id="bk-time-label">${t && !common ? esc(t) : "Annan tid"}</span><input type="time" id="bk-time-other" value="${t && !common ? esc(t) : ""}" aria-label="Annan tid"></label>
-            </div><input type="hidden" name="time" id="bk-time" value="${esc(t)}"></div>`;
+          + `<div class="field"><span>Tid</span>
+            <label class="ios-switch-row"><span>Heldag</span><input type="checkbox" id="bk-allday" class="ios-switch"${b.id && !t ? " checked" : ""}></label>
+            <div class="wheel" id="bk-wheel"${b.id && !t ? " hidden" : ""} aria-label="Välj tid">
+              <div class="wheel-band" aria-hidden="true"></div>
+              ${wheelCol("h", Array.from({ length: 24 }, (_, i) => pad(i)), "Timme")}
+              <span class="wheel-sep" aria-hidden="true">:</span>
+              ${wheelCol("m", wheelMinutes(t), "Minut")}
+            </div>
+            <input type="hidden" name="time" id="bk-time" value="${esc(t || (b.id ? "" : "09:00"))}"></div>`;
       })()}
       ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Till exempel Mölndals däckservice" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-suggest" aria-expanded="false">
         <span class="suggest" id="bk-suggest" role="listbox" hidden></span>`)}
@@ -2684,6 +2686,8 @@ function bookingForm(b = {}) {
   // Finns platsen redan med position visas kartan direkt.
   showBookingMap();
   refreshBookingPlace();
+  // Hjulet ställs in när rutan har ritats, så att det kan rulla till rätt tid.
+  requestAnimationFrame(() => setWheel(b.time || "09:00"));
   // Väljer man Besiktning och inte skrivit någon plats fylls bilens besiktningsstation i.
   const kindSel = $("#bk-kind"), placeIn = $("#bk-place");
   if (station && kindSel && placeIn) {
@@ -2692,6 +2696,58 @@ function bookingForm(b = {}) {
     fill();
   }
 }
+
+// Snurrhjul för tid: två kolumner som snäpper fast på ett värde, med markeringen i mitten.
+const WHEEL_ROW = 40;
+function wheelMinutes(t) {
+  const list = Array.from({ length: 12 }, (_, i) => pad(i * 5));
+  const m = (t || "").slice(3, 5);
+  if (m && !list.includes(m)) { list.push(m); list.sort(); }
+  return list;
+}
+function wheelCol(name, values, label) {
+  return `<div class="wheel-col" data-col="${name}" role="listbox" aria-label="${label}" tabindex="0">
+    <div class="wheel-pad"></div>${values.map((v) => `<div class="wheel-item" role="option" data-v="${v}">${v}</div>`).join("")}<div class="wheel-pad"></div>
+  </div>`;
+}
+function wheelValue() {
+  const pick = (col) => { const items = [...col.querySelectorAll(".wheel-item")]; return items[Math.max(0, Math.min(items.length - 1, Math.round(col.scrollTop / WHEEL_ROW)))]; };
+  const h = pick($('#bk-wheel [data-col="h"]')), m = pick($('#bk-wheel [data-col="m"]'));
+  document.querySelectorAll("#bk-wheel .wheel-item").forEach((x) => x.classList.remove("sel"));
+  h?.classList.add("sel"); m?.classList.add("sel");
+  return h && m ? `${h.dataset.v}:${m.dataset.v}` : "";
+}
+function setWheel(t) {
+  const [hh, mm] = (t || "09:00").split(":");
+  for (const [name, v] of [["h", hh], ["m", mm]]) {
+    const col = $(`#bk-wheel [data-col="${name}"]`);
+    if (!col) continue;
+    const items = [...col.querySelectorAll(".wheel-item")];
+    const i = Math.max(0, items.findIndex((x) => x.dataset.v === v));
+    col.scrollTop = i * WHEEL_ROW;
+  }
+  wheelValue();
+}
+let wheelTimer = null;
+document.addEventListener("scroll", (ev) => {
+  if (!ev.target.classList?.contains("wheel-col")) return;
+  clearTimeout(wheelTimer);
+  wheelTimer = setTimeout(() => { const v = wheelValue(); const hid = $("#bk-time"); if (hid && !$("#bk-allday")?.checked) hid.value = v; }, 90);
+}, true);
+// Tryck på ett värde i hjulet: rulla dit.
+document.addEventListener("click", (ev) => {
+  const it = ev.target.closest?.(".wheel-item");
+  if (!it) return;
+  const col = it.parentElement;
+  col.scrollTo({ top: [...col.querySelectorAll(".wheel-item")].indexOf(it) * WHEEL_ROW, behavior: "smooth" });
+});
+// Piltangenter i hjulet (dator).
+document.addEventListener("keydown", (ev) => {
+  const col = ev.target.closest?.(".wheel-col");
+  if (!col || !["ArrowUp", "ArrowDown"].includes(ev.key)) return;
+  ev.preventDefault();
+  col.scrollTop += ev.key === "ArrowDown" ? WHEEL_ROW : -WHEEL_ROW;
+});
 
 // Vanliga tider för bokningar, som knappar i formuläret.
 const BOOK_TIMES = ["07:00", "07:30", "08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
@@ -4759,6 +4815,12 @@ function onInput(ev) {
 
 function onChange(ev) {
   if (ev.target.id === "bk-time-other") setBookingTime(ev.target.value);
+  if (ev.target.id === "bk-allday") {
+    const wheel = $("#bk-wheel"), hid = $("#bk-time");
+    if (wheel) wheel.hidden = ev.target.checked;
+    if (hid) hid.value = ev.target.checked ? "" : "09:00";
+    if (!ev.target.checked) requestAnimationFrame(() => setWheel("09:00"));
+  }
   if (ev.target.id === "ef-tireAction") { const box = $("#ef-tirekind-box"); if (box) box.hidden = isSwap(ev.target.value); }
   if (ev.target.id === "ef-scan") { scanReceipt(ev.target.files?.[0]); ev.target.value = ""; }
   if (ev.target.id === "ef-date") markDateQuick(ev.target);
