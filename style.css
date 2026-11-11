@@ -950,3 +950,20 @@ input[type="datetime-local"]::-webkit-date-and-time-value { text-align: left; mi
 .time-other { position: relative; cursor: pointer; }
 .time-other.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 .time-other input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; padding: 0; border: 0; cursor: pointer; }
+/* Snurrhjul för tid, i Apples stil */
+.wheel { position: relative; display: flex; justify-content: center; align-items: center; height: 200px; margin-top: 8px; border-radius: 16px; background: var(--input); border: 1px solid var(--line); overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28%, #000 72%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 28%, #000 72%, transparent 100%); }
+.wheel-band { position: absolute; left: 10px; right: 10px; top: 80px; height: 40px; border-radius: 10px; background: var(--track); pointer-events: none; }
+.wheel-col { position: relative; z-index: 1; height: 200px; width: 76px; overflow-y: auto; scroll-snap-type: y mandatory; scrollbar-width: none; text-align: center; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; outline: none; }
+.wheel-col::-webkit-scrollbar { display: none; }
+.wheel-col:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 10px; }
+.wheel-pad { height: 80px; }
+.wheel-item { height: 40px; line-height: 40px; scroll-snap-align: center; font: 500 22px var(--f-body); color: var(--ink-3); font-variant-numeric: tabular-nums; cursor: pointer; transition: color .15s; }
+.wheel-item.sel { color: var(--ink); font-weight: 600; }
+.wheel-sep { position: relative; z-index: 1; font: 600 22px var(--f-body); color: var(--ink); padding: 0 2px; }
+/* Reglage som i iOS (Heldag) */
+.ios-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 6px 4px; font-size: 15px; color: var(--ink); cursor: pointer; }
+input.ios-switch { -webkit-appearance: none; appearance: none; flex: none; width: 51px; height: 31px; min-height: 0; padding: 0; margin: 0; border: 0; border-radius: 16px; cursor: pointer;
+  background: radial-gradient(circle 13.5px at 15.5px 50%, #fff 92%, transparent 100%) no-repeat, #E3E2E0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.04); transition: background-color .2s; }
+input.ios-switch:checked { background: radial-gradient(circle 13.5px at calc(100% - 15.5px) 50%, #fff 92%, transparent 100%) no-repeat, #34C759; }
+input.ios-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
