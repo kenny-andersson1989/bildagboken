@@ -2647,10 +2647,13 @@ function bookingForm(b = {}) {
     <form class="form" data-form="booking"${isEdit ? ` data-id="${esc(b.id)}"` : ""} novalidate>
       ${isEdit ? `<button class="btn ghost block" type="button" data-act="booking-done" data-id="${esc(b.id)}">${b.kind === "annat" ? "Klart, ta bort bokningen" : "Klart, logga det"}</button>` : ""}
       ${field("Vad är bokat?", `<select name="kind" id="bk-kind">${kinds.map(([k, l]) => `<option value="${k}"${(b.kind || "service") === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
-      <div class="row2">
-        ${field("Datum", `<input type="date" name="date" id="bk-date" required value="${esc(b.date || "")}">`)}
-        ${field("Tid", `<input type="time" name="time" id="bk-time" value="${esc(b.time || "")}">`)}
-      </div>
+      ${(() => {
+        // Datum och tid i samma fält, så att iPhone visar en enda väljare. "Ingen tid" ger bara datum.
+        const noTime = !!b.id && !b.time;
+        const val = b.date ? (noTime ? b.date : `${b.date}T${b.time || "09:00"}`) : "";
+        return field("Datum och tid", `<input type="${noTime ? "date" : "datetime-local"}" name="when" id="bk-when" required value="${esc(val)}">`)
+          + `<label class="check" style="align-self:flex-start"><input type="checkbox" id="bk-notime"${noTime ? " checked" : ""}> Ingen tid, bara datum</label>`;
+      })()}
       ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Till exempel Mölndals däckservice" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-suggest" aria-expanded="false">
         <span class="suggest" id="bk-suggest" role="listbox" hidden></span>`)}
       ${field("Adress", `<input name="placeAddr" id="bk-addr" value="${esc(b.addr || "")}" placeholder="Till exempel Kråketorpsgatan 20, Mölndal" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-addr-suggest" aria-expanded="false">
@@ -2689,13 +2692,15 @@ function saveBooking(form, wantCalendar = false) {
   const c = car();
   const fd = new FormData(form);
   const str = (k) => String(fd.get(k) ?? "").trim();
-  const date = str("date");
+  const when = str("when");
+  const date = when.slice(0, 10);
+  const time = when.length > 10 ? when.slice(11, 16) : "";
   if (!date) return formError("Välj vilket datum som är bokat.");
   const id = form.dataset.id || "b" + randomId(8);
   const lat = num(fd.get("placeLat")), lon = num(fd.get("placeLon"));
   const prev = (c.bookings || []).find((x) => x.id === id);
   const b = clean({
-    id, kind: str("kind") || "service", date, time: str("time") || null, place: str("place") || null,
+    id, kind: str("kind") || "service", date, time: time || null, place: str("place") || null,
     addr: str("placeAddr") || null, lat: lat ?? null, lon: lon ?? null,
     placeId: lat != null ? str("placeId") || null : null, geoSrc: lat != null ? str("placeSrc") || null : null,
     note: str("note") || null, phone: str("phone") || null,
@@ -4734,6 +4739,15 @@ function onInput(ev) {
 }
 
 function onChange(ev) {
+  if (ev.target.id === "bk-notime") {
+    const w = $("#bk-when");
+    if (w) {
+      const d = w.value.slice(0, 10);
+      w.value = "";
+      w.type = ev.target.checked ? "date" : "datetime-local";
+      w.value = d ? (ev.target.checked ? d : `${d}T09:00`) : "";
+    }
+  }
   if (ev.target.id === "ef-tireAction") { const box = $("#ef-tirekind-box"); if (box) box.hidden = isSwap(ev.target.value); }
   if (ev.target.id === "ef-scan") { scanReceipt(ev.target.files?.[0]); ev.target.value = ""; }
   if (ev.target.id === "ef-date") markDateQuick(ev.target);
