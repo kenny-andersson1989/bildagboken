@@ -735,6 +735,7 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   // Vilken vy som visas, så att datorlayouten kan ordna korten olika per vy.
   app.dataset.screen = key;
   app.innerHTML = html;
+  arrangeColumns();
   if (active) {
     const again = document.getElementById(active.id);
     if (again && again !== active) {
@@ -760,6 +761,29 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
     });
   }
 }
+
+// På breda skärmar (surfplatta, dator och telefon på tvären) läggs korten i två kolumner.
+// Varje kort hamnar i den kolumn som är kortast, så att det inte blir tomma glapp.
+const COLUMN_SCREENS = ["view-oversikt", "view-bilen", "view-installningar"];
+function arrangeColumns() {
+  if (!COLUMN_SCREENS.includes(app.dataset.screen) || !window.matchMedia("(min-width: 760px)").matches) return;
+  const kids = [...app.children];
+  const full = kids.filter((k) => k.matches(".top, .car-chips, .card.toast, p.hint"));
+  const cards = kids.filter((k) => !full.includes(k));
+  if (cards.length < 2) return;
+  const grid = document.createElement("div");
+  grid.className = "mgrid";
+  grid.innerHTML = `<div class="mcol"></div><div class="mcol"></div>`;
+  const [a, b] = grid.children;
+  app.insertBefore(grid, cards[0]);
+  for (const card of cards) (a.offsetHeight <= b.offsetHeight ? a : b).appendChild(card);
+}
+let columnsWide = null;
+window.addEventListener("resize", () => {
+  const wide = window.matchMedia("(min-width: 760px)").matches;
+  if (columnsWide !== null && wide !== columnsWide) render();
+  columnsWide = wide;
+});
 
 // Rader som går att svepa i sidled tonas ut i högerkanten så länge det finns mer att se.
 function markMore(el) { el.classList.toggle("more", el.scrollWidth - el.clientWidth - el.scrollLeft > 4); }
