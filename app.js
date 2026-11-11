@@ -1904,7 +1904,7 @@ function logListHtml() {
 }
 
 function viewLog() {
-  const filters = [["alla", "Alla"], ["tank", "Tankning"], ["service", "Service"], ["eget", "Eget jobb"], ["dack", "Däck"], ["tvatt", "Tvätt"], ["parkering", "Parkering"], ["kostnad", "Kostnad"], ["besiktning", "Besiktning"], ["matare", "Mätarställning"]];
+  const filters = [["alla", "Alla"], ...LOG_ORDER.map((k) => [k, k === "besiktning" ? "Besiktning" : TYPE[k].label])];
   return `${subHeader("Allt som hänt med bilen", "Logg")}
     <label class="search">${icon("search", 18)}
       <input type="search" id="log-search" placeholder="Sök, till exempel bromsar" value="${esc(S.query || "")}" autocomplete="off" enterkeyhint="search" aria-label="Sök i loggen">
@@ -2357,10 +2357,13 @@ $("#confirm-scrim").addEventListener("click", () => closeConfirm(false));
 
 const TYPE_DEFINITE = { tank: "tankningen", matare: "mätarställningen", service: "servicen", eget: "jobbet", dack: "däckposten", tvatt: "tvätten", parkering: "parkeringen", kostnad: "kostnaden" };
 
+// Samma ordning i plusmenyn som filtren i loggen.
+const LOG_ORDER = ["tank", "service", "eget", "dack", "tvatt", "parkering", "kostnad", "besiktning", "matare"];
 function typePicker() {
   openSheet("Vad vill du logga?", `<div class="types">
-    ${Object.entries(TYPE).map(([k, t]) => `<button type="button" data-act="new-entry" data-type="${k}">${icon(t.icon, 26)}${t.label}</button>`).join("")}
-    <button type="button" data-act="new-entry" data-type="kostnad" data-cat="Besiktning">${icon("check", 26)}Besiktning</button>
+    ${LOG_ORDER.map((k) => k === "besiktning"
+      ? `<button type="button" data-act="new-entry" data-type="kostnad" data-cat="Besiktning">${icon("check", 26)}Besiktning</button>`
+      : `<button type="button" data-act="new-entry" data-type="${k}">${icon(TYPE[k].icon, 26)}${TYPE[k].label}</button>`).join("")}
   </div>
   <button class="btn ghost block" type="button" data-act="new-booking" style="margin-top:12px">${icon("calendar", 18)} Lägg in bokad tid</button>
   <p class="hint" style="margin-top:14px">Det du sparar syns direkt hos din sambo.</p>`);
