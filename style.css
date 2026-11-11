@@ -899,3 +899,20 @@ button.hero-tile { cursor: pointer; }
   .nav { left: var(--offset); }
   .app:not(.no-nav) { margin-left: calc(var(--offset) + var(--side)); }
 }
+/* Telefon på tvären: håll menyn och innehållet utanför skåran för kamera och Face ID */
+@media (min-width: 900px) {
+  .nav { width: calc(var(--side) + env(safe-area-inset-left, 0px)); padding-left: calc(20px + env(safe-area-inset-left, 0px)); overflow-y: auto; scrollbar-width: none; }
+  .nav::-webkit-scrollbar { display: none; }
+  .app:not(.no-nav) {
+    margin-left: calc(var(--offset) + var(--side) + env(safe-area-inset-left, 0px));
+    padding-right: max(28px, calc(env(safe-area-inset-right, 0px) + 12px));
+  }
+}
+/* Låg skärm (telefon på tvären): kompaktare meny så att allt får plats på höjden */
+@media (min-width: 900px) and (max-height: 520px) {
+  .nav { padding-top: calc(12px + env(safe-area-inset-top, 0px)); padding-bottom: 12px; }
+  .nav-logo { display: none; }
+  .fab { height: 40px; margin-bottom: 4px; }
+  .tab { padding: 7px 12px; font-size: 14px; }
+  .tab-sep { margin-top: 6px; }
+}
