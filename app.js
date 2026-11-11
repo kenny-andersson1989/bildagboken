@@ -1934,17 +1934,69 @@ function arrangeCards(parts) {
   const { order, hidden } = cardPrefs();
   return [...head, ...order.filter((k) => !hidden.includes(k)).flatMap((k) => byKey[k] || []), ...tail].join("");
 }
+// Dra korten i ordning: håll i handtaget och dra raden upp eller ner. De andra raderna flyttar undan.
+let cardDrag = null;
+document.addEventListener("pointerdown", (ev) => {
+  const h = ev.target.closest?.(".drag-handle");
+  if (!h) return;
+  ev.preventDefault();
+  const row = h.closest(".card-row"), list = row.parentElement;
+  const rows = [...list.children];
+  const rects = rows.map((r) => r.getBoundingClientRect());
+  cardDrag = { row, list, rows, rects, from: rows.indexOf(row), to: rows.indexOf(row), startY: ev.clientY, step: rects.length > 1 ? rects[1].top - rects[0].top : rects[0].height };
+  row.classList.add("dragging");
+  try { h.setPointerCapture(ev.pointerId); } catch { /* äldre webbläsare */ }
+});
+document.addEventListener("pointermove", (ev) => {
+  if (!cardDrag) return;
+  const d = cardDrag, dy = ev.clientY - d.startY;
+  d.row.style.transform = `translateY(${dy}px)`;
+  const to = Math.max(0, Math.min(d.rows.length - 1, d.from + Math.round(dy / d.step)));
+  if (to === d.to) return;
+  d.to = to;
+  d.rows.forEach((r, i) => {
+    if (r === d.row) return;
+    const shift = d.from < to && i > d.from && i <= to ? -d.step : d.from > to && i < d.from && i >= to ? d.step : 0;
+    r.style.transform = shift ? `translateY(${shift}px)` : "";
+  });
+});
+const endCardDrag = () => {
+  if (!cardDrag) return;
+  const d = cardDrag;
+  cardDrag = null;
+  d.rows.forEach((r) => { r.style.transform = ""; });
+  d.row.classList.remove("dragging");
+  if (d.to === d.from) return;
+  const p = cardPrefs();
+  const [k] = p.order.splice(d.from, 1);
+  p.order.splice(d.to, 0, k);
+  pref.set("cards", JSON.stringify(p));
+  render();
+};
+document.addEventListener("pointerup", endCardDrag);
+document.addEventListener("pointercancel", endCardDrag);
+// Tangentbord: piltangenterna på handtaget flyttar raden.
+document.addEventListener("keydown", (ev) => {
+  const h = ev.target.closest?.(".drag-handle");
+  if (!h || !["ArrowUp", "ArrowDown"].includes(ev.key)) return;
+  ev.preventDefault();
+  const p = cardPrefs();
+  const i = p.order.indexOf(h.dataset.id), j = i + (ev.key === "ArrowUp" ? -1 : 1);
+  if (i < 0 || j < 0 || j >= p.order.length) return;
+  [p.order[i], p.order[j]] = [p.order[j], p.order[i]];
+  pref.set("cards", JSON.stringify(p));
+  render();
+  document.querySelector(`.drag-handle[data-id="${h.dataset.id}"]`)?.focus();
+});
 function cardsSettingsCard() {
   const { order, hidden } = cardPrefs();
   return `<div class="card">
     <h2>Översikten</h2>
-    <p class="muted">Välj vilka kort som syns och i vilken ordning. Gäller den här telefonen.</p>
-    <div class="card-order">${order.map((k, i) => `<div class="card-row">
+    <p class="muted">Välj vilka kort som syns. Håll i handtaget och dra för att ändra ordningen. Gäller den här telefonen.</p>
+    <div class="card-order" id="card-order">${order.map((k) => `<div class="card-row" data-key="${k}">
       <label class="check"><input type="checkbox" data-act="card-toggle" data-id="${k}"${hidden.includes(k) ? "" : " checked"}> ${esc(CARD_NAMES[k])}</label>
-      <span class="row-actions">
-        <button class="icon-btn sm" type="button" data-act="card-move" data-id="${k}" data-d="-1" aria-label="Flytta ${esc(CARD_NAMES[k])} upp"${i === 0 ? " disabled" : ""}>${icon("up", 16)}</button>
-        <button class="icon-btn sm" type="button" data-act="card-move" data-id="${k}" data-d="1" aria-label="Flytta ${esc(CARD_NAMES[k])} ner"${i === order.length - 1 ? " disabled" : ""}>${icon("down", 16)}</button>
-      </span></div>`).join("")}</div>
+      <button class="drag-handle" type="button" data-id="${k}" aria-label="Flytta ${esc(CARD_NAMES[k])}. Dra, eller använd piltangenterna.">${icon("grip", 20)}</button>
+    </div>`).join("")}</div>
   </div>`;
 }
 
