@@ -859,3 +859,22 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .hero .odo > .odo-age { text-align: right; }
 /* Däck: när frågan om vilka däck är dold tar mönsterdjupet hela raden */
 #ef-tire-row:has(#ef-tirekind-box[hidden]) { grid-template-columns: 1fr; }
+/* Bilkortet, alternativ D: bilden i full bredd och två rutor under */
+.hero .car-pick .car-fig { margin: 0; }
+.hero .car-photo { aspect-ratio: 21 / 9; }
+.hero-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.hero-tile { background: var(--glass-strong); border-radius: 16px; padding: 11px 12px; min-width: 0; display: flex; flex-direction: column; gap: 3px; border: 0; text-align: left; color: inherit; font: inherit; }
+button.hero-tile { cursor: pointer; }
+.hero-tile .odo-num { font-size: 22px; }
+.hero-tile .odo-age { display: block; margin: 0; }
+.tile-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.fuel-pct { font: 800 18px var(--f-display); font-variant-numeric: tabular-nums; color: var(--ink-3); }
+.fuel-pct.ok { color: #3F8A55; } .fuel-pct.mid { color: #B7791F; } .fuel-pct.low { color: #C8432B; }
+.fuel-h { position: relative; height: 26px; margin-top: 6px; border-radius: 10px; background: var(--track); cursor: ew-resize; touch-action: none; -webkit-user-select: none; user-select: none; }
+.fuel-h:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.fuel-h i { position: absolute; inset: 0; border-radius: 10px; background: linear-gradient(90deg, #C8432B, #C9922B 35%, #3F8A55 70%); }
+.fuel-h.unset i { background: transparent; }
+.fuel-thumb { position: absolute; top: 3px; bottom: 3px; width: 8px; margin-left: -4px; border-radius: 4px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); pointer-events: none; }
+.fuel-h.unset .fuel-thumb { opacity: .5; left: 50% !important; }
+.fuel-ends { display: flex; justify-content: space-between; font-size: 10.5px; font-weight: 600; color: var(--ink-3); }
+@media (min-width: 760px) { .hero .car-photo { aspect-ratio: 16 / 9; } }
