@@ -1176,3 +1176,17 @@ body.arranging [data-card] { position: relative; }
   .app[data-screen] > .car-chips { margin: 0 -2px; }
   .app[data-screen] > .card.toast, .app[data-screen] > p.hint { margin-bottom: 0; }
 }
+
+/* På gång: grupperat efter när, med en liten rubrik för varje tidpunkt */
+.koll { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.koll-head { display: flex; align-items: center; gap: 8px; margin: 8px 0 -2px; font: 700 11.5px var(--f-body); letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+.koll-head:first-child { margin-top: 0; }
+.koll-head::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.koll-head.urgent { color: var(--accent-text); }
+.koll-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-radius: 16px; background: var(--track); }
+.koll-row.urgent { background: var(--accent-soft); }
+.koll-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 4px 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+div.koll-main { cursor: default; }
+.koll-t { font: 600 15px var(--f-body); }
+.koll-s { font-size: 13px; color: var(--ink-3); }
+.koll-btn { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--glass-strong); color: var(--ink); border: 1px solid var(--line); cursor: pointer; padding: 0; text-decoration: none; }

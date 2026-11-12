@@ -709,7 +709,7 @@ function bookingRows(c) {
     const past = days < 0;
     // En bokad besiktning efter sista dagen är för sent: visa det tydligt.
     const late = b.kind === "besiktning" && c.besiktning && b.date > c.besiktning;
-    const lastDay = b.kind === "besiktning" && c.besiktning && !past ? (late ? `efter sista dagen ${fmtDateShort(c.besiktning)}!` : `sista dag ${fmtDateShort(c.besiktning)}`) : null;
+    const lastDay = b.kind === "besiktning" && c.besiktning && !past ? (late ? `efter sista dagen ${fmtDateShort(c.besiktning)}!` : b.date === c.besiktning ? "sista dagen" : `sista dag ${fmtDateShort(c.besiktning)}`) : null;
     return {
       icon: "calendar",
       title: past ? `${kind}: blev det gjort?` : `${kind} bokad`,
@@ -718,6 +718,11 @@ function bookingRows(c) {
       // Uppe till höger på smala kolumner: "I morgon 09:00" eller "15 dec 13:00" (veckodagen får inte plats).
       whenShort: days === 0 || days === 1 ? `${days === 0 ? "I dag" : "I morgon"}${b.time ? ` ${b.time}` : ""}` : bookingWhen(b, true).replace(/^\S+ /, ""),
       relDay: days === 0 || days === 1,
+      // På gång: rubriken över posten ("I morgon", "Om 33 dagar · 15 dec") och en kort titel ("Service kl 09:00").
+      group: past ? "Passerat" : days === 0 ? "I dag" : days === 1 ? "I morgon" : `Om ${daysText(days)} · ${fmtDateShort(b.date)}`,
+      kollTitle: past ? `${kind}: blev det gjort?` : `${kind}${b.time ? ` kl ${b.time}` : ""}`,
+      mapId: !past && (b.lat != null || b.addr || b.place) ? b.id : null,
+      phone: !past && b.phone ? String(b.phone).replace(/[^\d+]/g, "") : null,
       sub: [b.place, lastDay].filter(Boolean).join(" · "),
       days,
       level: past || late || days <= 1 ? "urgent" : days <= 7 ? "soon" : "ok",
@@ -2193,7 +2198,22 @@ function kollRowsHtml(rows) {
   let shown = rows.filter(near), later = rows.filter((x) => !near(x));
   if (shown.length < 3) { shown = [...shown, ...later.slice(0, 3 - shown.length)]; later = later.slice(Math.max(0, 3 - rows.filter(near).length)); }
   const all = S.kollAll;
-  return `<div class="rows">${[...shown, ...(all ? later : [])].map(rowWithQuick).join("")}</div>
+  // Sorterat efter när, med en liten rubrik för varje tidpunkt: "I morgon", "Om 33 dagar · 15 dec", "Om 6 mån".
+  const list = [...shown, ...(all ? later : [])].map((x, i) => ({ x, i })).sort((a, b) => (a.x.days ?? 0) - (b.x.days ?? 0) || a.i - b.i).map(({ x }) => x);
+  let prev = null;
+  const html = list.map((x) => {
+    const group = x.group || (/^\d/.test(x.label || "") ? `Om ${x.label}` : x.label || "");
+    const head = group && group !== prev ? `<div class="koll-head ${x.level === "urgent" ? "urgent" : ""}">${esc(group)}</div>` : "";
+    prev = group;
+    const inner = `<span class="koll-t">${esc(x.kollTitle || x.title)}</span>${x.sub ? `<span class="koll-s">${esc(x.sub)}</span>` : ""}`;
+    const main = x.act
+      ? `<button class="koll-main" type="button" data-act="${x.act}" data-id="${esc(x.id || "")}"${x.type ? ` data-type="${esc(x.type)}"` : ""}>${inner}</button>`
+      : `<div class="koll-main">${inner}</div>`;
+    const btns = (x.mapId ? `<button class="koll-btn" type="button" data-act="map-directions" data-id="${esc(x.mapId)}" aria-label="Vägbeskrivning">${icon("pin", 18)}</button>` : "")
+      + (x.phone ? `<a class="koll-btn" href="tel:${esc(x.phone)}" aria-label="Ring">${icon("phone", 18)}</a>` : "");
+    return `${head}<div class="koll-row ${x.level || ""}">${main}${btns}</div>`;
+  }).join("");
+  return `<div class="koll">${html}</div>
     ${later.length ? `<button class="link" type="button" data-act="toggle-koll" style="margin-top:10px">${all ? "Visa färre" : `Visa ${later.length} till`}</button>` : ""}`;
 }
 
