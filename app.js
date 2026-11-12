@@ -2,12 +2,12 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
 import {
   getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
-  linkWithPopup, linkWithRedirect, onAuthStateChanged, signOut
+  linkWithPopup, linkWithRedirect, onAuthStateChanged, signOut, reauthenticateWithPopup, deleteUser
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs,
-  query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, writeBatch
+  query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, writeBatch, deleteField
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { MAPKIT_TOKEN } from "./maps-config.js";
@@ -37,6 +37,7 @@ const S = {
   loaded: { house: false, cars: false, entries: false },
   unsubs: [],
   screen: "",
+  pending: { cars: 0, entries: 0 },
 };
 
 /* ---------------------------------------------------------------- helpers */
@@ -380,13 +381,6 @@ function extraParts(c) {
   });
   return list.sort((a, b) => (b.entries[0].date || "").localeCompare(a.entries[0].date || ""));
 }
-const hasPart = (e, key) => workOf(e).some((w) => !w.itemId && normWord(w.name) === key);
-
-function itemNames(e, c) {
-  const items = c?.items || [];
-  return (e.items || []).map((id) => items.find((i) => i.id === id)?.name).filter(Boolean);
-}
-
 function entryDetail(e, c = car()) {
   const unit = /kWh/.test(e.fuel || "") ? "kWh" : "l";
   switch (e.type) {
@@ -539,11 +533,6 @@ function taxMonth(c) {
 }
 
 // Senaste tvätten, för raden "Senast tvättad" under Bilen → Uppgifter. Ingen påminnelse.
-function lastWash(c) {
-  return S.entries.filter((e) => e.carId === c.id && (e.type === "tvatt" || (e.type === "kostnad" && e.category === "Tvätt")))
-    .sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0] || null;
-}
-
 function levelFromDays(d) {
   if (d == null) return "ok";
   if (d < 0) return "urgent";
@@ -896,8 +885,19 @@ function renderLogin(error = "") {
 function renderOnboarding(error = "") {
   const join = new URLSearchParams(location.search).get("join") || "";
   const first = (S.user.displayName || "").split(" ")[0];
+  const code = join.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (code) loadJoinInfo(code);
+  const invited = code && joinInfo?.code === code ? joinInfo.name : null;
+  const joinForm = `<form class="card form" data-form="join-house" data-keep>
+      <h2>${invited ? `Du är inbjuden till ${esc(invited)}` : "Gå med i en befintlig"}</h2>
+      ${invited ? `<p class="muted">Skriv ditt namn så ser de andra vem som loggar. Koden är redan ifylld.</p>` : ""}
+      <label class="field"><span>Ditt namn</span><input name="name" id="ob-name2" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
+      <label class="field"><span>Inbjudningskod</span><input name="code" id="ob-code" required maxlength="8" value="${esc(join)}" autocapitalize="characters" autocomplete="off" placeholder="Sex tecken" style="text-transform:uppercase;letter-spacing:.12em"></label>
+      <button class="btn primary block" type="submit">${invited ? `Gå med i ${esc(invited)}` : "Gå med"}</button>
+    </form>`;
   setScreen("onboarding", `
     <header class="top"><div class="hello"><small>Välkommen</small><h1>Kom igång</h1></div></header>
+    ${code ? joinForm : ""}
     <form class="card form" data-form="create-house" data-keep>
       <h2>Starta en ny bildagbok</h2>
       <label class="field"><span>Ditt namn</span><input name="name" id="ob-name" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
@@ -905,12 +905,7 @@ function renderOnboarding(error = "") {
       <button class="btn primary block" type="submit">Skapa</button>
       <p class="hint">Sedan kan du bjuda in andra med en kod, till exempel familj eller den du delar bil med.</p>
     </form>
-    <form class="card form" data-form="join-house" data-keep>
-      <h2>Gå med i en befintlig</h2>
-      <label class="field"><span>Ditt namn</span><input name="name" id="ob-name2" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
-      <label class="field"><span>Inbjudningskod</span><input name="code" id="ob-code" required maxlength="8" value="${esc(join)}" autocapitalize="characters" autocomplete="off" placeholder="Sex tecken" style="text-transform:uppercase;letter-spacing:.12em"></label>
-      <button class="btn primary block" type="submit">Gå med</button>
-    </form>
+    ${code ? "" : joinForm}
     ${error ? `<p class="err">${esc(error)}</p>` : ""}
     <button class="link" type="button" data-act="logout" style="align-self:center">Logga ut (${esc(S.user.email || "")})</button>`);
   if (join && !window.matchMedia("(pointer: coarse)").matches) $("#ob-code")?.focus();
@@ -1212,108 +1207,39 @@ function installCard() {
   </article>`;
 }
 
+// Kom igång: tre steg som gör appen användbar direkt. Försvinner när allt är gjort eller när man döljer det.
+function startCard(c) {
+  if (!c || pref.get("startHidden." + S.hid)) return "";
+  const alone = (S.house?.members || []).length < 2;
+  const steps = [
+    { done: odoOf(c) != null, title: "Fyll i mätarställningen", sub: "Då räknar appen ut när service och däck behövs.", act: "new-entry", type: "matare" },
+    { done: !!(c.besiktning || c.forsakringDatum), title: "Lägg in besiktning och försäkring", sub: "Ni får en påminnelse i god tid.", act: "edit-car", section: "dates" },
+    { done: !alone, title: "Bjud in någon", sub: "Den du delar bilen med ser och loggar samma sak.", act: "copy-invite" },
+  ];
+  const left = steps.filter((x) => !x.done).length;
+  if (!left) return "";
+  return `<article class="card start-card">
+    <h2><span>Kom igång <span class="muted" style="font-weight:500;font-size:13px;margin-left:4px">${3 - left} av 3</span></span> <button class="link" type="button" data-act="hide-start">Dölj</button></h2>
+    <div class="rows">${steps.map((x, i) => x.done
+      ? `<div class="dl start-step done"><span class="step-n" aria-hidden="true">✓</span><span><span class="dl-t">${esc(x.title)}</span><span class="dl-s">Klart</span></span></div>`
+      : `<button class="dl as-btn start-step" type="button" data-act="${x.act}"${x.type ? ` data-type="${x.type}"` : ""}${x.section ? ` data-section="${x.section}"` : ""}>
+          <span class="step-n" aria-hidden="true">${i + 1}</span><span><span class="dl-t">${esc(x.title)}</span><span class="dl-s">${esc(x.sub)}</span></span><span class="dl-v">›</span></button>`).join("")}</div>
+  </article>`;
+}
+
 function inviteCard() {
   if (!S.house || (S.house.members || []).length > 1) return "";
   return `<article class="card">
     <h2>Dela bilen med någon</h2>
-    <p class="muted">Alla ni som delar ser och loggar samma sak. Den du bjuder in loggar in med Apple eller Google och skriver in koden:</p>
+    <p class="muted">Bjud in någon till ${esc(S.house.name || "hushållet")}. Alla ni som delar ser och loggar samma sak. Den du bjuder in loggar in med Apple eller Google och skriver in koden:</p>
     <p class="code" style="margin:10px 0">${esc(S.house.inviteCode)}</p>
     <button class="btn-soft" type="button" data-act="copy-invite">Kopiera inbjudningslänk</button>
   </article>`;
 }
 
-/* ------------------------------------------------------- budget per bil */
-
-// Månadsbudget för bilen: hur mycket som har gått åt och om det är nära eller över.
-function budgetInfo(c, key = ymKey(new Date())) {
-  if (!c?.budget) return null;
-  const spent = carEntries().filter((e) => e.amount > 0 && (e.date || "").startsWith(key)).reduce((a, e) => a + e.amount, 0);
-  const frac = spent / c.budget;
-  return { budget: c.budget, spent, frac, level: frac > 1 ? "urgent" : frac >= 0.8 ? "soon" : "ok" };
-}
-function budgetBar(bi) {
-  if (!bi) return "";
-  const left = bi.budget - bi.spent;
-  return `<div class="budget">
-    <span class="wear ${bi.level}" role="img" aria-label="${Math.round(bi.frac * 100)} % av budgeten"><i style="width:${Math.min(100, bi.frac * 100).toFixed(1)}%"></i></span>
-    <span class="budget-t">${fmtKr(bi.spent)} av ${fmtKr(bi.budget)} kr · ${left >= 0 ? `${fmtKr(left)} kr kvar` : `${fmtKr(-left)} kr över`}</span>
-  </div>`;
-}
-function budgetReminder(c) {
-  const cats = Object.keys(c?.budgetCats || {}).map((k) => ({ k, bi: catBudgetInfo(c, k) })).filter((x) => x.bi && x.bi.frac >= 0.8)
-    .map(({ k, bi }) => ({ icon: CAT_ICON[k] || "coin", title: bi.frac > 1 ? `${k}: över budget` : `${k}: budgeten nästan slut`, sub: `${fmtKr(bi.spent)} av ${fmtKr(bi.budget)} kr i ${MONTHS[new Date().getMonth()]}`, level: bi.level, label: `${Math.round(bi.frac * 100)} %`, act: "go-view", id: "ekonomi", always: true, days: 0 }));
-  const bi = budgetInfo(c);
-  if (!bi || bi.frac < 0.8) return cats;
-  return [...cats, { icon: "coin", title: bi.frac > 1 ? "Över månadens budget" : "Budgeten är nästan slut", sub: `${fmtKr(bi.spent)} av ${fmtKr(bi.budget)} kr i ${MONTHS[new Date().getMonth()]}`, level: bi.level, label: `${Math.round(bi.frac * 100)} %`, act: "go-view", id: "ekonomi", always: true, days: 0 }];
-}
-function budgetSheet() {
-  const c = car();
-  openSheet("Budget per månad", `
-    <form class="form" data-form="budget" novalidate>
-      ${field(`Budget för ${esc(carName(c))} (kr per månad)`, `<input name="budget" id="bu-budget" inputmode="numeric" value="${c.budget ?? ""}" placeholder="Till exempel 3 000">`, "Allt som loggas räknas: bränsle, service, försäkring, parkering och annat. Lämna tomt för att ta bort budgeten.")}
-      ${(() => {
-        // Förslag: snittet för de senaste sex hela månaderna, avrundat uppåt till hundratal.
-        const t = new Date();
-        const keys = Array.from({ length: 6 }, (_, i) => ymKey(new Date(t.getFullYear(), t.getMonth() - 1 - i, 1)));
-        const paid = carEntries().filter((e) => e.amount > 0 && keys.includes((e.date || "").slice(0, 7)));
-        if (!paid.length) return "";
-        const avg = paid.reduce((a, e) => a + e.amount, 0) / 6;
-        const sug = Math.ceil(avg / 100) * 100;
-        return `<p class="hint">Snittet de senaste sex månaderna är ${esc(fmtKr(Math.round(avg)))} kr.</p>
-          <div class="date-quick"><button type="button" class="chip-btn" data-act="budget-suggest" data-v="${sug}">Använd ${esc(fmt(sug))} kr</button></div>`;
-      })()}
-      <details class="more"${Object.keys(c.budgetCats || {}).length ? " open" : ""}>
-        <summary>Budget per kategori (valfritt)</summary>
-        <div class="form">${BUDGET_CATS.map((k, i) => field(`${esc(k)} (kr per månad)`, `<input name="cat${i}" inputmode="numeric" value="${c.budgetCats?.[k] ?? ""}" placeholder="–">`)).join("")}
-          <p class="hint">Till exempel 1 500 kr för bränsle och 500 kr för parkering. Ni får en påminnelse när en kategori närmar sig gränsen.</p></div>
-      </details>
-      <p class="err" id="form-err" hidden></p>
-      <button class="btn primary block" type="submit">Spara</button>
-    </form>`);
-}
-const BUDGET_CATS = ["Bränsle", "Service och reparationer", "Däck", "Parkering", "P-böter", "Tvätt", "Försäkring", "Skatt och besiktning", "Övrigt"];
-// Hur mycket som gått åt i en kategori denna månad jämfört med kategorins budget.
-function catBudgetInfo(c, cat, key = ymKey(new Date())) {
-  const b = c?.budgetCats?.[cat];
-  if (!b) return null;
-  const spent = carEntries().filter((e) => e.amount > 0 && (e.date || "").startsWith(key) && catOf(e) === cat).reduce((a, e) => a + e.amount, 0);
-  const frac = spent / b;
-  return { budget: b, spent, frac, level: frac > 1 ? "urgent" : frac >= 0.8 ? "soon" : "ok" };
-}
-function saveBudget(form) {
-  const v = num(new FormData(form).get("budget"));
-  if (v != null && v < 0) return formError("Budgeten kan inte vara mindre än noll.");
-  const c = car();
-  const fd = new FormData(form);
-  const cats = {};
-  BUDGET_CATS.forEach((k, i) => { const x = num(fd.get("cat" + i)); if (x > 0) cats[k] = x; });
-  c.budget = v || null;
-  c.budgetCats = cats;
-  updateDoc(ref("cars", c.id), { budget: v || null, budgetCats: cats }).catch(onWriteError);
-  closeSheet(); render();
-  showToast(v ? `Budgeten är ${fmtKr(v)} kr per månad` : "Budgeten är borttagen");
-}
-
 /* ----------------------------------------------------------- att göra */
 
 // Gemensam att göra-lista för bilen. Klara saker ligger kvar överstrukna tills någon rensar dem.
-// Listan med saker att göra, köpa eller laga. Samma lista på Översikt (Att göra) och under Bilen (Anteckningar).
-// Varje sak kan ha en kategori. Appen gissar kategorin medan man skriver, och man kan ändra den med ett tryck.
-const TODO_TAGS = [
-  { k: "fel", label: "Fel att laga" },
-  { k: "besiktning", label: "Inför besiktning" },
-  { k: "service", label: "Inför service" },
-  { k: "kopa", label: "Köpa" },
-];
-const tagLabel = (k) => TODO_TAGS.find((t) => t.k === k)?.label || "";
-function guessTag(text) {
-  const t = String(text || "").toLowerCase();
-  if (/besikt/.test(t)) return "besiktning";
-  if (/service|verkstad|mekonom|oljebyte/.test(t)) return "service";
-  if (/trasig|sönder|knack|läck|gnissl|skrap|låter|ljud|lyser|varningslampa|felkod|funkar inte|fungerar inte|går inte|spricka|rost|buckla|repa|skada|slitna|glapp|vibrer|drar åt/.test(t)) return "fel";
-  if (/köp|handla|beställ|spolarvätska|torkarblad|glödlampa|lampa|olja|kylarvätska|avfrostning|isskrapa|säkring|batteri/.test(t)) return "kopa";
-  return "";
-}
 function todoItemsHtml(items) {
   return `<div class="todos">${items.map((t) => `<label class="todo${t.done ? " done" : ""}">
       <input type="checkbox" class="vh" data-act="todo-toggle" data-id="${esc(t.id)}"${t.done ? " checked" : ""}><span class="box" aria-hidden="true"></span>
@@ -1335,42 +1261,6 @@ function todoCard(c) {
     ${list.length ? todoItemsHtml([...open, ...done]) : `<p class="muted">Saker att göra, köpa eller laga på bilen. Alla ni som delar bilen ser samma lista.</p>`}
     ${todoFormHtml()}
   </article>`;
-}
-// Under Anteckningar: ihopfällt syns bara hur många saker det finns per kategori, utfällt hela listan med filter.
-function notesListHtml(c) {
-  const list = c.todos || [];
-  const open = list.filter((t) => !t.done), done = list.filter((t) => t.done);
-  const count = (k) => open.filter((t) => (t.tag || "") === k).length;
-  const groups = [...TODO_TAGS.map((t) => [t.k, t.label, count(t.k)]), ["", "Övrigt", count("")]].filter(([, , n]) => n);
-  if (!S.notesOpen) {
-    return `<div class="note-sum">
-      ${groups.map(([k, l, n]) => `<span class="tag-pill${k ? ` tag-${k}` : " tag-none"}">${esc(l)} ${n}</span>`).join("")}
-      <button class="link" type="button" data-act="notes-toggle">${open.length ? `Visa listan (${open.length})` : "Lägg till något att göra, köpa eller laga"}</button>
-    </div>`;
-  }
-  const f = S.noteFilter || "alla";
-  const shown = [...open, ...done].filter((t) => f === "alla" || (t.tag || "") === (f === "ovrigt" ? "" : f));
-  return `<div class="note-list">
-    <div class="filters" role="group" aria-label="Visa kategori">
-      <button type="button" data-act="note-filter" data-f="alla" aria-pressed="${f === "alla"}">Alla ${open.length}</button>
-      ${groups.map(([k, l, n]) => `<button type="button" data-act="note-filter" data-f="${k || "ovrigt"}" aria-pressed="${f === (k || "ovrigt")}">${esc(l)} ${n}</button>`).join("")}
-    </div>
-    ${shown.length ? todoItemsHtml(shown) : `<p class="muted" style="margin-top:8px">Inget här än.</p>`}
-    ${todoFormHtml()}
-    <div class="ask" style="justify-content:space-between">
-      <button class="link" type="button" data-act="notes-toggle">Visa färre</button>
-      ${done.length ? `<button class="link" type="button" data-act="todo-clear">Rensa klara</button>` : ""}
-    </div>
-  </div>`;
-}
-// Vem som lade till saken, eller vem den gäller om den är riktad till någon.
-// Saker som någon har bett dig om syns också under På gång.
-function todoReminders(c) {
-  return (c.todos || []).filter((t) => !t.done && t.to === uid() && t.by !== uid()).map((t) => ({ icon: "todo", title: t.text, sub: `${memberName(t.by)} bad dig`, level: "soon", label: "Att göra", act: "go-view", id: "oversikt", always: true, days: 0 }));
-}
-function todoWho(t) {
-  if (t.to) return t.to === uid() ? "Till dig" : `Till ${memberName(t.to)}`;
-  return whoName(t.by);
 }
 function saveTodo(form) {
   const text = String(new FormData(form).get("text") || "").trim();
@@ -1842,10 +1732,12 @@ function viewOverview() {
   </article>`);
 
 
+  parts.push(startCard(c));
+
   const dls = deadlines(c);
   parts.push("<!--card:koll-->", `<article class="card">
     <h2>På gång</h2>
-    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...todoReminders(c), ...odoReminder(c), ...docReminders(c), ...dls])}
+    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...odoReminder(c), ...docReminders(c), ...dls])}
     ${!c.besiktning && !c.forsakringDatum ? `<div class="ask"><button class="btn-soft" type="button" data-act="edit-car" data-section="dates">Lägg till besiktning, försäkring och skatt</button></div>` : ""}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
   </article>`);
@@ -2321,10 +2213,9 @@ function catRows(list, total, monthKey) {
   for (const e of list) { const k = catOf(e); cats[k] = (cats[k] || 0) + e.amount; count[k] = (count[k] || 0) + 1; }
   const c = car();
   return Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([k, v]) => {
-    const bi = null;
     return `<button class="dl as-btn" type="button" data-act="open-cat" data-id="${esc(k)}" data-month="${monthKey}">
     <span class="dl-ic">${icon(CAT_ICON[k] || "receipt", 20)}</span>
-    <span><span class="dl-t">${esc(k)}</span><span class="dl-s">${total ? fmt((v / total) * 100) : 0} % · ${count[k]} st${bi ? ` · budget ${esc(fmtKr(bi.budget))} kr` : ""}</span>${bi ? `<span class="wear ${bi.level}"><i style="width:${Math.min(100, bi.frac * 100).toFixed(1)}%"></i></span>` : ""}</span>
+    <span><span class="dl-t">${esc(k)}</span><span class="dl-s">${total ? fmt((v / total) * 100) : 0} % · ${count[k]} st</span></span>
     <span class="dl-v">${fmtKr(v)} kr ›</span></button>`;
   }).join("");
 }
@@ -2375,7 +2266,6 @@ function viewEconomy() {
     return `<div class="delta ${p > 0 ? "up" : p < 0 ? "down" : ""}">${p > 0 ? "+" : ""}${p} % mot ${year === new Date().getFullYear() ? `samma tid ${year - 1}` : year - 1}${unit}</div>`;
   };
   const c = car();
-  const bi = budgetInfo(c, sel);
   // Bilåret i siffror: vad pengarna gick till och vad som gjordes.
   const yearList = paid.filter((e) => e.date.startsWith(`${year}-`));
   const byCat = {};
@@ -2640,6 +2530,10 @@ function viewSettings() {
       }).join("")}</div>
       <p class="hint" style="margin-top:10px">Koppla både Google och Apple så kan du logga in med vilket du vill och ändå se samma bilar och logg.</p>
       <div class="ask"><button class="btn ghost block" type="button" data-act="logout">Logga ut</button></div>
+      <div class="ask" style="justify-content:space-between">
+        <a class="link" href="integritet.html" target="_blank" rel="noopener">Så hanteras dina uppgifter</a>
+        <button class="link danger" type="button" data-act="delete-account">Radera mitt konto</button>
+      </div>
     </div>
     <p class="hint" style="text-align:center">Bildagboken ${VERSION}</p>`;
 }
@@ -2752,8 +2646,6 @@ function closeConfirm(answer) {
 $("#confirm-yes").addEventListener("click", () => closeConfirm(true));
 $("#confirm-no").addEventListener("click", () => closeConfirm(false));
 $("#confirm-scrim").addEventListener("click", () => closeConfirm(false));
-
-const TYPE_DEFINITE = { tank: "tankningen", matare: "mätarställningen", service: "servicen", eget: "jobbet", dack: "däckposten", tvatt: "tvätten", parkering: "parkeringen", kostnad: "kostnaden" };
 
 // Samma ordning överallt (plusmenyn och filtren i loggen), i tre grupper:
 // det man gör när man kör, underhåll av bilen och övriga kostnader. Det vanligaste först i varje grupp.
@@ -3085,10 +2977,6 @@ function foldIcs(line) {
 }
 
 // Flera händelser i en och samma kalenderfil.
-function buildIcsMany(evs) {
-  const bodies = evs.map((ev) => { const lines = buildIcs(ev).split("\r\n"); return lines.slice(lines.indexOf("BEGIN:VEVENT"), lines.lastIndexOf("END:VEVENT") + 1).join("\r\n"); });
-  return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Bildagboken//SV", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", ...bodies, "END:VCALENDAR"].join("\r\n");
-}
 function deadlineEvent(x, c) {
   return {
     uid: `${c.id}-${x.key}-${ymd(x.date)}`,
@@ -3101,12 +2989,6 @@ function deadlineEvent(x, c) {
   };
 }
 // Alla kommande bokningar och sista datum för alla bilar, i en fil.
-function allCalendarEvents() {
-  return S.cars.flatMap((c) => [
-    ...(c.bookings || []).filter((b) => b.date >= todayStr()).map((b) => bookingCalendarEvent(b, c)),
-    ...deadlines(c).filter((x) => x.key && x.key !== "dack" && x.date && daysUntil(x.date) >= 0).map((x) => deadlineEvent(x, c)),
-  ]);
-}
 function addToCalendar(ev) {
   const ics = ev._ics || buildIcs(ev);
   const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
@@ -4181,6 +4063,41 @@ const ACTIONS = {
       }
     }
   },
+  async "delete-account"() {
+    const others = (S.house?.members || []).filter((m) => m !== uid());
+    const house = S.house?.name || "hushållet";
+    const ok = await confirmDialog({
+      title: "Radera ditt konto?",
+      lines: others.length
+        ? [`Ditt konto och din inloggning tas bort, och du lämnar ${house}.`, "Det du har loggat finns kvar för de andra."]
+        : [`Ditt konto och ${house} tas bort, med allt som är loggat: bilar, logg, bilder, dokument och delade serviceböcker.`, "Ladda gärna ner en säkerhetskopia först, under Säkerhetskopia."],
+      okLabel: "Radera",
+    });
+    if (!ok) return;
+    // Firebase kräver en färsk inloggning för att radera ett konto. Logga in en gång till först, innan något tas bort.
+    const signedInAgo = Date.now() - Date.parse(auth.currentUser?.metadata?.lastSignInTime || 0);
+    if (!(signedInAgo < 4 * 60e3)) {
+      try {
+        await reauthenticateWithPopup(auth.currentUser, authProvider(linkedProviders()[0] || "google"));
+      } catch (e) {
+        if (e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request") return showToast("Kontot är inte raderat.");
+        return showToast("Logga ut och logga in igen, och radera sedan kontot direkt efteråt.", 7000);
+      }
+    }
+    showToast("Raderar …", 20000);
+    try {
+      await deleteAccountData(others.length > 0);
+      await deleteUser(auth.currentUser);
+    } catch (e) {
+      console.error(e);
+      return showToast(e?.code === "auth/requires-recent-login" ? "Logga ut och logga in igen, och radera sedan kontot direkt efteråt." : `Det gick inte att radera allt (${e.code || e.message}). Försök igen med nät.`, 8000);
+    }
+    cleanup();
+    try { localStorage.clear(); } catch { /* inget sparat */ }
+    S.hid = null; S.house = null;
+    renderLogin();
+    showToast("Ditt konto är raderat.", 5000);
+  },
   async logout() {
     cleanup();
     await signOut(auth);
@@ -4350,10 +4267,6 @@ const ACTIONS = {
     render();
   },
   "eco-month"(el) { S.ecoMonth = el.dataset.m; render(); },
-  "goto-maintenance"() {
-    setView("bilen");
-    document.getElementById("underhall")?.scrollIntoView({ block: "start" });
-  },
   "open-booking"(el) {
     // Från aviseringarna kan bokningen gälla en annan bil än den som är vald.
     if (el.dataset.car && el.dataset.car !== S.carId && S.cars.some((x) => x.id === el.dataset.car)) { S.carId = el.dataset.car; pref.set("car", S.carId); }
@@ -4443,33 +4356,7 @@ const ACTIONS = {
   },
   "print-shared"() { if (sharedBookData) exportServiceBook(sharedBookData, pdfName(sharedBookData)); },
   "pdf-share"() { if (pendingPdf) { sharePdf(pendingPdf.blob, pendingPdf.name); closeSheet(); } },
-  "calendar-all"() {
-    const evs = allCalendarEvents();
-    if (!evs.length) return showToast("Inget kommande att lägga i kalendern");
-    addToCalendar({ _ics: buildIcsMany(evs), fileName: "Bildagboken" });
-    showToast(`${evs.length} händelser till kalendern`);
-  },
-  "budget-edit"() { budgetSheet(); },
   "bk-time"(el) { setBookingTime(el.dataset.v); },
-  "notes-toggle"() { S.notesOpen = !S.notesOpen; render(); if (S.notesOpen && !(car()?.todos || []).length) $("#todo-text")?.focus(); },
-  "note-filter"(el) { S.noteFilter = el.dataset.f; render(); },
-  "todo-tag"(el) {
-    const form = el.closest("form");
-    const hid = form?.querySelector("#todo-tag");
-    if (!hid) return;
-    hid.value = hid.value === el.dataset.v ? "" : el.dataset.v;
-    form.dataset.manual = "1";
-    form.querySelectorAll("[data-act=todo-tag]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === hid.value)));
-  },
-  "todo-retag"(el, ev) {
-    ev?.preventDefault?.(); ev?.stopPropagation?.();
-    const c = car();
-    const order = ["", ...TODO_TAGS.map((t) => t.k)];
-    const list = (c.todos || []).map((t) => (t.id === el.dataset.id ? { ...t, tag: order[(order.indexOf(t.tag || "") + 1) % order.length] || null } : t));
-    c.todos = list;
-    updateDoc(ref("cars", c.id), { todos: list }).catch(onWriteError);
-    render();
-  },
   "todo-toggle"(el) {
     const c = car();
     const t = (c.todos || []).find((x) => x.id === el.dataset.id);
@@ -4497,7 +4384,6 @@ const ACTIONS = {
     document.querySelector(`[data-act="card-move"][data-id="${el.dataset.id}"][data-d="${el.dataset.d}"]`)?.focus({ preventScroll: true });
   },
   "amount-quick"(el) { const a = $("#ef-amount"); if (a) { a.value = el.dataset.v; a.dispatchEvent(new Event("input", { bubbles: true })); } },
-  "budget-suggest"(el) { const b = $("#bu-budget"); if (b) b.value = el.dataset.v; },
   "edit-doc"(el) { const d = (car()?.docs || []).find((x) => x.id === el.dataset.id); if (d) docForm(d); },
   "hide-photos"() { S.showPhotos = false; render(); },
   async "show-photos"() { S.showPhotos = true; render(); await loadPhotoGrid(); },
@@ -4648,7 +4534,9 @@ const ACTIONS = {
   },
   async "copy-invite"() {
     const link = `${location.origin}${location.pathname}?join=${S.house.inviteCode}`;
-    const ok = await copyText(`Gå med i vår bildagbok: ${link}\nKod: ${S.house.inviteCode}`);
+    syncInviteName();
+    const name = S.house.name ? `${S.house.name} i Bildagboken` : "vår bildagbok";
+    const ok = await copyText(`Gå med i ${name}: ${link}\nKod: ${S.house.inviteCode}`);
     showToast(ok ? "Inbjudan kopierad. Skicka den till den du vill dela bilen med." : `Koden är ${S.house.inviteCode}. Länk: ${link}`, ok ? 3500 : 9000);
   },
   "ask-claude"() {
@@ -4697,6 +4585,7 @@ const ACTIONS = {
   },
   "export-log"() { exportLog(); },
   "export-all"() { exportAll(); },
+  "hide-start"() { pref.set("startHidden." + S.hid, "1"); render(); showToast("Dolt. Du hittar allt under Bilen och Inställningar."); },
   "dismiss-install"() { pref.set("installDismissed", "1"); render(); },
 };
 
@@ -4756,7 +4645,6 @@ async function onSubmit(ev) {
     if (kind === "car-edit") return saveCarEdit(form);
     if (kind === "items") return saveItems(form);
     if (kind === "booking") return saveBooking(form, ev.submitter?.value === "1");
-    if (kind === "budget") return saveBudget(form);
     if (kind === "todo") return saveTodo(form);
     if (kind === "doc") return await saveDoc(form);
     if (kind === "rename") {
@@ -4765,6 +4653,7 @@ async function onSubmit(ev) {
       const house = String(fd.get("house") || "").trim();
       if (!name || !house) return showToast("Fyll i både hushållets namn och ditt namn.");
       updateDoc(doc(db, "households", S.hid), { name: house, [`memberInfo.${uid()}.name`]: name }).catch(onWriteError);
+      syncInviteName(house);
       delete form.dataset.dirty;
       document.activeElement?.blur?.();
       showToast("Namnen är sparade");
@@ -4790,7 +4679,7 @@ async function createHouse(form) {
     inviteCode: code,
     createdAt: serverTimestamp(),
   });
-  await setDoc(doc(db, "invites", code), { householdId: hRef.id, createdBy: uid(), createdAt: serverTimestamp() });
+  await setDoc(doc(db, "invites", code), { householdId: hRef.id, houseName: house, createdBy: uid(), createdAt: serverTimestamp() });
   subscribe(hRef.id);
 }
 
@@ -4798,11 +4687,56 @@ async function createHouse(form) {
 async function rotateInviteCode() {
   const old = S.house?.inviteCode;
   const code = randomId(6, "ABCDEFGHJKLMNPQRSTUVWXYZ23456789");
-  await setDoc(doc(db, "invites", code), { householdId: S.hid, createdBy: uid(), createdAt: serverTimestamp() });
+  await setDoc(doc(db, "invites", code), { householdId: S.hid, houseName: S.house?.name || "", createdBy: uid(), createdAt: serverTimestamp() });
   await updateDoc(doc(db, "households", S.hid), { inviteCode: code });
   S.house = { ...S.house, inviteCode: code };
   if (old) deleteDoc(doc(db, "invites", old)).catch(() => {});
   render();
+}
+
+// Namnet på hushållet sparas också i inbjudan, så att den som blir inbjuden ser vem som bjuder in innan hen har gått med.
+function syncInviteName(name = S.house?.name) {
+  const code = S.house?.inviteCode;
+  if (!code || !name) return;
+  updateDoc(doc(db, "invites", code), { houseName: name }).catch(() => {});
+}
+
+// Inbjudan som hör till koden i länken (?join=KOD), hämtas en gång för välkomsttexten.
+let joinInfo = null;
+async function loadJoinInfo(code) {
+  if (!code || joinInfo?.code === code) return;
+  joinInfo = { code, name: null };
+  try {
+    const inv = await getDoc(doc(db, "invites", code));
+    if (inv.exists()) joinInfo.name = inv.data().houseName || null;
+  } catch (e) { /* utan nät visas den vanliga texten */ }
+  if (joinInfo.name && S.screen === "onboarding") renderOnboarding();
+}
+
+// Raderar det som hör till kontot. Är man inte ensam lämnar man bara hushållet, annars tas hela hushållet bort.
+async function deleteAccountData(hasOthers) {
+  const hid = S.hid;
+  if (!hid) return;
+  await deleteDoc(doc(db, "households", hid, "tokens", uid())).catch(() => {});
+  if (hasOthers) {
+    await updateDoc(doc(db, "households", hid), {
+      members: (S.house.members || []).filter((x) => x !== uid()),
+      [`memberInfo.${uid()}`]: deleteField(),
+    });
+    return;
+  }
+  for (const c of S.cars) if (c.shareToken) await deleteDoc(doc(db, "shares", c.shareToken)).catch(() => {});
+  if (S.house?.inviteCode) await deleteDoc(doc(db, "invites", S.house.inviteCode)).catch(() => {});
+  cleanup();
+  for (const sub of ["entries", "photos", "cars", "tokens"]) {
+    const qs = await getDocs(collection(db, "households", hid, sub));
+    for (let i = 0; i < qs.docs.length; i += 400) {
+      const b = writeBatch(db);
+      qs.docs.slice(i, i + 400).forEach((d) => b.delete(d.ref));
+      await b.commit();
+    }
+  }
+  await deleteDoc(doc(db, "households", hid));
 }
 
 async function joinHouse(form) {
@@ -4821,12 +4755,14 @@ async function joinHouse(form) {
   }
   if (!inv.exists()) { btn.disabled = false; return renderOnboarding("Hittade ingen inbjudan med den koden. Kontrollera stavningen."); }
   const hid = inv.data().householdId;
+  const houseName = inv.data().houseName;
   await updateDoc(doc(db, "households", hid), {
     members: arrayUnion(uid()),
     [`memberInfo.${uid()}`]: { name, email: S.user.email || null, lastSeen: serverTimestamp() },
     joinedWith: code,
   });
   history.replaceState(null, "", location.pathname + "#oversikt");
+  S.justJoined = houseName || true;
   subscribe(hid);
 }
 
@@ -5129,10 +5065,19 @@ function subscribe(hid) {
   S.unsubs.push(onSnapshot(doc(db, "households", hid), (s) => {
     S.house = s.data({ serverTimestamps: "estimate" });
     S.loaded.house = true;
+    if (S.justJoined) {
+      showToast(typeof S.justJoined === "string" ? `Välkommen till ${S.justJoined}!` : "Välkommen! Nu delar ni bilen.", 4500);
+      S.justJoined = null;
+    }
+    // Äldre inbjudningar saknar hushållets namn. Det läggs till en gång, så att nästa inbjudna ser det.
+    const stamp = `${S.house?.inviteCode}|${S.house?.name}`;
+    if (S.house?.inviteCode && pref.get("inviteName") !== stamp) { syncInviteName(); pref.set("inviteName", stamp); }
     render();
   }, onListenError));
 
-  S.unsubs.push(onSnapshot(collection(db, "households", hid, "cars"), (s) => {
+  S.unsubs.push(onSnapshot(collection(db, "households", hid, "cars"), { includeMetadataChanges: true }, (s) => {
+    S.pending.cars = s.docs.filter((d) => d.metadata?.hasPendingWrites).length;
+    updateNetBanner();
     S.cars = s.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }))
       .sort((a, b) => tsMs(a.createdAt) - tsMs(b.createdAt));
     if (!S.cars.find((c) => c.id === S.carId)) {
@@ -5146,7 +5091,9 @@ function subscribe(hid) {
   }, onListenError));
 
   let first = true;
-  S.unsubs.push(onSnapshot(query(collection(db, "households", hid, "entries"), orderBy("date", "desc")), (s) => {
+  S.unsubs.push(onSnapshot(query(collection(db, "households", hid, "entries"), orderBy("date", "desc")), { includeMetadataChanges: true }, (s) => {
+    S.pending.entries = s.docs.filter((d) => d.metadata?.hasPendingWrites).length;
+    updateNetBanner();
     S.entries = sortEntries(s.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })));
     if (!first) {
       for (const ch of s.docChanges()) {
@@ -5225,8 +5172,27 @@ document.addEventListener("keydown", (ev) => {
   if (!$("#confirm").hidden) return closeConfirm(false);
   if (!sheet.hidden) closeSheet();
 });
-window.addEventListener("offline", () => showToast("Ingen kontakt med nätet. Det du sparar laddas upp när nätet är tillbaka.", 6000));
-window.addEventListener("online", () => showToast("Nätet är tillbaka"));
+// En liten rad överst när nätet saknas, med hur många ändringar som väntar på att laddas upp.
+function updateNetBanner() {
+  const el = $("#net");
+  if (!el) return;
+  const n = S.pending.cars + S.pending.entries;
+  const offline = !navigator.onLine;
+  el.hidden = !offline && !(n && S.netWasOff);
+  if (el.hidden) return;
+  el.classList.toggle("syncing", !offline);
+  el.textContent = offline
+    ? (n ? `Ingen nätkontakt · ${n === 1 ? "1 ändring väntar" : `${n} ändringar väntar`}` : "Ingen nätkontakt · det du sparar laddas upp sen")
+    : `Laddar upp ${n === 1 ? "1 ändring" : `${n} ändringar`} …`;
+  if (!n && !offline) S.netWasOff = false;
+}
+window.addEventListener("offline", () => { S.netWasOff = true; updateNetBanner(); });
+window.addEventListener("online", () => {
+  updateNetBanner();
+  if (!S.pending.cars && !S.pending.entries) { S.netWasOff = false; updateNetBanner(); }
+  showToast("Nätet är tillbaka. Allt är uppladdat när raden överst försvinner.", 3000);
+});
+updateNetBanner();
 window.addEventListener("popstate", () => {
   if (ignorePops) {
     // Rutan stängdes med en knapp och historiken backades ett steg. Byttes vyn under tiden ligger den kvar.

@@ -461,6 +461,16 @@ input[type="range"].fuel-range:focus-visible { outline: 2px solid var(--accent);
 .fuel-ticks .minor { font-weight: 500; opacity: .7; font-size: 10.5px; top: 1px; }
 .fuel-meta { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-3); }
 
+/* rad överst när nätet saknas */
+.net-pill {
+  position: fixed; z-index: 21; left: 50%; transform: translateX(-50%);
+  top: calc(6px + env(safe-area-inset-top, 0px));
+  max-width: calc(100% - 32px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--ink); color: var(--ground); border-radius: 999px; padding: 6px 14px;
+  font: 600 12.5px var(--f-body); box-shadow: var(--shadow); pointer-events: none;
+}
+.net-pill.syncing { background: var(--sage); color: #fff; }
+
 /* toast message */
 .toast-msg {
   position: fixed; z-index: 20; left: 50%; transform: translateX(-50%);
@@ -721,9 +731,6 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .unit-row select { flex: none; width: 84px; }
 .log-sum b { color: var(--ink); font-weight: 600; }
 /* Budget: stapel och text under månadens summa */
-.budget { margin: 10px 0 4px; }
-.budget .wear { height: 8px; border-radius: 4px; }
-.budget-t { display: block; font-size: 12.5px; color: var(--ink-2); margin-top: 6px; font-variant-numeric: tabular-nums; }
 /* Jämförelse med året innan */
 .delta { font-size: 11.5px; font-weight: 600; color: var(--ink-3); margin-top: 2px; }
 .delta.up { color: var(--accent-text); }
@@ -773,8 +780,6 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 }
 
 /* Budgetraden i Ekonomi: rubrik och Ändra som i korten */
-.budget-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 4px 0 0; }
-.eco-month .budget { margin-bottom: 14px; }
 /* Rensa sökningen: större tryckyta än själva knappen */
 .search-clear { position: relative; }
 .search-clear::after { content: ""; position: absolute; inset: -9px; }
@@ -927,19 +932,6 @@ body::after { inset: auto; top: 0; left: 0; width: var(--vw, 100vw); height: var
 .todo-add { display: block; }
 .todo-row { display: flex; gap: 8px; align-items: stretch; }
 .todo-row input { flex: 1; min-width: 0; min-height: 50px; font-size: 16px; }
-.tag-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.tag-pick .chip-btn { min-height: 32px; padding: 5px 11px; font-size: 12.5px; }
-.tag-pill { flex: none; border: 0; border-radius: 999px; padding: 4px 9px; font: 600 11.5px var(--f-body); white-space: nowrap; cursor: pointer; background: var(--track); color: var(--ink-2); }
-.tag-pill.tag-none { background: transparent; color: var(--ink-3); border: 1px dashed var(--line); }
-.tag-pill.tag-fel { background: var(--danger-soft); color: var(--danger); }
-.tag-pill.tag-besiktning { background: var(--sage-soft); color: var(--sage); }
-.tag-pill.tag-service { background: var(--warn-soft); color: var(--warn); }
-.tag-pill.tag-kopa { background: var(--accent-soft); color: var(--accent-text); }
-span.tag-pill { cursor: default; }
-.note-sum { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
-.note-sum .link { margin-left: auto; }
-.note-list { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
-.note-list .filters { margin-bottom: 6px; }
 /* Datum och tid i samma fält */
 input[type="datetime-local"] { height: 46px; line-height: 1.2; }
 input[type="datetime-local"]::-webkit-date-and-time-value { text-align: left; min-height: 1.2em; }
@@ -1015,3 +1007,8 @@ body.arranging [data-card].lifted { animation: none; z-index: 30; position: rela
 .arrange-bar { position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); top: calc(12px + env(safe-area-inset-top, 0px)); width: min(440px, calc(100% - 32px)); display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 16px; border-radius: 18px; background: var(--ink); color: var(--ground); box-shadow: var(--shadow); font-size: 14px; }
 .arrange-bar .btn { padding: 9px 18px; }
 @media (min-width: 900px) { .arrange-bar { left: calc(50% + var(--side) / 2); } }
+
+/* Kom igång */
+.start-step .step-n, .dl.as-btn > .step-n { width: 28px; height: 28px; justify-self: center; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font: 700 13.5px var(--f-body); flex: none; }
+.start-step.done .step-n { background: var(--sage-soft); color: var(--sage); }
+.start-step.done .dl-t { color: var(--ink-3); text-decoration: line-through; }
