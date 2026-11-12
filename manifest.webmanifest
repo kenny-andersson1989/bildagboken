@@ -10,19 +10,19 @@
   "theme_color": "#E9E4DF",
   "icons": [
     {
-      "src": "icons/icon-192.png",
+      "src": "icons/icon-192.png?v=4",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icons/icon-512.png",
+      "src": "icons/icon-512.png?v=4",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icons/icon-maskable-512.png",
+      "src": "icons/icon-maskable-512.png?v=4",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -35,7 +35,7 @@
       "url": "./?ny=tank",
       "icons": [
         {
-          "src": "icons/icon-192.png",
+          "src": "icons/icon-192.png?v=4",
           "sizes": "192x192"
         }
       ]
@@ -46,7 +46,7 @@
       "url": "./?ny=matare",
       "icons": [
         {
-          "src": "icons/icon-192.png",
+          "src": "icons/icon-192.png?v=4",
           "sizes": "192x192"
         }
       ]
@@ -57,7 +57,7 @@
       "url": "./?ny=tvatt",
       "icons": [
         {
-          "src": "icons/icon-192.png",
+          "src": "icons/icon-192.png?v=4",
           "sizes": "192x192"
         }
       ]
@@ -68,7 +68,7 @@
       "url": "./?ny=bokning",
       "icons": [
         {
-          "src": "icons/icon-192.png",
+          "src": "icons/icon-192.png?v=4",
           "sizes": "192x192"
         }
       ]
