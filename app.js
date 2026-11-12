@@ -2530,7 +2530,8 @@ function viewCar() {
   const specs = lines.map((l) => { const i = l.indexOf(":"); return i > 0 && i < 40 ? [l.slice(0, i).trim(), l.slice(i + 1).trim()] : null; }).filter((x) => x && x[1]);
   const freeLines = lines.filter((l) => { const i = l.indexOf(":"); return !(i > 0 && i < 40); });
   const st = allItemStatus(c);
-  const tires = ["sommar", "vinter"].map((k) => {
+  // De däck som sitter på står överst.
+  const tires = ["sommar", "vinter"].sort((a, b) => ((c.tiresOn || "sommar") === b) - ((c.tiresOn || "sommar") === a)).map((k) => {
     const t = (c.tires || []).find((x) => x.kind === k) || {};
     const on = (c.tiresOn || "sommar") === k;
     const pressure = t.pressureFront != null || t.pressureRear != null
