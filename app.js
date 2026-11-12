@@ -12,7 +12,17 @@ import {
 import { firebaseConfig } from "./firebase-config.js";
 import { MAPKIT_TOKEN } from "./maps-config.js";
 
-const VERSION = "2.7";
+const VERSION = "2.8";
+
+/* ---------------------------------------------------------------- språk */
+
+// Svenska är grundspråket. Med engelska översätts allt som visas på skärmen när det ritas (se trTree längre ner).
+const LANG = (() => { try { return localStorage.getItem("bildagboken.lang") === "en" ? "en" : "sv"; } catch { return "sv"; } })();
+let EN = null, EN_RULES = [];
+if (LANG === "en") {
+  try { ({ EN, EN_RULES } = await import("./en.js")); } catch (e) { console.error("Kunde inte ladda engelska", e); }
+}
+document.documentElement.lang = LANG;
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -68,6 +78,10 @@ const daysUntil = (d) => Math.round((d - today0()) / 864e5);
 const addMonths = (d, m) => { const r = new Date(d); r.setMonth(r.getMonth() + m); return r; };
 const MONTHS = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"];
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "Maj", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"];
+if (EN) {
+  MONTHS.splice(0, 12, "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December");
+  MONTHS_SHORT.splice(0, 12, "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec");
+}
 const fmtDate = (s) => {
   const d = typeof s === "string" ? parseDate(s) : s;
   if (!d) return "–";
@@ -156,6 +170,58 @@ const TIRE_ACTIVITY = {
 };
 const BOOK_KINDS = { service: "Service", reparation: "Reparation", besiktning: "Besiktning", dack: "Däckbyte", annat: "Annat" };
 const WEEKDAYS = ["söndag", "måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag"];
+if (EN) WEEKDAYS.splice(0, 7, "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday");
+
+// Översättning av en text: hela texten om den finns, annars mönster med siffror och sedan kända fraser, längst först.
+const reEsc = (k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const trRe = EN ? new RegExp(`(?<![\\p{L}\\d])(?:${Object.keys(EN).sort((a, b) => b.length - a.length).map(reEsc).join("|")})(?![\\p{L}])`, "gu") : null;
+function tr(s) {
+  if (!EN || !s || !/[A-Za-zÅÄÖåäö]/.test(s)) return s;
+  const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(s);
+  const core = m[2];
+  if (EN[core] != null) return m[1] + EN[core] + m[3];
+  let out = core;
+  for (const [re, to] of EN_RULES) out = out.replace(re, to);
+  out = out.replace(trRe, (k) => EN[k] ?? k);
+  return m[1] + out + m[3];
+}
+// Det man själv har skrivit (namn, anteckningar, att göra) översätts inte.
+const NO_TR = "script, style, textarea, [data-notr], .todo-t, .plate, .code, .share-url";
+const TR_ATTRS = ["placeholder", "aria-label", "title", "alt"];
+function trTree(root) {
+  if (!EN || !root) return;
+  const one = (n) => {
+    if (n.nodeType === 3) {
+      if (n.parentElement?.closest(NO_TR)) return;
+      const t = tr(n.data);
+      if (t !== n.data) n.data = t;
+    } else if (n.nodeType === 1) {
+      for (const a of TR_ATTRS) {
+        const v = n.getAttribute(a);
+        if (v) { const t = tr(v); if (t !== v) n.setAttribute(a, t); }
+      }
+    }
+  };
+  one(root);
+  if (root.nodeType !== 1) return;
+  // Fält och eget innehåll hoppas över, men fältens platshållare översätts.
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, { acceptNode: (n) => {
+    if (n.nodeType !== 1 || !n.matches(NO_TR)) return NodeFilter.FILTER_ACCEPT;
+    if (n.matches("textarea")) one(n);
+    return NodeFilter.FILTER_REJECT;
+  } });
+  let x;
+  while ((x = w.nextNode())) one(x);
+}
+if (EN) {
+  trTree(document.body);
+  new MutationObserver((list) => {
+    for (const m of list) {
+      if (m.type === "childList") m.addedNodes.forEach(trTree);
+      else trTree(m.target);
+    }
+  }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: TR_ATTRS });
+}
 const SPEC_TEMPLATE = "Motorolja: \nOljemängd: \nDäckdimension: \nLufttryck fram/bak: \nTorkarblad: \nBatteri: \nGlödlampor: ";
 
 const isFlex = (c) => /flex|e85/i.test(c?.fuel || "") || /\d[.,]\d\s*f\b/i.test(c?.engine || "");
@@ -1551,10 +1617,10 @@ function loadPdfLibs() {
 const pdfReady = () => !!window.jspdf?.jsPDF?.API?.autoTable;
 function serviceBookPdf(d0) {
   const d = serviceBookFromStore(d0);
-  const t = (x) => String(x ?? "").replace(/[–—]/g, "-").replace(/›/g, ">");
+  const t = (x) => tr(String(x ?? "")).replace(/[–—]/g, "-").replace(/›/g, ">");
   const pdf = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
   const W = pdf.internal.pageSize.getWidth();
-  pdf.setFont("helvetica", "bold"); pdf.setFontSize(22); pdf.text("Servicebok", 14, 20);
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(22); pdf.text(t("Servicebok"), 14, 20);
   pdf.setFont("helvetica", "normal"); pdf.setFontSize(12); pdf.text(t(`${d.car || ""}${d.plate ? ` · ${d.plate}` : ""}`), 14, 27);
   pdf.setFontSize(9); pdf.setTextColor(110); pdf.text(t(`Utskriven ${fmtDate(d.made || todayStr())} · Bildagboken`), W - 14, 20, { align: "right" }); pdf.setTextColor(0);
   pdf.setDrawColor(30); pdf.setLineWidth(0.6); pdf.line(14, 31, W - 14, 31);
@@ -1562,18 +1628,18 @@ function serviceBookPdf(d0) {
   pdf.autoTable({ ...base, startY: 35, theme: "plain", body: d.facts.map(([k, v]) => [t(k), t(v)]), columnStyles: { 0: { textColor: 110, cellWidth: 50 } } });
   let y = pdf.lastAutoTable.finalY + 8;
   if (d.items.length) {
-    pdf.setFont("helvetica", "bold"); pdf.setFontSize(13); pdf.text("Underhåll", 14, y);
-    pdf.autoTable({ ...base, startY: y + 3, head: [["Punkt", "Intervall", "Senast", "Nästa"]], body: d.items.map((r) => r.map(t)) });
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(13); pdf.text(t("Underhåll"), 14, y);
+    pdf.autoTable({ ...base, startY: y + 3, head: [["Punkt", "Intervall", "Senast", "Nästa"].map(t)], body: d.items.map((r) => r.map(t)) });
     y = pdf.lastAutoTable.finalY + 8;
   }
-  pdf.setFont("helvetica", "bold"); pdf.setFontSize(13); pdf.text("Utfört arbete", 14, y);
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(13); pdf.text(t("Utfört arbete"), 14, y);
   if (d.rows.length) {
-    pdf.autoTable({ ...base, startY: y + 3, head: [["Datum", "Mätarställning", "Vad", "Var", "Kostnad"]],
+    pdf.autoTable({ ...base, startY: y + 3, head: [["Datum", "Mätarställning", "Vad", "Var", "Kostnad"].map(t)],
       body: d.rows.map((r) => [t(r[0]), t(r[1]), t(r[2]) + (r[3] ? `\n${t(r[3])}` : ""), t(r[4]), t(r[5])]),
-      foot: [[{ content: `Totalt ${d.rows.length} ${d.rows.length === 1 ? "post" : "poster"}`, colSpan: 4 }, t(d.total)]],
+      foot: [[{ content: t(`Totalt ${d.rows.length} ${d.rows.length === 1 ? "post" : "poster"}`), colSpan: 4 }, t(d.total)]],
       footStyles: { fillColor: [255, 255, 255], textColor: 20, fontStyle: "bold" }, columnStyles: { 4: { halign: "right" } } });
   } else {
-    pdf.setFont("helvetica", "normal"); pdf.setFontSize(10); pdf.text("Inga service, egna jobb, däckbyten eller besiktningar är loggade än.", 14, y + 7);
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(10); pdf.text(t("Inga service, egna jobb, däckbyten eller besiktningar är loggade än."), 14, y + 7);
   }
   return pdf.output("blob");
 }
@@ -2580,6 +2646,12 @@ function viewSettings() {
           <span class="theme-sw" style="background:${t.sw}" aria-hidden="true"><i style="background:${t.dot}"></i></span>${t.name}</button>`).join("")}
       </div>
       <p class="hint" style="margin-top:10px">Automatiskt följer telefonen: Ljust eller Mörkt beroende på om telefonen har mörkt läge påslaget.</p>
+    </div>
+    <div class="card">
+      <h2>Språk</h2>
+      <div class="seg" role="group" aria-label="Språk">
+        ${[["sv", "Svenska"], ["en", "English"]].map(([k, l]) => `<button type="button" data-act="lang" data-v="${k}" aria-pressed="${LANG === k}" data-notr>${l}</button>`).join("")}
+      </div>
     </div>
     <div class="card">
       <h2>Notiser</h2>
@@ -4619,6 +4691,12 @@ const ACTIONS = {
       el.disabled = false;
     }
   },
+  lang(el) {
+    const v = el.dataset.v;
+    if (v === LANG) return;
+    pref.set("lang", v);
+    location.reload();
+  },
   theme(el) {
     const v = el.dataset.v;
     pref.set("theme", v);
@@ -4633,7 +4711,7 @@ const ACTIONS = {
     showToast(ok ? "Inbjudan kopierad. Skicka den till den du vill dela bilen med." : `Koden är ${S.house.inviteCode}. Länk: ${link}`, ok ? 3500 : 9000);
   },
   "ask-claude"() {
-    const text = claudePrompt(car());
+    const text = tr(claudePrompt(car()));
     copyText(text).then((ok) => showToast(ok ? "Frågan är kopierad. Klistra in den i Claude." : "Kunde inte kopiera. Öppna Claude och beskriv bilen själv.", 5000));
   },
   async "enable-notif"() {
@@ -5086,7 +5164,7 @@ function notify(text, tag) {
   if (document.visibilityState === "visible") {
     showToast(text, 5000);
   } else if ("Notification" in window && Notification.permission === "granted" && navigator.serviceWorker) {
-    navigator.serviceWorker.ready.then((reg) => reg.showNotification("Bildagboken", { body: text, icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag })).catch(() => {});
+    navigator.serviceWorker.ready.then((reg) => reg.showNotification("Bildagboken", { body: tr(text), icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag })).catch(() => {});
   }
 }
 function announce(e) { notify(activityText(e), e.id); }
