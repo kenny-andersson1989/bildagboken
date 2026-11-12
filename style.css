@@ -1183,10 +1183,16 @@ body.arranging [data-card] { position: relative; }
 .koll-head:first-child { margin-top: 0; }
 .koll-head::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .koll-head.urgent { color: var(--accent-text); }
-.koll-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-radius: 16px; background: var(--track); }
+.koll-row { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 16px; background: var(--track); }
 .koll-row.urgent { background: var(--accent-soft); }
 .koll-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 4px 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 div.koll-main { cursor: default; }
 .koll-t { font: 600 15px var(--f-body); }
 .koll-s { font-size: 13px; color: var(--ink-3); }
 .koll-btn { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--glass-strong); color: var(--ink); border: 1px solid var(--line); cursor: pointer; padding: 0; text-decoration: none; }
+.koll-tile { flex: none; width: 46px; min-height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 12px; background: var(--glass-strong); border: 1px solid var(--line); color: var(--ink-2); margin-right: 2px; }
+.koll-tile b { font: 800 19px/1.05 var(--f-display); color: var(--ink); }
+.koll-tile small { font: 700 10px var(--f-body); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin-top: 1px; }
+.koll-tile.kt-month b { font-size: 15px; }
+.koll-row.urgent .koll-tile { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.koll-row.urgent .koll-tile b, .koll-row.urgent .koll-tile small { color: var(--accent-ink); }
