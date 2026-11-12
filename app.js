@@ -2541,10 +2541,11 @@ function viewSettings() {
     </form>
     <div class="card">
       <h2>Utseende</h2>
-      <div class="seg" role="group" aria-label="Utseende">
-        ${[["auto", "Automatiskt"], ["light", "Ljust"], ["dark", "Mörkt"]].map(([k, l]) => `<button type="button" data-act="theme" data-v="${k}" aria-pressed="${(pref.get("theme") || "auto") === k}">${l}</button>`).join("")}
+      <div class="theme-grid" role="group" aria-label="Tema">
+        ${Object.entries(THEMES).map(([k, t]) => `<button class="theme-btn" type="button" data-act="theme" data-v="${k}" aria-pressed="${(pref.get("theme") || "auto") === k}">
+          <span class="theme-sw" style="background:${t.sw}" aria-hidden="true"><i style="background:${t.dot}"></i></span>${t.name}</button>`).join("")}
       </div>
-      <p class="hint" style="margin-top:10px">Automatiskt följer telefonens inställning för mörkt läge.</p>
+      <p class="hint" style="margin-top:10px">Automatiskt följer telefonen: Ljust eller Mörkt beroende på om telefonen har mörkt läge påslaget.</p>
     </div>
     <div class="card">
       <h2>Notiser</h2>
@@ -4011,13 +4012,22 @@ async function deleteCar(carId) {
   }
 }
 
+// Teman: bakgrundsfärgen (bar) används också för telefonens statusrad.
+const THEMES = {
+  auto: { name: "Automatiskt", sw: "linear-gradient(135deg, #E9E4DF 50%, #171514 50%)", dot: "#E77026" },
+  light: { name: "Ljust", sw: "#E9E4DF", dot: "#E77026", bar: "#E9E4DF" },
+  dark: { name: "Mörkt", sw: "#171514", dot: "#F08443", bar: "#171514" },
+  gron: { name: "Grönt", sw: "#E1E8DE", dot: "#2E7D4F", bar: "#E1E8DE" },
+  hav: { name: "Hav", sw: "#E0E7EF", dot: "#2563EB", bar: "#E0E7EF" },
+  natt: { name: "Natt", sw: "#12131C", dot: "#8B7CF6", bar: "#12131C" },
+};
 function applyTheme(mode) {
   const root = document.documentElement;
-  if (mode === "light" || mode === "dark") root.dataset.theme = mode;
+  const t = THEMES[mode];
+  if (t && mode !== "auto") root.dataset.theme = mode;
   else delete root.dataset.theme;
   document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
-    const isDarkMeta = /dark/.test(m.media);
-    m.content = mode === "dark" ? "#171514" : mode === "light" ? "#E9E4DF" : isDarkMeta ? "#171514" : "#E9E4DF";
+    m.content = t?.bar || (/dark/.test(m.media) ? "#171514" : "#E9E4DF");
   });
 }
 

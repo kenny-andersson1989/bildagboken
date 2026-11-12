@@ -20,7 +20,7 @@
 <link rel="stylesheet" href="style.css">
 <script>
   // Sätt valt utseende innan sidan ritas, så att den inte blinkar.
-  try { var t = localStorage.getItem("bildagboken.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+  try { var t = localStorage.getItem("bildagboken.theme"); if (/^(light|dark|gron|hav|natt)$/.test(t)) document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
 </head>
 <body>
