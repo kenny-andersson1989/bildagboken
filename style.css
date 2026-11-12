@@ -1069,3 +1069,16 @@ body.arranging [data-card].lifted { animation: none; z-index: 30; position: rela
 @media (min-width: 900px) {
   .nav { padding-top: var(--nav-top, calc(24px + env(safe-area-inset-top, 0px))) !important; }
 }
+
+/* Dator: logotypen överst till vänster i stället för hälsningen, och inte i menyn */
+.brandbar { display: none; }
+@media (min-width: 900px) and (min-height: 521px) {
+  .nav:not([hidden]) ~ .brandbar {
+    display: block; position: absolute; z-index: 5; top: calc(22px + env(safe-area-inset-top, 0px));
+    left: calc(var(--offset) + 20px + env(safe-area-inset-left, 0px)); pointer-events: none;
+  }
+  .brandbar img { display: block; width: 170px; height: auto; }
+  .nav .nav-logo { display: none; }
+  .app:not(.no-nav) { padding-top: calc(96px + env(safe-area-inset-top, 0px)); }
+  .app[data-screen="view-oversikt"] > .top { display: none; }
+}
