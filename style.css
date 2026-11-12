@@ -1064,3 +1064,8 @@ body.arranging [data-card].lifted { animation: none; z-index: 30; position: rela
   .hero .car { max-height: 120px; width: auto; margin: 0 auto; display: block; }
   .hero .car-photo { aspect-ratio: 21 / 8; }
 }
+
+/* Sidomenyn börjar i höjd med första kortet (räknas ut i appen) */
+@media (min-width: 900px) {
+  .nav { padding-top: var(--nav-top, calc(24px + env(safe-area-inset-top, 0px))) !important; }
+}
