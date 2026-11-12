@@ -1264,3 +1264,20 @@ div.koll-main { cursor: default; }
   :root:not([data-theme]) .logo-l { display: none !important; }
   :root:not([data-theme]) .logo-d:not(.nav-logo) { display: block !important; }
 }
+
+/* Inloggningssidan: logotyp, rubrik, tre fördelar och knapparna längst ner */
+.login-a { max-width: 420px; width: 100%; margin: 0 auto; min-height: calc(100svh - 40px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; padding: 12px 4px 8px; }
+.la-brand { margin: 0; }
+.la-brand img { width: 200px; height: auto; display: block; }
+.la-title { margin: 30px 0 0; font: 800 34px/1.08 var(--f-display); letter-spacing: -.02em; text-wrap: balance; }
+.la-sub { margin: 12px 0 0; color: var(--ink-2); font-size: 16px; line-height: 1.45; }
+.la-feats { display: flex; flex-direction: column; gap: 16px; margin-top: 28px; }
+.la-f { display: grid; grid-template-columns: 42px 1fr; gap: 14px; align-items: center; }
+.la-ic { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); }
+.la-f b { display: block; font: 600 15.5px var(--f-body); }
+.la-f small { display: block; font-size: 13.5px; color: var(--ink-3); margin-top: 1px; }
+.la-btns { margin-top: auto; padding-top: 32px; display: flex; flex-direction: column; gap: 10px; }
+.la-btns .btn { margin: 0; min-height: 52px; font-size: 16px; }
+.la-legal { margin: 6px 0 0; text-align: center; font-size: 12.5px; line-height: 1.55; color: var(--ink-3); }
+.la-legal a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
+@media (min-width: 900px) { .login-a { min-height: 0; padding-top: 8vh; } .la-btns { margin-top: 0; } }
