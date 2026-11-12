@@ -1764,7 +1764,7 @@ async function scanReceipt(file) {
     const filled = [];
     const set = (id, v) => { const x = document.getElementById(id); if (x && v != null && v !== "") { x.value = v; x.classList.add("from-receipt"); x.dispatchEvent(new Event("input", { bubbles: true })); return true; } return false; };
     if (r.amount != null && set("ef-amount", fmtKr(r.amount).replace(/\s/g, " "))) filled.push(`${fmtKr(r.amount)} kr`);
-    if (r.date && r.date <= todayStr() && set("ef-date", r.date)) { filled.push(fmtDateShort(r.date)); const d = $("#ef-date"); if (d) markDateQuick(d); }
+    if (r.date && r.date <= todayStr() && set("ef-date", r.date)) filled.push(fmtDateShort(r.date));
     if (r.place) {
       const id = ["ef-station", "ef-workshop", "ef-place"].find((x) => document.getElementById(x) && !document.getElementById(x).value.trim());
       if (id && set(id, r.place)) { filled.push(r.place); if (id === "ef-station") document.querySelector("#sheet details.more")?.setAttribute("open", ""); }
@@ -2984,22 +2984,6 @@ function typePicker() {
   <p class="hint" style="margin-top:14px">Det du sparar syns direkt för alla ni som delar bilen.</p>`);
 }
 
-// Snabbval under ett datumfält: I dag och I går.
-function dateQuick(target) {
-  return `<div class="date-quick" data-for="${target}">
-    <button type="button" class="chip-btn" data-act="date-quick" data-target="${target}" data-d="0">I dag</button>
-    <button type="button" class="chip-btn" data-act="date-quick" data-target="${target}" data-d="-1">I går</button>
-  </div>`;
-}
-function markDateQuick(input) {
-  const box = document.querySelector(`.date-quick[data-for="${input.id}"]`);
-  if (!box) return;
-  box.querySelectorAll("button").forEach((b) => {
-    const d = new Date(); d.setDate(d.getDate() + Number(b.dataset.d));
-    b.setAttribute("aria-pressed", String(input.value === ymd(d)));
-  });
-}
-
 // Förslag i textfälten från det ni har skrivit förut: verkstäder, mackar och platser, de vanligaste först.
 const SUGGEST_FIELDS = { "ef-workshop": ["workshop"], "ef-station": ["station"], "ef-place": ["place"] };
 function attachSuggestions(form, type) {
@@ -3381,7 +3365,7 @@ function removeBooking(carId, bookingId) {
 function entryForm(type, e = {}, opts = {}) {
   const c = car();
   const v = (k) => esc(e[k] ?? "");
-  const date = field("Datum", `<input type="date" name="date" id="ef-date" required value="${esc(e.date || todayStr())}">`) + (e.id ? "" : dateQuick("ef-date"));
+  const date = field("Datum", `<input type="date" name="date" id="ef-date" required value="${esc(e.date || todayStr())}">`);
   const odo = (required = false) => field("Mätarställning (mil)", `<input name="odometer" id="ef-odometer" inputmode="numeric" ${required ? "required" : ""} placeholder="${odoOf(c) != null ? `Senast ${fmt(odoOf(c))}` : "Till exempel 21 480"}" value="${e.odometer ?? ""}">`);
   const amount = (example, label = "Kostnad (kr)", extra = "", hint = "") => field(label, `<input name="amount" id="ef-amount" inputmode="decimal"${extra} value="${e.amount ?? ""}" placeholder="Till exempel ${example}">`, hint);
   const note = field("Anteckning", `<textarea name="note" id="ef-note" rows="2">${v("note")}</textarea>`);
@@ -3480,7 +3464,7 @@ function entryForm(type, e = {}, opts = {}) {
     </form>`, opts.back ? { back: opts.back, backId: opts.backId } : isEdit ? { back: "open-entry", backId: e.id } : { back: opts.bookingId ? null : "new-entry" });
   if (opts.recurringId) { const lab = $("#ef-date")?.closest("label")?.querySelector("span"); if (lab) lab.textContent = "Första betalningen"; }
   const ef = $('form[data-form="entry"]');
-  if (ef) { attachSuggestions(ef, type); if ($("#ef-date")) markDateQuick($("#ef-date")); }
+  if (ef) attachSuggestions(ef, type);
   // Sätt markören i första fältet bara på dator. På telefon öppnar det tangentbordet direkt och döljer formuläret.
   if (!window.matchMedia("(pointer: coarse)").matches) {
     if (type === "tank" && !isEdit) $("#ef-amount")?.focus({ preventScroll: true });
@@ -4647,14 +4631,6 @@ const ACTIONS = {
   },
   "photo-zoom"(el) { openLightbox(el.querySelector("img")?.src, el.querySelector("img")?.alt); },
   "lightbox-close"() { $("#lightbox")?.remove(); },
-  "date-quick"(el) {
-    const input = document.getElementById(el.dataset.target);
-    if (!input) return;
-    const d = new Date(); d.setDate(d.getDate() + Number(el.dataset.d || 0));
-    input.value = ymd(d);
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-    markDateQuick(input);
-  },
   "entry-map"(el) {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (!e) return;
@@ -5292,7 +5268,6 @@ function onChange(ev) {
   }
   if (ev.target.id === "ef-tireAction") { const box = $("#ef-tirekind-box"); if (box) box.hidden = isSwap(ev.target.value); }
   if (ev.target.id === "ef-scan") { scanReceipt(ev.target.files?.[0]); ev.target.value = ""; }
-  if (ev.target.id === "ef-date") markDateQuick(ev.target);
   if (ev.target.id === "bk-addr") geocodeBookingAddress();
   if ((ev.target.id === "ef-date" || ev.target.id === "ef-category") && $("#ef-nextBesiktning")) updateNextInspection();
   if (ev.target.id === "hero-photo") {
