@@ -2635,7 +2635,7 @@ function viewNotifications() {
   const feed = [...S.entries, ...bookingFeed()].sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt)).slice(0, 40);
   const perm = "Notification" in window ? Notification.permission : "unsupported";
   return `${subHeader("Det ni gjort med bilen", "Aviseringar", true)}
-    ${perm === "default" ? `<div class="card"><h2>Få notiser i telefonen</h2><p class="muted">Då ser du när någon av de andra loggar något. Notiserna kommer när appen är öppen eller nyss har använts.</p><div class="ask"><button class="btn-soft" type="button" data-act="enable-notif">Slå på notiser</button></div></div>` : ""}
+    ${!pushOn() && perm !== "denied" ? `<div class="card"><h2>Få notiser i telefonen</h2><p class="muted">Påminnelser om bokade tider och datum, och en notis när någon av de andra loggar något. Även när appen är stängd.</p><div class="ask"><button class="btn-soft" type="button" data-act="enable-notif">Slå på notiser</button></div></div>` : ""}
     ${reminders.length ? `<div class="card"><h2>Påminnelser</h2>${kollListHtml(reminders)}</div>` : ""}
     <div class="card">
       ${feed.length ? feed.map((e) => {
@@ -2693,9 +2693,12 @@ function viewSettings() {
     </div>
     <div class="card">
       <h2>Notiser</h2>
-      <p class="muted">${esc(permText)}</p>
-      ${perm === "default" ? `<div class="ask"><button class="btn-soft" type="button" data-act="enable-notif">Slå på notiser</button></div>` : ""}
-      <p class="hint" style="margin-top:10px">Notiser kommer när appen är öppen eller nyss har använts. Aviseringslistan visar alltid allt nytt.</p>
+      ${pushOn()
+        ? `<p class="muted">Påslagna på den här enheten. Du får påminnelser om bokade tider, besiktning, försäkring, skatt och däckbyte, och en notis när någon av de andra loggar något.</p>
+          <div class="ask"><button class="link" type="button" data-act="push-off">Stäng av på den här enheten</button></div>`
+        : `<p class="muted">${perm === "denied" ? "Notiserna är avstängda i telefonens inställningar för den här appen." : "Få påminnelser om bokade tider, besiktning, försäkring och däckbyte, och en notis när någon av de andra loggar något. Även när appen är stängd."}</p>
+          ${perm !== "denied" ? `<div class="ask"><button class="btn-soft" type="button" data-act="push-on">${icon("bell", 16)} Slå på notiser</button></div>` : ""}
+          ${/iphone|ipad/i.test(navigator.userAgent) && !(window.matchMedia("(display-mode: standalone)").matches || navigator.standalone) ? `<p class="hint" style="margin-top:10px">På iPhone fungerar notiser bara när appen är tillagd på hemskärmen och öppnad därifrån.</p>` : ""}`}
     </div>
     <div class="card">
       <h2>Bilar</h2>
@@ -2731,6 +2734,54 @@ function viewSettings() {
     </div>
     ${isAdmin() ? `<div class="card"><h2>Användare</h2><p class="muted">Alla hushåll och användare, och vilka funktioner de använder. Bara du ser det här.</p><div class="ask"><button class="btn-soft" type="button" data-act="open-admin">Visa översikten</button></div></div>` : ""}
     <p class="hint" style="text-align:center">Bildagboken ${VERSION}</p>`;
+}
+
+/* ------------------------------------------------------------ pushnotiser */
+
+// Notiser även när appen är stängd. Telefonens adress för notiser (en token från Firebase) sparas i hushållet,
+// och en funktion hos Firebase skickar påminnelser varje morgon och när någon av de andra loggar något.
+const VAPID_KEY = "BHLhh-EYDJjPAQMpNMjAjM_brJKBw9Iik4lO7JIf4QeT4UMiRIq9ZKy885ug7POzXcqA5DrU5aqexV3EauRA70E";
+const pushSupported = () => "Notification" in window && "serviceWorker" in navigator && "PushManager" in window;
+const pushOn = () => pushSupported() && Notification.permission === "granted" && !!pref.get("pushToken");
+async function pushToken() {
+  const m = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-messaging.js");
+  if (!(await m.isSupported())) throw new Error("unsupported");
+  const reg = await navigator.serviceWorker.ready;
+  return m.getToken(m.getMessaging(fb), { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+}
+async function savePushToken(token) {
+  if (!token || !S.hid) return;
+  const old = pref.get("pushToken");
+  await setDoc(doc(db, "households", S.hid, "tokens", token), { token, uid: uid(), lang: LANG, ua: navigator.userAgent.slice(0, 120), updatedAt: serverTimestamp() });
+  if (old && old !== token) deleteDoc(doc(db, "households", S.hid, "tokens", old)).catch(() => {});
+  pref.set("pushToken", token);
+  pref.set("pushDay", todayStr());
+}
+async function enablePush() {
+  if (!pushSupported()) return showToast(/iphone|ipad/i.test(navigator.userAgent) ? "Lägg först till appen på hemskärmen och öppna den därifrån, sedan kan du slå på notiser." : "Notiser stöds inte i den här webbläsaren.", 7000);
+  const p = await Notification.requestPermission();
+  if (p !== "granted") { render(); return showToast(p === "denied" ? "Notiserna är avstängda i telefonens inställningar." : "Notiser slogs inte på"); }
+  try {
+    await savePushToken(await pushToken());
+    showToast("Pushnotiser är påslagna på den här enheten");
+  } catch (e) {
+    console.error(e);
+    showToast("Kunde inte slå på pushnotiser just nu. Försök igen om en stund.", 6000);
+  }
+  render();
+}
+async function disablePush() {
+  const t = pref.get("pushToken");
+  pref.set("pushToken", "");
+  if (t && S.hid) await deleteDoc(doc(db, "households", S.hid, "tokens", t)).catch(() => {});
+  try { const m = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-messaging.js"); await m.deleteToken(m.getMessaging(fb)); } catch { /* redan borta */ }
+  render();
+  showToast("Pushnotiser är avstängda på den här enheten");
+}
+// En gång per dag: hämta adressen igen (den kan bytas) och spara språket.
+function refreshPush() {
+  if (!pushOn() || pref.get("pushDay") === todayStr()) return;
+  pushToken().then(savePushToken).catch(() => {});
 }
 
 /* ---------------------------------------------------- översikt för ägaren */
@@ -4830,12 +4881,9 @@ const ACTIONS = {
     const text = tr(claudePrompt(car()));
     copyText(text).then((ok) => showToast(ok ? "Frågan är kopierad. Klistra in den i Claude." : "Kunde inte kopiera. Öppna Claude och beskriv bilen själv.", 5000));
   },
-  async "enable-notif"() {
-    if (!("Notification" in window)) return showToast("Notiser stöds inte här. På iPhone: lägg först till appen på hemskärmen.", 6000);
-    const p = await Notification.requestPermission();
-    showToast(p === "granted" ? "Notiser är påslagna" : "Notiser slogs inte på");
-    render();
-  },
+  "enable-notif"() { return enablePush(); },
+  "push-on"() { return enablePush(); },
+  "push-off"() { return disablePush(); },
   async "new-invite-code"() {
     const ok = await confirmDialog({ title: "Byta inbjudningskod?", lines: [`Koden ${S.house?.inviteCode || ""} slutar fungera. Ni som redan är med påverkas inte.`], okLabel: "Byt kod", warn: "" });
     if (!ok) return;
@@ -5006,7 +5054,9 @@ async function loadJoinInfo(code) {
 async function deleteAccountData(hasOthers) {
   const hid = S.hid;
   if (!hid) return;
-  await deleteDoc(doc(db, "households", hid, "tokens", uid())).catch(() => {});
+  const myTokens = await getDocs(query(collection(db, "households", hid, "tokens"), where("uid", "==", uid()))).catch(() => null);
+  for (const t of myTokens?.docs || []) await deleteDoc(t.ref).catch(() => {});
+  pref.set("pushToken", "");
   if (hasOthers) {
     await updateDoc(doc(db, "households", hid), {
       members: (S.house.members || []).filter((x) => x !== uid()),
@@ -5361,6 +5411,7 @@ function subscribe(hid) {
     // Äldre inbjudningar saknar hushållets namn. Det läggs till en gång, så att nästa inbjudna ser det.
     const stamp = `${S.house?.inviteCode}|${S.house?.name}`;
     if (S.house?.inviteCode && pref.get("inviteName") !== stamp) { syncInviteName(); pref.set("inviteName", stamp); }
+    refreshPush();
     // När man senast öppnade appen, högst en gång per dag (syns i ägarens översikt).
     if (pref.get("activeDay") !== todayStr() && (S.house?.members || []).includes(uid())) {
       pref.set("activeDay", todayStr());

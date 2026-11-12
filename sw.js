@@ -1,5 +1,5 @@
 // Service worker: gör att appen startar även utan nät och kan visa notiser.
-const CACHE = "bildagboken-v121";
+const CACHE = "bildagboken-v122";
 const SHELL = [
   "./",
   "./index.html",
@@ -64,14 +64,34 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
+// Pushnotiser från Firebase: visa alltid en notis (iPhone kräver det för varje push).
+self.addEventListener("push", (event) => {
+  let p = {};
+  try { p = event.data ? event.data.json() : {}; } catch (e) { p = { data: { body: event.data && event.data.text() } }; }
+  const d = p.data || {};
+  const n = p.notification || {};
+  const title = n.title || d.title || "Bildagboken";
+  event.waitUntil(self.registration.showNotification(title, {
+    body: n.body || d.body || "",
+    icon: "icons/icon-192.png",
+    badge: "icons/icon-192.png",
+    tag: d.tag || undefined,
+    data: { url: d.url || "./#aviseringar" },
+  }));
+});
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "./#aviseringar";
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       for (const client of list) {
-        if ("focus" in client) return client.focus();
+        if ("focus" in client) {
+          if ("navigate" in client) client.navigate(url).catch(() => {});
+          return client.focus();
+        }
       }
-      return self.clients.openWindow("./#aviseringar");
+      return self.clients.openWindow(url);
     })
   );
 });
