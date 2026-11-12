@@ -117,9 +117,10 @@ async function send(hid, tokenDocs, msg) {
   }
 }
 
-async function tokensOf(hid) {
+// kind: "bookings", "dates" eller "activity". Enheter som har stängt av den sortens notiser hoppas över.
+async function tokensOf(hid, kind) {
   const qs = await db.collection(`households/${hid}/tokens`).get();
-  return qs.docs.map((d) => ({ id: d.id, ...d.data() })).filter((t) => t.token);
+  return qs.docs.map((d) => ({ id: d.id, ...d.data() })).filter((t) => t.token && (!kind || t.prefs?.[kind] !== false));
 }
 
 exports.morgonpaminnelser = onSchedule({ schedule: "every day 08:00", timeZone: TZ }, async () => {
@@ -127,8 +128,9 @@ exports.morgonpaminnelser = onSchedule({ schedule: "every day 08:00", timeZone: 
   const houses = await db.collection("households").get();
   let sent = 0;
   for (const h of houses.docs) {
-    const tokens = await tokensOf(h.id);
-    if (!tokens.length) continue;
+    const all = await tokensOf(h.id);
+    if (!all.length) continue;
+    const byKind = { bookings: all.filter((t) => t.prefs?.bookings !== false), dates: all.filter((t) => t.prefs?.dates !== false) };
     const cars = await db.collection(`households/${h.id}/cars`).get();
     const several = cars.size > 1;
     for (const c of cars.docs) {
@@ -137,7 +139,7 @@ exports.morgonpaminnelser = onSchedule({ schedule: "every day 08:00", timeZone: 
         const msg = { tag: `${c.id}-${r.tag}`, url: "./#oversikt",
           sv: { title: several ? `${r.car}: ${r.sv.title}` : r.sv.title, body: r.sv.body },
           en: { title: several ? `${r.car}: ${r.en.title}` : r.en.title, body: r.en.body } };
-        await send(h.id, tokens, msg);
+        await send(h.id, byKind[r.tag.startsWith("booking-") ? "bookings" : "dates"], msg);
         sent++;
       }
     }
@@ -156,7 +158,7 @@ exports.nyLogg = onDocumentCreated("households/{hid}/entries/{eid}", async (even
   // Gamla poster som läggs in i efterhand skickar ingen notis.
   if (e.date && daysBetween(e.date, todayStr()) > 2) return;
   const hid = event.params.hid;
-  const tokens = (await tokensOf(hid)).filter((t) => t.uid !== e.createdBy);
+  const tokens = (await tokensOf(hid, "activity")).filter((t) => t.uid !== e.createdBy);
   if (!tokens.length) return;
   const house = (await db.doc(`households/${hid}`).get()).data() || {};
   const who = house.memberInfo?.[e.createdBy]?.name || "Någon";

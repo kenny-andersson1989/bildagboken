@@ -1281,3 +1281,10 @@ div.koll-main { cursor: default; }
 .la-legal { margin: 6px 0 0; text-align: center; font-size: 12.5px; line-height: 1.55; color: var(--ink-3); }
 .la-legal a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
 @media (min-width: 900px) { .login-a { min-height: 0; padding-top: 8vh; } .la-btns { margin-top: 0; } }
+
+/* Notiser: val per typ */
+.push-kinds { margin-top: 8px; display: flex; flex-direction: column; }
+.push-kind { border-top: 1px solid var(--line); padding: 10px 0; }
+.push-kind:first-child { border-top: 0; }
+.push-kind b { display: block; font: 600 15px var(--f-body); }
+.push-kind small { display: block; font-size: 13px; color: var(--ink-3); margin-top: 1px; }
