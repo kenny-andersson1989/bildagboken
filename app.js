@@ -2201,8 +2201,13 @@ function kollRowsHtml(rows) {
   let shown = rows.filter(near), later = rows.filter((x) => !near(x));
   if (shown.length < 3) { shown = [...shown, ...later.slice(0, 3 - shown.length)]; later = later.slice(Math.max(0, 3 - rows.filter(near).length)); }
   const all = S.kollAll;
-  // Sorterat efter när, med en liten rubrik för varje tidpunkt: "I morgon", "Om 33 dagar · 15 dec", "Om 6 mån".
-  const list = [...shown, ...(all ? later : [])].map((x, i) => ({ x, i })).sort((a, b) => (a.x.days ?? 0) - (b.x.days ?? 0) || a.i - b.i).map(({ x }) => x);
+  return `${kollListHtml([...shown, ...(all ? later : [])])}
+    ${later.length ? `<button class="link" type="button" data-act="toggle-koll" style="margin-top:10px">${all ? "Visa färre" : `Visa ${later.length} till`}</button>` : ""}`;
+}
+// Listan i På gång, Påminnelser och Kommande i loggen: sorterad efter när, med en liten rubrik för varje tidpunkt
+// ("I morgon", "Om 33 dagar") och en datumbricka till vänster.
+function kollListHtml(items) {
+  const list = items.map((x, i) => ({ x, i })).sort((a, b) => (a.x.days ?? 0) - (b.x.days ?? 0) || a.i - b.i).map(({ x }) => x);
   let prev = null;
   const html = list.map((x) => {
     const group = x.group || (/^\d/.test(x.label || "") ? `Om ${x.label}` : x.label || "");
@@ -2223,8 +2228,7 @@ function kollRowsHtml(rows) {
       + (x.phone ? `<a class="koll-btn" href="tel:${esc(x.phone)}" aria-label="Ring">${icon("phone", 18)}</a>` : "");
     return `${head}<div class="koll-row ${x.level || ""}">${tile}${main}${btns}</div>`;
   }).join("");
-  return `<div class="koll">${html}</div>
-    ${later.length ? `<button class="link" type="button" data-act="toggle-koll" style="margin-top:10px">${all ? "Visa färre" : `Visa ${later.length} till`}</button>` : ""}`;
+  return `<div class="koll">${html}</div>`;
 }
 
 // De tre senaste loggarna, för båda, så att man ser vad den andra har gjort.
@@ -2265,16 +2269,9 @@ function upcomingHtml(q) {
     return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
   });
   if (!list.length) return { html: "", n: 0 };
-  return { n: list.length, html: `<div class="month">Kommande</div><div class="card">${list.map((b) => {
-    const past = daysUntil(parseDate(b.date)) < 0;
-    const kind = BOOK_KINDS[b.kind] || "Bokning";
-    return `<button class="entry" type="button" data-act="open-booking" data-id="${esc(b.id)}">
-      <span class="dl-ic">${icon("calendar", 20)}</span>
-      <span><span class="t">${esc(past ? `${kind}: blev det gjort?` : `${kind} bokad`)}</span>${b.place || b.addr ? `<span class="d">${esc([b.place, b.addr].filter(Boolean).join(" · "))}</span>` : ""}
-        <span class="m">${esc(bookingWhen(b))}</span></span>
-      <span class="amt"></span>
-    </button>`;
-  }).join("")}</div>` };
+  // Samma utseende som i På gång: datumbricka, rubrik efter när och knappar för vägbeskrivning och samtal.
+  const ids = new Set(list.map((b) => b.id));
+  return { n: list.length, html: `<div class="month">Kommande</div><div class="card">${kollListHtml(bookingRows(c).filter((r) => ids.has(r.id)))}</div>` };
 }
 
 // Ikonen för en post: samma som i plusmenyn och i Ekonomi.
@@ -2610,16 +2607,16 @@ function viewNotifications() {
   const c = car();
   const fl = fuelPct(c.fuelLevel);
   const reminders = [
-    ...(fl != null && fl <= 25 ? [{ icon: "fuel", title: "Tanka snart", sub: `Bränslet är på ${pctText(fl).toLowerCase()}`, label: `${Math.round(fl)} %` }] : []),
+    ...(fl != null && fl <= 25 ? [{ icon: "fuel", title: "Tanka snart", sub: `Bränslet är på ${pctText(fl).toLowerCase()}`, group: "Nu", level: "urgent", days: 0 }] : []),
     ...bookingRows(c).filter((b) => b.days <= 1),
     ...deadlines(c).filter((d) => d.level === "urgent"),
-    ...allItemStatus(c).filter((s) => !s.unknown && s.level === "urgent").map((s) => ({ title: `Dags för ${s.item.name.toLowerCase()}`, sub: s.label })),
+    ...allItemStatus(c).filter((s) => !s.unknown && s.level === "urgent").map((s) => ({ icon: "wrench", title: `Dags för ${s.item.name.toLowerCase()}`, sub: s.label, group: "Nu", level: "urgent", days: 0, act: "edit-item", id: s.item.id })),
   ];
   const feed = [...S.entries, ...bookingFeed()].sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt)).slice(0, 40);
   const perm = "Notification" in window ? Notification.permission : "unsupported";
   return `${subHeader("Det ni gjort med bilen", "Aviseringar", true)}
     ${perm === "default" ? `<div class="card"><h2>Få notiser i telefonen</h2><p class="muted">Då ser du när någon av de andra loggar något. Notiserna kommer när appen är öppen eller nyss har använts.</p><div class="ask"><button class="btn-soft" type="button" data-act="enable-notif">Slå på notiser</button></div></div>` : ""}
-    ${reminders.length ? `<div class="card"><h2>Påminnelser</h2><div class="rows">${reminders.map((r) => rowHtml({ icon: r.icon || "bell", title: r.title, sub: r.sub, level: "urgent", label: r.label || "Nu", act: r.act, id: r.id })).join("")}</div></div>` : ""}
+    ${reminders.length ? `<div class="card"><h2>Påminnelser</h2>${kollListHtml(reminders)}</div>` : ""}
     <div class="card">
       ${feed.length ? feed.map((e) => {
         const mine = e.createdBy === uid();
