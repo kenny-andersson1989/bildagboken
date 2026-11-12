@@ -810,7 +810,8 @@ function arrangeColumns() {
 function alignNav() {
   const root = document.documentElement.style;
   if (!window.matchMedia("(min-width: 900px)").matches || app.classList.contains("no-nav")) return root.removeProperty("--nav-top");
-  const first = [...app.children].find((k) => !k.matches(".top") && k.offsetParent);
+  // Samma höjd på alla flikar: där sidans innehåll börjar (första kortet på Översikt, rubriken på de andra).
+  const first = [...app.children].find((k) => k.offsetParent && getComputedStyle(k).display !== "none");
   if (first) root.setProperty("--nav-top", Math.round(first.getBoundingClientRect().top + window.scrollY) + "px");
 }
 let columnsWide = window.matchMedia("(min-width: 760px)").matches;
