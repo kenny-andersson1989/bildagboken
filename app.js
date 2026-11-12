@@ -2696,8 +2696,9 @@ function viewSettings() {
     <div class="card">
       <h2>Notiser</h2>
       ${pushOn()
-        ? `<p class="muted">Påslagna på den här enheten. Du får påminnelser om bokade tider, besiktning, försäkring, skatt och däckbyte, och en notis när någon av de andra loggar något.</p>
-          <div class="ask"><button class="link" type="button" data-act="push-off">Stäng av på den här enheten</button></div>`
+        ? `<p class="muted">Påslagna på den här enheten. Välj vad du vill få notiser om:</p>
+          <div class="push-kinds">${PUSH_KINDS.map(([k, l, d]) => `<label class="ios-switch-row push-kind"><span><b>${esc(l)}</b><small>${esc(d)}</small></span><input type="checkbox" class="ios-switch" data-push-kind="${k}"${pushPrefs()[k] ? " checked" : ""}></label>`).join("")}</div>
+          <div class="ask"><button class="link" type="button" data-act="push-off">Stäng av alla notiser på den här enheten</button></div>`
         : `<p class="muted">${perm === "denied" ? "Notiserna är avstängda i telefonens inställningar för den här appen." : "Få påminnelser om bokade tider, besiktning, försäkring och däckbyte, och en notis när någon av de andra loggar något. Även när appen är stängd."}</p>
           ${perm !== "denied" ? `<div class="ask"><button class="btn-soft" type="button" data-act="push-on">${icon("bell", 16)} Slå på notiser</button></div>` : ""}
           ${/iphone|ipad/i.test(navigator.userAgent) && !(window.matchMedia("(display-mode: standalone)").matches || navigator.standalone) ? `<p class="hint" style="margin-top:10px">På iPhone fungerar notiser bara när appen är tillagd på hemskärmen och öppnad därifrån.</p>` : ""}`}
@@ -2751,10 +2752,28 @@ async function pushToken() {
   const reg = await navigator.serviceWorker.ready;
   return m.getToken(m.getMessaging(fb), { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
 }
+// Vilka notiser den här enheten vill ha. Sparas i telefonen och på enhetens adress i databasen, där funktionerna läser dem.
+const PUSH_KINDS = [
+  ["bookings", "Bokade tider", "Dagen innan och samma dag"],
+  ["dates", "Datum att hålla koll på", "Besiktning, försäkring, skatt, dokument och däckbyte"],
+  ["activity", "När någon annan loggar", "Till exempel en tankning eller service"],
+];
+function pushPrefs() {
+  let p = {};
+  try { p = JSON.parse(pref.get("pushPrefs") || "{}"); } catch { p = {}; }
+  return Object.fromEntries(PUSH_KINDS.map(([k]) => [k, p[k] !== false]));
+}
+async function setPushPref(kind, on) {
+  const p = { ...pushPrefs(), [kind]: on };
+  pref.set("pushPrefs", JSON.stringify(p));
+  const t = pref.get("pushToken");
+  if (t && S.hid) await updateDoc(doc(db, "households", S.hid, "tokens", t), { prefs: p }).catch(onWriteError);
+  showToast(on ? "Påslaget" : "Avstängt");
+}
 async function savePushToken(token) {
   if (!token || !S.hid) return;
   const old = pref.get("pushToken");
-  await setDoc(doc(db, "households", S.hid, "tokens", token), { token, uid: uid(), lang: LANG, ua: navigator.userAgent.slice(0, 120), updatedAt: serverTimestamp() });
+  await setDoc(doc(db, "households", S.hid, "tokens", token), { token, uid: uid(), lang: LANG, ua: navigator.userAgent.slice(0, 120), prefs: pushPrefs(), updatedAt: serverTimestamp() });
   if (old && old !== token) deleteDoc(doc(db, "households", S.hid, "tokens", old)).catch(() => {});
   pref.set("pushToken", token);
   pref.set("pushDay", todayStr());
@@ -5305,6 +5324,7 @@ function onChange(ev) {
     if (hid) hid.value = ev.target.checked ? "" : "09:00";
     if (!ev.target.checked) requestAnimationFrame(() => setWheel("09:00"));
   }
+  if (ev.target.dataset?.pushKind) { setPushPref(ev.target.dataset.pushKind, ev.target.checked); return; }
   if (ev.target.id === "ef-tireAction") { const box = $("#ef-tirekind-box"); if (box) box.hidden = isSwap(ev.target.value); }
   if (ev.target.id === "ef-scan") { scanReceipt(ev.target.files?.[0]); ev.target.value = ""; }
   if (ev.target.id === "bk-addr") geocodeBookingAddress();
