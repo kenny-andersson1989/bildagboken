@@ -14,6 +14,9 @@ service cloud.firestore {
     match /invites/{code} {
       allow get: if signedIn();
       allow create: if signedIn() && memberOf(request.resource.data.householdId);
+      // Medlemmar får uppdatera hushållets namn i inbjudan, inget annat.
+      allow update: if signedIn() && memberOf(resource.data.householdId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['houseName']);
       allow delete: if signedIn() && memberOf(resource.data.householdId);
     }
 
@@ -39,7 +42,8 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/invites/$(request.resource.data.joinedWith)).data.householdId == hid
         )
       );
-      allow delete: if false;
+      // Den sista medlemmen får radera hushållet, när kontot raderas.
+      allow delete: if signedIn() && resource.data.members == [request.auth.uid];
 
       // Bilar, loggar och bilder: bara hushållets medlemmar.
       match /{document=**} {

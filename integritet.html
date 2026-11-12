@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Integritet – Bildagboken</title>
+<meta name="theme-color" content="#E9E4DF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171514" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="icons/icon-192.png?v=2" type="image/png">
+<style>
+  :root { --bg: #E9E4DF; --card: #FBF9F7; --ink: #211D1A; --ink-2: #5B544E; --accent: #D9662B; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #171514; --card: #221F1D; --ink: #F1ECE7; --ink-2: #B5ADA5; --accent: #F08A52; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: calc(24px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom)); }
+  article { background: var(--card); border-radius: 20px; padding: 20px; margin-top: 14px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 8px 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 6px; }
+  p, li { color: var(--ink-2); margin: 6px 0; }
+  ul { padding-left: 20px; margin: 6px 0; }
+  a { color: var(--accent); }
+  .back { font-weight: 600; text-decoration: none; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">‹ Till Bildagboken</a>
+  <h1>Så hanteras dina uppgifter</h1>
+  <p>Bildagboken är en privat app för att hålla koll på en bil tillsammans. Den har ingen reklam, säljer inga uppgifter och följer inte vad du gör.</p>
+
+  <article>
+    <h2>Vad som sparas</h2>
+    <ul>
+      <li><b>Ditt konto:</b> namnet du skriver in, din e-postadress och vilket inloggningssätt du använder (Apple eller Google).</li>
+      <li><b>Bilen och loggen:</b> det ni själva fyller i, till exempel tankningar, service, mätarställning, kostnader, platser, bokade tider, att göra-listan, bilder och dokument.</li>
+      <li><b>Notiser:</b> om du slår på notiser sparas en adress till din telefon, så att påminnelser kan skickas dit.</li>
+    </ul>
+    <p>Allt sparas i Googles molntjänst Firebase. Bara ni som delar bilen kan se det. Inställningar som utseende och kortens ordning sparas bara i din telefon.</p>
+  </article>
+
+  <article>
+    <h2>Tjänster som appen använder</h2>
+    <ul>
+      <li><b>Google Firebase</b> för inloggning, lagring och notiser.</li>
+      <li><b>Apple Maps</b> för att söka efter verkstäder och platser och visa kartor. Det du söker på skickas till Apple.</li>
+      <li><b>OpenStreetMap och Photon</b> som reserv när en adress inte hittas, och för att hitta närmaste mack.</li>
+      <li><b>Wikipedia</b> för en bild på bilmodellen, om ni inte har lagt in en egen.</li>
+    </ul>
+    <p>Kvitton läses av i telefonen. Bilden skickas inte någonstans för att läsas.</p>
+  </article>
+
+  <article>
+    <h2>Delad servicebok</h2>
+    <p>Om ni delar serviceboken med en köpare kan alla som har länken se den: bilens uppgifter och historiken för service och underhåll. Ni kan när som helst stänga länken under Bilen.</p>
+  </article>
+
+  <article>
+    <h2>Radera dina uppgifter</h2>
+    <p>Under <b>Inställningar → Konto → Radera mitt konto</b> tas ditt konto bort direkt. Är du ensam i hushållet raderas också bilarna och hela loggen. Är ni fler finns det ni har loggat kvar för de andra.</p>
+    <p>Du kan också ladda ner allt som en fil under Inställningar → Säkerhetskopia.</p>
+  </article>
+</main>
+</body>
+</html>
