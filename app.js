@@ -811,8 +811,8 @@ function arrangeColumns() {
 function alignNav() {
   const root = document.documentElement.style;
   if (!window.matchMedia("(min-width: 900px)").matches || app.classList.contains("no-nav")) return root.removeProperty("--nav-top");
-  // Samma höjd på alla flikar: där sidans innehåll börjar (första kortet på Översikt, rubriken på de andra).
-  const first = [...app.children].find((k) => k.offsetParent && getComputedStyle(k).display !== "none");
+  // I höjd med första kortet, under rubriken.
+  const first = [...app.children].find((k) => !k.matches(".top") && k.offsetParent && getComputedStyle(k).display !== "none");
   if (first) root.setProperty("--nav-top", Math.round(first.getBoundingClientRect().top + window.scrollY) + "px");
 }
 let columnsWide = window.matchMedia("(min-width: 760px)").matches;
@@ -1200,7 +1200,7 @@ function headerMain() {
   const dateTxt = `${["Söndag", "Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag"][d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
   const n = unseenFromOthers().length;
   return `<header class="top">
-    <div class="hello"><small>${dateTxt}</small><h1>Hej ${esc(myName())}</h1></div>
+    <div class="hello"><small>${dateTxt}</small><h1><span class="hi-mobile">Hej ${esc(myName())}</span><span class="hi-desk">Översikt</span></h1></div>
     ${topActions()}
   </header>`;
 }
@@ -1214,12 +1214,13 @@ function topActions() {
 }
 
 // Rubrik för en vy. Med back visas samma tillbaka-pil som i formulären, till vänster, och den går till vyn man kom ifrån.
-function subHeader(small, title, back = false) {
+// deskTitle: rubriken på datorn, där den står på samma rad som logotypen (till exempel "Bilen" i stället för bilens namn).
+function subHeader(small, title, back = false, deskTitle = null) {
   const to = S.prevView || "oversikt";
   const toName = { oversikt: "översikten", logg: "loggen", ekonomi: "ekonomin", bilen: "bilen" }[to] || "översikten";
   return `<header class="top${back ? " has-back" : ""}">
     ${back ? `<button class="icon-btn back-btn" type="button" data-go="${to}" aria-label="Tillbaka till ${toName}">${icon("back", 18)}</button>` : ""}
-    <div class="hello"><small>${esc(small)}</small><h1>${esc(title)}</h1></div>
+    <div class="hello"><small>${esc(small)}</small><h1>${deskTitle ? `<span class="hi-mobile">${esc(title)}</span><span class="hi-desk">${esc(deskTitle)}</span>` : esc(title)}</h1></div>
     ${back ? "" : topActions()}
   </header>`;
 }
@@ -2484,7 +2485,7 @@ function viewCar() {
     const low = depth != null && depth < (k === "vinter" ? 4 : 3);
     return `<div class="dl"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div></div><span class="pill ${low ? "soon" : on ? "ok" : "none"}">${low ? "Slitna" : on ? "På" : "Förråd"}</span></div>`;
   }).join("");
-  return arrangeCards(`${subHeader([c.year, c.fuel].filter(Boolean).join(" · "), carName(c))}
+  return arrangeCards(`${subHeader([c.year, c.fuel].filter(Boolean).join(" · "), carName(c), false, "Bilen")}
     <div class="car-chips" role="group" aria-label="Välj bil">
       ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon("car", 16)}${esc(carName(x))}</button>`).join("")}
       <button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>

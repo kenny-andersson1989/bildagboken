@@ -1022,6 +1022,8 @@ body.arranging [data-card].lifted { animation: none; z-index: 30; position: rela
   .app:not(.no-nav) { padding-top: calc(12px + env(safe-area-inset-top, 0px)); }
 }
 
+.hi-desk { display: none; }
+@media (min-width: 900px) and (min-height: 521px) { .hi-mobile { display: none; } .hi-desk { display: inline; } }
 /* Pillret och tiden på rubrikraden (används på smala kolumner) */
 .pill-in, .dl-when, .t-short { display: none; }
 .fuel-pct { white-space: nowrap; }
@@ -1079,8 +1081,11 @@ body.arranging [data-card].lifted { animation: none; z-index: 30; position: rela
   }
   .brandbar img { display: block; width: 170px; height: auto; }
   .nav .nav-logo { display: none; }
-  .app:not(.no-nav) { padding-top: calc(96px + env(safe-area-inset-top, 0px)); }
-  .app[data-screen="view-oversikt"] > .top { display: none; }
+  /* Rubriken (Översikt, Logg …) på samma rad som logotypen, och korten börjar på samma höjd på alla flikar */
+  .app:not(.no-nav) { padding-top: calc(22px + env(safe-area-inset-top, 0px)); }
+  .app:not(.no-nav) > .top { height: 46px; margin-bottom: 12px; }
+  .app:not(.no-nav) > .top .hello small { display: none; }
+  .app:not(.no-nav) > .top .hello h1 { font-size: 28px; line-height: 46px; white-space: nowrap; }
 }
 
 /* Fler teman: Grönt och Hav (ljusa), Natt (mörkt) */
