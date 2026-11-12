@@ -1214,3 +1214,15 @@ div.koll-main { cursor: default; }
 .entry.log-row .chev { color: var(--ink-3); font-weight: 500; }
 .log-month { display: flex; justify-content: space-between; align-items: baseline; }
 .log-month span { font-family: var(--f-body); font-weight: 600; font-size: 13px; }
+
+/* Översikten för ägaren */
+.admin-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.admin-stats .n { font: 700 24px var(--f-display); }
+.admin-feat { display: grid; grid-template-columns: minmax(0, 1fr) 90px 60px; gap: 10px; align-items: center; padding: 7px 0; font-size: 14px; border-top: 1px solid var(--line); }
+.admin-feat:first-child { border-top: 0; }
+.admin-feat .wear { margin: 0; }
+.admin-feat b { text-align: right; font-size: 13px; }
+.admin-house { padding: 12px 0; border-top: 1px solid var(--line); }
+.admin-house:first-child { border-top: 0; padding-top: 0; }
+.admin-user { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; margin-top: 6px; font-size: 14px; }
+.admin-user small { color: var(--ink-3); font-size: 12.5px; }

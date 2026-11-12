@@ -5,6 +5,10 @@ service cloud.firestore {
     function signedIn() {
       return request.auth != null;
     }
+    // Appens ägare: får läsa allt för översikten och support, men inte ändra något.
+    function isAdmin() {
+      return signedIn() && request.auth.uid == 'mjQJQzsMCpVURkuVSyK5ctKVhG23';
+    }
     function memberOf(hid) {
       return signedIn()
         && request.auth.uid in get(/databases/$(database)/documents/households/$(hid)).data.members;
@@ -29,7 +33,7 @@ service cloud.firestore {
     }
 
     match /households/{hid} {
-      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow read: if (signedIn() && request.auth.uid in resource.data.members) || isAdmin();
       allow create: if signedIn() && request.resource.data.members == [request.auth.uid];
       allow update: if signedIn() && (
         // Medlemmar får ändra hushållet.
@@ -47,7 +51,8 @@ service cloud.firestore {
 
       // Bilar, loggar och bilder: bara hushållets medlemmar.
       match /{document=**} {
-        allow read, write: if memberOf(hid);
+        allow read: if memberOf(hid) || isAdmin();
+        allow write: if memberOf(hid);
       }
     }
   }

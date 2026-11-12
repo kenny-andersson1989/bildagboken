@@ -964,7 +964,7 @@ function render() {
     return setScreen("loading", `<p class="loading">Hämtar er bil …</p>`);
   }
   if (!S.cars.length) return renderCarSetup();
-  const views = { oversikt: viewOverview, logg: viewLog, ekonomi: viewEconomy, bilen: viewCar, aviseringar: viewNotifications, installningar: viewSettings };
+  const views = { oversikt: viewOverview, logg: viewLog, ekonomi: viewEconomy, bilen: viewCar, aviseringar: viewNotifications, installningar: viewSettings, admin: viewAdmin };
   const fn = views[S.view] || viewOverview;
   setScreen("view-" + S.view, fn(), { showNav: true, keepForm: true });
   // Antal nya aviseringar även i sidomenyn på datorn.
@@ -2729,7 +2729,85 @@ function viewSettings() {
         <button class="link danger" type="button" data-act="delete-account">Radera mitt konto</button>
       </div>
     </div>
+    ${isAdmin() ? `<div class="card"><h2>Användare</h2><p class="muted">Alla hushåll och användare, och vilka funktioner de använder. Bara du ser det här.</p><div class="ask"><button class="btn-soft" type="button" data-act="open-admin">Visa översikten</button></div></div>` : ""}
     <p class="hint" style="text-align:center">Bildagboken ${VERSION}</p>`;
+}
+
+/* ---------------------------------------------------- översikt för ägaren */
+
+// Bara appens ägare ser översiktssidan. Firestore-reglerna ger samma konto rätt att läsa alla hushåll, men inte ändra något.
+const ADMIN_UID = "mjQJQzsMCpVURkuVSyK5ctKVhG23";
+const isAdmin = () => uid() === ADMIN_UID;
+async function loadAdmin() {
+  S.adminData = { loading: true };
+  try {
+    const hs = await getDocs(collection(db, "households"));
+    const houses = await Promise.all(hs.docs.map(async (h) => {
+      const [cars, ents] = await Promise.all([
+        getDocs(collection(db, "households", h.id, "cars")),
+        getDocs(collection(db, "households", h.id, "entries")),
+      ]);
+      return { id: h.id, ...h.data(), cars: cars.docs.map((d) => ({ id: d.id, ...d.data() })), entries: ents.docs.map((d) => ({ id: d.id, ...d.data() })) };
+    }));
+    S.adminData = { houses, at: Date.now() };
+  } catch (e) {
+    console.error(e);
+    S.adminData = { error: e.code === "permission-denied" ? "Firestore-reglerna ger inte ditt konto läsrätt till alla hushåll än. Publicera de nya reglerna och försök igen." : (e.code || e.message) };
+  }
+  if (S.view === "admin") render();
+}
+function viewAdmin() {
+  const head = subHeader("Bara du ser det här", "Användare", true);
+  if (!isAdmin()) return `${head}<div class="card empty"><b>Inte tillgängligt</b></div>`;
+  const a = S.adminData;
+  if (!a) { loadAdmin(); return `${head}<p class="loading">Hämtar alla hushåll …</p>`; }
+  if (a.loading) return `${head}<p class="loading">Hämtar alla hushåll …</p>`;
+  if (a.error) return `${head}<div class="card empty"><b>Kunde inte hämta</b>${esc(a.error)}<div class="ask" style="justify-content:center"><button class="btn" type="button" data-act="admin-reload">Försök igen</button></div></div>`;
+  const H = a.houses;
+  const users = H.flatMap((h) => (h.members || []).map((m) => ({ id: m, ...(h.memberInfo?.[m] || {}), house: h.name })));
+  const seen = (u) => Math.max(tsMs(u.lastActive), tsMs(u.lastSeen));
+  const ago = (days) => users.filter((u) => seen(u) > Date.now() - days * 864e5).length;
+  const n = H.length || 1;
+  const has = (fn) => H.filter(fn).length;
+  const ent = (h, f) => h.entries.some(f);
+  const car = (h, f) => h.cars.some(f);
+  const features = [
+    ["Tankning", has((h) => ent(h, (e) => e.type === "tank"))],
+    ["Mätarställning", has((h) => ent(h, (e) => e.type === "matare"))],
+    ["Service och egna jobb", has((h) => ent(h, (e) => e.type === "service" || e.type === "eget"))],
+    ["Däck", has((h) => ent(h, (e) => e.type === "dack"))],
+    ["Parkering", has((h) => ent(h, (e) => e.type === "parkering") || car(h, (c) => (c.recurring || []).length))],
+    ["Tvätt", has((h) => ent(h, (e) => e.type === "tvatt"))],
+    ["Andra kostnader", has((h) => ent(h, (e) => e.type === "kostnad"))],
+    ["Bokade tider", has((h) => car(h, (c) => (c.bookings || []).length))],
+    ["Återkommande kostnader", has((h) => car(h, (c) => (c.recurring || []).length))],
+    ["Att göra", has((h) => car(h, (c) => (c.todos || []).length))],
+    ["Dokument", has((h) => car(h, (c) => (c.docs || []).length))],
+    ["Bilder i loggen", has((h) => ent(h, (e) => e.photoId))],
+    ["Eget foto på bilen", has((h) => car(h, (c) => c.photoId))],
+    ["Delad servicebok", has((h) => car(h, (c) => c.shareToken))],
+    ["Fler än en i hushållet", has((h) => (h.members || []).length > 1)],
+    ["Flera bilar", has((h) => h.cars.length > 1)],
+  ].sort((x, y) => y[1] - x[1]);
+  const stat = (label, v) => `<div class="stat"><div class="label">${esc(label)}</div><div class="n">${fmt(v)}</div></div>`;
+  const lastEntry = (h) => h.entries.reduce((m, e) => (e.date > m ? e.date : m), "");
+  return `${head}
+    <div class="card"><h2>Totalt <button class="link" type="button" data-act="admin-reload">Uppdatera</button></h2>
+      <div class="admin-stats">${stat("Hushåll", H.length)}${stat("Användare", users.length)}${stat("Bilar", H.reduce((x, h) => x + h.cars.length, 0))}${stat("Poster", H.reduce((x, h) => x + h.entries.length, 0))}${stat("Aktiva 7 dagar", ago(7))}${stat("Aktiva 30 dagar", ago(30))}</div>
+      <p class="hint" style="margin-top:10px">Aktiv betyder att personen har öppnat appen. Hämtat ${esc(timeAgo(a.at)).toLowerCase()}.</p>
+    </div>
+    <div class="card"><h2>Funktioner</h2><p class="muted" style="margin-bottom:8px">Hur många hushåll som har använt varje funktion.</p>
+      <div class="rows">${features.map(([l, v]) => `<div class="admin-feat"><span>${esc(l)}</span><span class="wear ok"><i style="width:${Math.round((v / n) * 100)}%"></i></span><b>${v} av ${H.length}</b></div>`).join("")}</div>
+    </div>
+    <div class="card"><h2>Hushåll</h2>
+      <div class="rows">${H.sort((x, y) => (lastEntry(y) || "").localeCompare(lastEntry(x) || "")).map((h) => `<div class="admin-house">
+        <div class="dl-t">${esc(h.name || "Utan namn")}</div>
+        <div class="dl-s">${h.cars.map((c) => esc(carName(c))).join(", ") || "Ingen bil"} · ${h.entries.length === 1 ? "1 post" : `${h.entries.length} poster`}${lastEntry(h) ? ` · senast loggat ${esc(fmtDateShort(lastEntry(h)))}` : ""}</div>
+        ${(h.members || []).map((m) => { const i = h.memberInfo?.[m] || {}; return `<div class="admin-user" data-notr><span>${esc(i.name || "Okänt namn")}</span><small>${esc(i.email || "")}</small><small>${seen(i) ? `öppnade appen ${esc(timeAgo(seen(i)).toLowerCase())}` : ""}</small></div>`; }).join("")}
+        <div class="hint" data-notr style="font-size:11px">${esc(h.id)}</div>
+      </div>`).join("")}</div>
+      <p class="hint" style="margin-top:10px">Behöver du ändra något åt någon: Firebase → Firestore → households → id:t ovan. Fråga personen först.</p>
+    </div>`;
 }
 
 /* ------------------------------------------------------------------ sheets */
@@ -4794,6 +4872,8 @@ const ACTIONS = {
   },
   "export-log"() { exportLog(); },
   "export-all"() { exportAll(); },
+  "open-admin"() { S.prevView = "installningar"; S.adminData = null; setView("admin"); },
+  "admin-reload"() { S.adminData = null; render(); },
   "hide-start"() { pref.set("startHidden." + S.hid, "1"); render(); showToast("Dolt. Du hittar allt under Bilen och Inställningar."); },
   "dismiss-install"() { pref.set("installDismissed", "1"); render(); },
 };
@@ -5281,6 +5361,11 @@ function subscribe(hid) {
     // Äldre inbjudningar saknar hushållets namn. Det läggs till en gång, så att nästa inbjudna ser det.
     const stamp = `${S.house?.inviteCode}|${S.house?.name}`;
     if (S.house?.inviteCode && pref.get("inviteName") !== stamp) { syncInviteName(); pref.set("inviteName", stamp); }
+    // När man senast öppnade appen, högst en gång per dag (syns i ägarens översikt).
+    if (pref.get("activeDay") !== todayStr() && (S.house?.members || []).includes(uid())) {
+      pref.set("activeDay", todayStr());
+      updateDoc(doc(db, "households", hid), { [`memberInfo.${uid()}.lastActive`]: serverTimestamp() }).catch(() => {});
+    }
     render();
   }, onListenError));
 
