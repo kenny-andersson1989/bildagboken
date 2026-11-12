@@ -1083,7 +1083,7 @@ body.arranging [data-card].lifted { animation: none; z-index: 30; position: rela
     display: block; position: absolute; z-index: 5; top: calc(22px + env(safe-area-inset-top, 0px));
     left: calc(var(--offset) + 20px + env(safe-area-inset-left, 0px)); pointer-events: none;
   }
-  .brandbar img { display: block; width: 170px; height: auto; }
+  .brandbar img { display: block; width: 190px; height: auto; margin-top: 4px; }
   .nav .nav-logo { display: none; }
   /* Rubriken (Översikt, Logg …) på samma rad som logotypen, och korten börjar på samma höjd på alla flikar */
   .app:not(.no-nav) { padding-top: calc(22px + env(safe-area-inset-top, 0px)); }
@@ -1255,3 +1255,12 @@ div.koll-main { cursor: default; }
 .w-chips:empty { display: none; }
 .w-sug-l { font-size: 12.5px; color: var(--ink-3); margin-right: 2px; }
 .w-chip { border: 1px solid var(--line); background: var(--input); color: var(--ink-2); font: 600 12.5px var(--f-body); padding: 6px 11px; border-radius: 999px; cursor: pointer; }
+
+/* Logotypen som vektor: mörk text i ljusa teman, ljus text i mörka */
+.logo-d { display: none !important; }
+:root[data-theme="dark"] .logo-l, :root[data-theme="natt"] .logo-l { display: none !important; }
+:root[data-theme="dark"] .logo-d:not(.nav-logo), :root[data-theme="natt"] .logo-d:not(.nav-logo) { display: block !important; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .logo-l { display: none !important; }
+  :root:not([data-theme]) .logo-d:not(.nav-logo) { display: block !important; }
+}
