@@ -1856,7 +1856,7 @@ function viewOverview() {
 }
 
 // Korten på Översikt i den ordning man valt under Inställningar, utan de man har dolt.
-const CARD_NAMES = { koll: "På gång", todo: "Att göra", recent: "Senaste", maint: "Underhåll", eco: "Ekonomi", tips: "Tips" };
+const CARD_NAMES = { koll: "På gång", todo: "Att göra", recent: "Senaste aktivitet", maint: "Underhåll", eco: "Ekonomi", tips: "Tips" };
 // Korten som går att flytta, per vy. Översikt sparas under "cards" (som förut) och Bilen under "cards.bilen".
 const CARD_VIEWS = {
   oversikt: { names: CARD_NAMES, pref: "cards", title: "Översikten" },
@@ -2156,7 +2156,7 @@ function recentCard(c) {
   ].sort((a, b) => b.ts - a.ts).slice(0, 3);
   if (!items.length) return "";
   return `<article class="card">
-    <h2>Senaste <button class="link" type="button" data-go="logg">Visa alla</button></h2>
+    <h2>Senaste aktivitet <button class="link" type="button" data-go="logg">Visa alla</button></h2>
     <div class="rows">${items.map((x) => {
       const mine = x.who === uid();
       return `<button class="dl as-btn" type="button" data-act="${x.act}" data-id="${esc(x.id)}">
