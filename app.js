@@ -719,7 +719,10 @@ function bookingRows(c) {
       whenShort: days === 0 || days === 1 ? `${days === 0 ? "I dag" : "I morgon"}${b.time ? ` ${b.time}` : ""}` : bookingWhen(b, true).replace(/^\S+ /, ""),
       relDay: days === 0 || days === 1,
       // På gång: rubriken över posten ("I morgon", "Om 33 dagar · 15 dec") och en kort titel ("Service kl 09:00").
-      group: past ? "Passerat" : days === 0 ? "I dag" : days === 1 ? "I morgon" : `Om ${daysText(days)} · ${fmtDateShort(b.date)}`,
+      // Datumet står i brickan till vänster, så rubriken visar bara hur långt det är kvar.
+      group: (past ? "Passerat" : days === 0 ? "I dag" : days === 1 ? "I morgon" : `Om ${daysText(days)}`) + (lastDay === "sista dagen" ? " · sista dagen" : ""),
+      kollSub: [b.place, lastDay === "sista dagen" ? null : lastDay].filter(Boolean).join(" · "),
+      tileDate: b.date,
       kollTitle: past ? `${kind}: blev det gjort?` : `${kind}${b.time ? ` kl ${b.time}` : ""}`,
       mapId: !past && (b.lat != null || b.addr || b.place) ? b.id : null,
       phone: !past && b.phone ? String(b.phone).replace(/[^\d+]/g, "") : null,
@@ -1442,7 +1445,7 @@ function docPill(d) {
 function docReminders(c) {
   return (c.docs || []).filter((d) => d.validTo).map((d) => ({ d, days: daysUntil(parseDate(d.validTo)) }))
     .filter((x) => x.days <= 60 && x.days >= -30)
-    .map(({ d, days }) => ({ icon: "doc", title: days < 0 ? `${d.title} har gått ut` : `${d.title} går ut`, sub: `Gäller till ${fmtDate(d.validTo)}`, level: days < 0 ? "urgent" : levelFromDays(days), label: days < 0 ? "Gått ut" : daysText(days), act: "open-doc", id: d.id, days, always: true }));
+    .map(({ d, days }) => ({ tileDate: d.validTo, icon: "doc", title: days < 0 ? `${d.title} har gått ut` : `${d.title} går ut`, sub: `Gäller till ${fmtDate(d.validTo)}`, level: days < 0 ? "urgent" : levelFromDays(days), label: days < 0 ? "Gått ut" : daysText(days), act: "open-doc", id: d.id, days, always: true }));
 }
 function docForm(d = null) {
   openSheet(d ? "Ändra dokument" : "Dokument", `
@@ -2205,13 +2208,20 @@ function kollRowsHtml(rows) {
     const group = x.group || (/^\d/.test(x.label || "") ? `Om ${x.label}` : x.label || "");
     const head = group && group !== prev ? `<div class="koll-head ${x.level === "urgent" ? "urgent" : ""}">${esc(group)}</div>` : "";
     prev = group;
-    const inner = `<span class="koll-t">${esc(x.kollTitle || x.title)}</span>${x.sub ? `<span class="koll-s">${esc(x.sub)}</span>` : ""}`;
+    const sub = x.kollSub ?? x.sub;
+    const inner = `<span class="koll-t">${esc(x.kollTitle || x.title)}</span>${sub ? `<span class="koll-s">${esc(sub)}</span>` : ""}`;
+    // Brickan till vänster: dag och månad, månad och år för skatten, annars en ikon.
+    const dt = x.tileDate ? (typeof x.tileDate === "string" ? parseDate(x.tileDate) : x.tileDate) : x.date || null;
+    const tile = dt && x.key === "skatt"
+      ? `<span class="koll-tile kt-month"><b>${esc(MONTHS_SHORT[dt.getMonth()])}</b><small>${dt.getFullYear()}</small></span>`
+      : dt ? `<span class="koll-tile"><b>${dt.getDate()}</b><small>${esc(MONTHS_SHORT[dt.getMonth()])}</small></span>`
+      : `<span class="koll-tile ic">${icon(x.icon || "calendar", 20)}</span>`;
     const main = x.act
       ? `<button class="koll-main" type="button" data-act="${x.act}" data-id="${esc(x.id || "")}"${x.type ? ` data-type="${esc(x.type)}"` : ""}>${inner}</button>`
       : `<div class="koll-main">${inner}</div>`;
     const btns = (x.mapId ? `<button class="koll-btn" type="button" data-act="map-directions" data-id="${esc(x.mapId)}" aria-label="Vägbeskrivning">${icon("pin", 18)}</button>` : "")
       + (x.phone ? `<a class="koll-btn" href="tel:${esc(x.phone)}" aria-label="Ring">${icon("phone", 18)}</a>` : "");
-    return `${head}<div class="koll-row ${x.level || ""}">${main}${btns}</div>`;
+    return `${head}<div class="koll-row ${x.level || ""}">${tile}${main}${btns}</div>`;
   }).join("");
   return `<div class="koll">${html}</div>
     ${later.length ? `<button class="link" type="button" data-act="toggle-koll" style="margin-top:10px">${all ? "Visa färre" : `Visa ${later.length} till`}</button>` : ""}`;
