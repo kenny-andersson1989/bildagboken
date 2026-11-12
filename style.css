@@ -1069,7 +1069,11 @@ body.arranging [data-card].lifted { animation: none; z-index: 30; position: rela
 
 /* Sidomenyn börjar i höjd med första kortet (räknas ut i appen) */
 @media (min-width: 900px) {
-  .nav { padding-top: var(--nav-top, calc(24px + env(safe-area-inset-top, 0px))) !important; }
+  /* Rubrikraden: 22 + 46 + 12 px, plus mellanrummet 16 px = 96 px. På en låg skärm (på tvären) finns ingen rubrik. */
+  .nav { padding-top: calc(96px + env(safe-area-inset-top, 0px)) !important; }
+}
+@media (min-width: 900px) and (max-height: 520px) {
+  .nav { padding-top: calc(12px + env(safe-area-inset-top, 0px)) !important; }
 }
 
 /* Dator: logotypen överst till vänster i stället för hälsningen, och inte i menyn */

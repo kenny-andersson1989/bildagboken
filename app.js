@@ -829,7 +829,6 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   app.dataset.screen = key;
   app.innerHTML = html;
   arrangeColumns();
-  alignNav();
   addHideButtons();
   if (active) {
     const again = document.getElementById(active.id);
@@ -873,14 +872,6 @@ function arrangeColumns() {
   app.insertBefore(grid, cards[0]);
   for (const card of cards) (a.offsetHeight <= b.offsetHeight ? a : b).appendChild(card);
 }
-// Datorn: sidomenyn börjar i höjd med korten, inte med rubriken ovanför dem.
-function alignNav() {
-  const root = document.documentElement.style;
-  if (!window.matchMedia("(min-width: 900px)").matches || app.classList.contains("no-nav")) return root.removeProperty("--nav-top");
-  // I höjd med första kortet, under rubriken.
-  const first = [...app.children].find((k) => !k.matches(".top") && k.offsetParent && getComputedStyle(k).display !== "none");
-  if (first) root.setProperty("--nav-top", Math.round(first.getBoundingClientRect().top + window.scrollY) + "px");
-}
 let columnsWide = window.matchMedia("(min-width: 760px)").matches;
 // Bakgrundens färgtoning får skärmens verkliga mått, så att den fyller hela ytan även när telefonen vrids.
 function sizeBackground() {
@@ -903,7 +894,6 @@ window.addEventListener("resize", () => {
 function markMore(el) { el.classList.toggle("more", el.scrollWidth - el.clientWidth - el.scrollLeft > 4); }
 document.addEventListener("scroll", (ev) => { if (ev.target.classList?.contains("filters") || ev.target.classList?.contains("car-chips")) markMore(ev.target); }, true);
 window.addEventListener("resize", () => app.querySelectorAll(".filters, .car-chips").forEach(markMore));
-window.addEventListener("resize", () => requestAnimationFrame(alignNav));
 
 // Bränslestapeln: dra upp och ner (eller använd piltangenterna). Sparas när man släpper.
 function setFuelDraft(p) {
