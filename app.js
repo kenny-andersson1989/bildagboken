@@ -2271,7 +2271,17 @@ function upcomingHtml(q) {
   if (!list.length) return { html: "", n: 0 };
   // Samma utseende som i På gång: datumbricka, rubrik efter när och knappar för vägbeskrivning och samtal.
   const ids = new Set(list.map((b) => b.id));
-  return { n: list.length, html: `<div class="month">Kommande</div><div class="card">${kollListHtml(bookingRows(c).filter((r) => ids.has(r.id)))}</div>` };
+  const rows = bookingRows(c).filter((r) => ids.has(r.id)).map((r) => {
+    const hot = r.level === "urgent";
+    const b = (c.bookings || []).find((x) => x.id === r.id);
+    return `<button class="entry log-row" type="button" data-act="open-booking" data-id="${esc(r.id)}">
+      ${logTile(b?.date, hot)}
+      <span class="dl-ic${hot ? " hot" : ""}">${icon("calendar", 20)}</span>
+      <span><span class="t">${esc(r.kollTitle)}</span><span class="d"><b class="${hot ? "hot-t" : ""}">${esc(r.group)}</b>${r.kollSub ? ` · ${esc(r.kollSub)}` : ""}</span></span>
+      <span class="amt chev">›</span>
+    </button>`;
+  }).join("");
+  return { n: list.length, html: `<div class="month">Kommande</div><div class="card">${rows}</div>` };
 }
 
 // Ikonen för en post: samma som i plusmenyn och i Ekonomi.
@@ -2279,13 +2289,21 @@ function entryIcon(e) {
   if (e.type === "kostnad") return CAT_ICON[catOf(e)] || "receipt";
   return TYPE[e.type]?.icon || "list";
 }
+// En rad i loggen: datumbricka (som i På gång), ikonen för typen, rubrik och detaljer, belopp till höger.
+function logTile(dateStr, urgent = false) {
+  const dt = parseDate(dateStr);
+  return dt ? `<span class="koll-tile${urgent ? " hot" : ""}"><b>${dt.getDate()}</b><small>${esc(MONTHS_SHORT[dt.getMonth()])}</small></span>` : `<span class="koll-tile"></span>`;
+}
 function entryRow(e, fromCat = null) {
   const mine = e.createdBy === uid();
   const d = entryDetail(e);
-  return `<button class="entry" type="button" data-act="open-entry" data-id="${esc(e.id)}"${fromCat ? ` data-cat="${esc(fromCat)}"` : ""}>
+  // Namnet syns bara när någon annan har loggat.
+  const extra = [e.odometer != null && e.type !== "matare" ? `${fmt(e.odometer)} mil` : "", e.photoId ? "bild" : ""].filter(Boolean).join(" · ");
+  const sub = [d, extra].filter(Boolean).join(" · ");
+  return `<button class="entry log-row" type="button" data-act="open-entry" data-id="${esc(e.id)}"${fromCat ? ` data-cat="${esc(fromCat)}"` : ""}>
+    ${logTile(e.date)}
     <span class="dl-ic">${icon(entryIcon(e), 20)}</span>
-    <span><span class="t">${esc(entryTitle(e))}</span>${d ? `<span class="d">${esc(d)}</span>` : ""}
-      <span class="m"><span class="who${mine ? " me" : ""}">${esc(whoName(e.createdBy))}</span>${esc(fmtDateShort(e.date))}${e.odometer != null && e.type !== "matare" ? ` · ${fmt(e.odometer)} mil` : ""}${e.photoId ? " · bild" : ""}</span></span>
+    <span><span class="t">${esc(entryTitle(e))}</span>${sub || !mine ? `<span class="d">${mine ? "" : `<span class="who">${esc(whoName(e.createdBy))}</span> `}${esc(sub)}</span>` : ""}</span>
     <span class="amt">${e.amount != null ? `${fmtKr(e.amount)} kr` : e.type === "matare" && e.odometer != null ? `${fmt(e.odometer)} mil` : ""}</span>
   </button>`;
 }
@@ -2347,7 +2365,9 @@ function logListHtml() {
       ? `${count}<div class="card empty"><b>Inga träffar</b>Prova ett annat ord, till exempel verkstad, del eller belopp.</div>`
       : `<div class="card empty"><b>${S.filter === "alla" ? "Inget loggat än" : "Inget här än"}</b>Tryck på plusknappen för att logga en tankning, service eller något du gjort själv.</div>`;
   }
-  return count + upcoming + groups.map((g) => `<div class="month">${esc(monthLabel(g.key))}</div><div class="card">${g.items.map((e) => entryRow(e)).join("")}</div>`).join("");
+  // Månadens summa till höger om månadsrubriken.
+  const monthSum = (g) => g.items.reduce((a, e) => a + (e.amount > 0 ? e.amount : 0), 0);
+  return count + upcoming + groups.map((g) => `<div class="month log-month">${esc(monthLabel(g.key))}${monthSum(g) ? `<span>${fmtKr(monthSum(g))} kr</span>` : ""}</div><div class="card">${g.items.map((e) => entryRow(e)).join("")}</div>`).join("");
 }
 
 function viewLog() {

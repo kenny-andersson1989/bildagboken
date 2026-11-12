@@ -1196,3 +1196,21 @@ div.koll-main { cursor: default; }
 .koll-tile.kt-month b { font-size: 15px; }
 .koll-row.urgent .koll-tile { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .koll-row.urgent .koll-tile b, .koll-row.urgent .koll-tile small { color: var(--accent-ink); }
+
+/* Loggen: datumbricka, ikon, text och belopp */
+.entry.log-row { grid-template-columns: 44px 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; }
+.entry.log-row:first-child { padding-top: 0; }
+.entry.log-row:last-child { padding-bottom: 0; }
+.entry.log-row > .koll-tile { display: flex; margin: 0; width: 44px; min-height: 44px; }
+.entry.log-row > .dl-ic { width: 36px; height: 36px; border-radius: 11px; }
+.entry.log-row .t { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.entry.log-row .d { color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+.entry.log-row .d .who { margin-right: 2px; }
+.entry.log-row .d b { color: var(--ink-2); }
+.entry.log-row .d b.hot-t { color: var(--accent-text); }
+.koll-tile.hot { background: var(--accent); border-color: var(--accent); }
+.koll-tile.hot b, .koll-tile.hot small { color: var(--accent-ink); }
+.entry.log-row > .dl-ic.hot { background: var(--accent-soft); color: var(--accent-text); }
+.entry.log-row .chev { color: var(--ink-3); font-weight: 500; }
+.log-month { display: flex; justify-content: space-between; align-items: baseline; }
+.log-month span { font-family: var(--f-body); font-weight: 600; font-size: 13px; }
