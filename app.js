@@ -982,17 +982,23 @@ function render() {
 }
 
 function renderLogin(error = "") {
-  // Välkomstsidan: logotyp, bild, rubrik och inloggning.
+  // Välkomstsidan: logotyp, rubrik, tre fördelar och inloggning längst ner.
   setScreen("login", `
-    <section class="login">
-      <h1 class="login-brand"><img class="login-logo logo-l" src="icons/logo.svg?v=3" alt="Bildagboken" width="936" height="200"><img class="login-logo logo-d" src="icons/logo-dark.svg?v=3" alt="" aria-hidden="true" width="936" height="200"></h1>
-      <img class="login-art" src="icons/welcome.webp" alt="" width="702" height="697">
-      <h2 class="login-title">Håll koll på bilen,<br>tillsammans.</h2>
-      <p class="login-sub">Tankning, service, däck, datum och kostnader. Alla ni som delar bilen ser samma sak.</p>
-      <button class="btn apple block" type="button" data-act="login" data-provider="apple">${icon("apple", 20)} Logga in med Apple</button>
-      <button class="btn google block" type="button" data-act="login" data-provider="google">${icon("google", 20)} Logga in med Google</button>
-      ${error ? `<p class="err">${esc(error)}</p>` : ""}
-      <p class="hint" style="text-align:center">Har du fått en inbjudan? Logga in först, sedan skriver du in koden.</p>
+    <section class="login-a">
+      <h1 class="la-brand"><img class="logo-l" src="icons/logo.svg?v=3" alt="Bildagboken" width="936" height="200"><img class="logo-d" src="icons/logo-dark.svg?v=3" alt="" aria-hidden="true" width="936" height="200"></h1>
+      <h2 class="la-title">Håll koll på bilen, tillsammans.</h2>
+      <p class="la-sub">Bildagboken samlar allt om er bil på ett ställe, och alla ni som delar bilen ser samma sak.</p>
+      <div class="la-feats">
+        <div class="la-f"><span class="la-ic">${icon("fuel", 20)}</span><span><b>Logga på sekunder</b><small>Tankning, service, däck och kostnader</small></span></div>
+        <div class="la-f"><span class="la-ic">${icon("calendar", 20)}</span><span><b>Påminnelser i tid</b><small>Besiktning, försäkring, skatt och bokade tider</small></span></div>
+        <div class="la-f"><span class="la-ic">${icon("car", 20)}</span><span><b>Dela med de du kör med</b><small>Familj eller den du delar bil med</small></span></div>
+      </div>
+      <div class="la-btns">
+        <button class="btn apple block" type="button" data-act="login" data-provider="apple">${icon("apple", 20)} Fortsätt med Apple</button>
+        <button class="btn google block" type="button" data-act="login" data-provider="google">${icon("google", 20)} Fortsätt med Google</button>
+        ${error ? `<p class="err">${esc(error)}</p>` : ""}
+        <p class="la-legal">Har du fått en inbjudan? Logga in först, sedan skriver du in koden.<br><a href="integritet.html" target="_blank" rel="noopener">Så hanteras dina uppgifter</a></p>
+      </div>
     </section>`);
 }
 
