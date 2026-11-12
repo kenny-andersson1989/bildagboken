@@ -1167,3 +1167,8 @@ body.arranging [data-card] { position: relative; }
 }
 .card-hide svg { pointer-events: none; }
 [data-card].card-gone { transition: opacity .18s, scale .18s; opacity: 0; scale: .9; }
+/* Bilknapparna, nyhetsrutan och tipsraderna: samma avstånd till korten som allt annat (ingen extra marginal) */
+@media (min-width: 760px) {
+  .app[data-screen] > .car-chips { margin: 0 -2px; }
+  .app[data-screen] > .card.toast, .app[data-screen] > p.hint { margin-bottom: 0; }
+}
