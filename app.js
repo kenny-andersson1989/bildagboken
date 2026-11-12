@@ -184,10 +184,34 @@ const PROFILES = [
     ],
   },
 ];
+const isHybrid = (c) => /hybrid/i.test(c?.fuel || "");
+const isPlugin = (c) => /laddhybrid/i.test(c?.fuel || "");
+const carAge = (c) => (Number(c?.year) > 1900 ? new Date().getFullYear() - Number(c.year) : null);
+const winter = (m) => m >= 11 || m <= 2;
+// Tips efter drivmedel, ålder och mätarställning. fit avgör om tipset passar bilen, when vilka månader det visas.
 const GENERIC_TIPS = [
-  { sev: "mid", when: (m) => m >= 10 || m <= 1, title: "Batteriet inför vintern", text: "Kyla tar hårt på batteriet. Är det äldre än fem år, låt testa det innan det blir riktigt kallt." },
+  // Elbil
+  { sev: "mid", fit: isElectric, when: winter, title: "Räckvidd i kyla", text: "Räckvidden kan bli en tredjedel kortare när det är kallt. Förvärm bilen medan den står på laddning, så går värmen på elnätet i stället för batteriet." },
+  { sev: "mid", fit: (c) => isElectric(c) || isHybrid(c), title: "12-voltsbatteriet", text: "Bilen har också ett vanligt 12-voltsbatteri som startar elektroniken. Det kan ta slut även när det stora batteriet är fullt. Låt testa det om bilen har några år." },
+  { sev: "low", fit: (c) => isElectric(c) || isHybrid(c), title: "Bromsarna rostar", text: "Bilen bromsar mest med motorn, så skivorna används lite och rostar lätt. Bromsa ordentligt några gånger då och då, och låt kolla bromsarna vid service." },
+  { sev: "low", fit: isElectric, title: "Däcken slits fortare", text: "Elbilar är tunga och drar snabbt, så däcken slits fortare. Kolla mönsterdjupet oftare och skifta fram och bak vid hjulbyte." },
+  { sev: "low", fit: isPlugin, title: "Kör på bensin ibland", text: "Kör ni mest på el kan bensinen bli gammal och motorn sällan bli varm. Kör en längre sträcka på bensin någon gång i månaden." },
+  // Diesel
+  { sev: "mid", fit: isDiesel, title: "Partikelfiltret", text: "Partikelfiltret rensar sig själv vid jämn landsvägskörning. Kör ni mest korta sträckor, ta en tur på 20 minuter i jämn fart ibland, så att det inte sätter igen." },
+  { sev: "mid", fit: isDiesel, when: winter, title: "Diesel i kyla", text: "Diesel kan tjockna i sträng kyla. Tanka vid en mack med vinterdiesel och använd motorvärmaren." },
+  { sev: "low", fit: (c) => isDiesel(c) && (carAge(c) ?? 99) <= 10, title: "AdBlue", text: "Nyare dieslar behöver AdBlue. Fyll på i tid när varningen kommer, annars kan bilen till slut vägra starta." },
+  // Förbränningsmotor
+  { sev: "mid", fit: (c) => !isElectric(c), when: winter, title: "Motorvärmaren", text: "Med motorvärmare på en timme före start slits motorn mindre och bilen drar mindre bränsle. Koppla in den när det är under noll." },
+  { sev: "low", fit: (c) => !isElectric(c), title: "Oljenivån", text: "Dra oljestickan med jämna mellanrum, till exempel varannan tankning. Äldre motorer kan dra lite olja." },
+  { sev: "low", fit: (c) => !isElectric(c) && !profileFor(c) && (odoOf(c) ?? 0) >= 8000, title: "Kamrem eller kamkedja", text: "Ta reda på vilket er motor har. En kamrem byts ofta vid 10 000 till 20 000 mil eller efter ett antal år, och går den av kan motorn förstöras. Lägg in den under Underhåll." },
+  { sev: "low", fit: (c) => !isElectric(c) && (carAge(c) ?? 0) >= 6, title: "Kylarvätskan", text: "Kylarvätskan tappar sitt skydd med åren. Byt den ungefär vart femte år och kolla nivån i behållaren när motorn är kall." },
+  // Ålder och mätarställning
+  { sev: "mid", fit: (c) => (carAge(c) ?? 0) >= 10, when: (m) => m >= 9 || m <= 4, title: "Rostskydd", text: "Vägsalt äter på underredet. Spola underredet efter saltade vägar och rostskyddsbehandla bilen vart annat eller vart tredje år." },
+  { sev: "low", fit: (c) => (carAge(c) ?? 0) >= 8 || (odoOf(c) ?? 0) >= 15000, title: "Stötdämpare", text: "Slitna stötdämpare ger gungig gång och längre bromssträcka. Gungar bilen efter gupp eller drar den åt sidan vid inbromsning, låt kolla dem." },
+  { sev: "low", fit: (c) => carAge(c) != null && carAge(c) <= 3, title: "Garantin", text: "Följ tillverkarens serviceprogram och spara kvittona, så behåller ni garantin. Logga servicen här, så finns allt samlat." },
+  // Alla bilar
+  { sev: "mid", when: (m) => m >= 10 || m <= 1, title: "Batteriet inför vintern", text: "Kyla tar hårt på startbatteriet. Är det äldre än fem år, låt testa det innan det blir riktigt kallt." },
   { sev: "low", title: "Lufttryck", text: "Kolla lufttrycket en gång i månaden och före långresor. Rätt tryck sparar bränsle och däck." },
-  { sev: "low", title: "Oljenivån", text: "Dra oljestickan med jämna mellanrum, till exempel varannan tankning. Äldre motorer kan dra lite olja." },
 ];
 
 function profileFor(c) {
@@ -682,7 +706,12 @@ function tipsFor(c) {
   const p = profileFor(c);
   const list = [...(p ? p.tips : []), ...GENERIC_TIPS];
   if (!p && isFlex(c)) list.unshift({ sev: "mid", when: (mm) => mm >= 10 || mm <= 2, title: "E85 i kyla", text: "Etanol startar sämre när det är kallt. Använd motorvärmare och tanka bensin när det är riktigt kallt." });
-  return list.filter((t) => (!t.when || t.when(m)) && (!t.flex || isFlex(c))).slice(0, 5);
+  const rank = { high: 0, mid: 1, low: 2 };
+  // Bilens egna tips först, sedan de viktigaste. Batteritipset passar inte elbilar, de har sitt eget.
+  const fits = list.filter((t) => (!t.when || t.when(m)) && (!t.flex || isFlex(c)) && (!t.fit || t.fit(c)) && !(t.title === "Batteriet inför vintern" && (isElectric(c) || isHybrid(c))));
+  const own = p ? fits.filter((t) => p.tips.includes(t)) : [];
+  const rest = fits.filter((t) => !own.includes(t)).sort((a, b) => rank[a.sev] - rank[b.sev]);
+  return [...own, ...rest].slice(0, 5);
 }
 
 function claudePrompt(c) {
