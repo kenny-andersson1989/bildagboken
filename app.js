@@ -2658,25 +2658,21 @@ function viewSettings() {
   const permText = { granted: "Påslagna", denied: "Avstängda i telefonens inställningar", default: "Inte påslagna", unsupported: "Stöds inte här. På iPhone: lägg först till appen på hemskärmen." }[perm];
   return `${subHeader(S.house?.name || "Hushållet", "Inställningar", true)}
     <div class="card">
-      <h2>Ni som delar</h2>
-      <div class="rows">${members.map((m) => `<div class="dl"><div class="avatar${m === uid() ? " me" : ""}">${esc(memberName(m).slice(0, 1).toUpperCase())}</div><div><div class="dl-t">${esc(memberName(m))}${m === uid() ? " (du)" : ""}</div><div class="dl-s">${esc(S.house.memberInfo?.[m]?.email || "")}</div></div>
+      <div class="hh-title"><h2>${esc(S.house?.name || "Hushållet")}</h2><button class="icon-btn hh-edit" type="button" data-act="rename-house" aria-label="Byt namn på hushållet">${icon("pen", 16)}</button></div>
+      <p class="label" style="margin:12px 0 2px">Ni som delar</p>
+      <div class="rows">${members.map((m) => `<div class="dl"><div class="avatar${m === uid() ? " me" : ""}">${esc(memberName(m).slice(0, 1).toUpperCase())}</div><div><div class="dl-t">${m === uid()
+          ? `<button class="hh-me" type="button" data-act="rename-me" aria-label="Byt ditt namn">${esc(memberName(m))} (du) <span class="hh-pen">${icon("pen", 14)}</span></button>`
+          : esc(memberName(m))}</div><div class="dl-s">${esc(S.house.memberInfo?.[m]?.email || "")}</div></div>
         <span class="row-actions">${members.length > 1 ? (m === uid()
           ? `<button class="link danger" type="button" data-act="leave-house">Lämna</button>`
           : `<button class="link danger" type="button" data-act="remove-member" data-id="${esc(m)}" aria-label="Ta bort ${esc(memberName(m))}">Ta bort</button>`) : ""}</span></div>`).join("")}</div>
-      <p class="label" style="margin-top:14px">Inbjudningskod</p>
-      <p class="code" style="margin:4px 0 10px">${esc(S.house?.inviteCode || "")}</p>
-      <div class="ask">
-        <button class="btn-soft" type="button" data-act="copy-invite">Kopiera inbjudningslänk</button>
-        <button class="link" type="button" data-act="new-invite-code">Byt kod</button>
+      <div class="hh-invite">
+        <div class="hh-grow"><span class="label">Inbjudningskod</span><span class="hh-code" data-notr>${esc(S.house?.inviteCode || "")}</span></div>
+        <button class="btn-soft" type="button" data-act="copy-invite">Kopiera länk</button>
+        <button class="hh-ghost" type="button" data-act="new-invite-code">Byt kod</button>
       </div>
-      <p class="hint" style="margin-top:10px">Den som har koden kan gå med. Byt kod om den har kommit på villovägar, då slutar den gamla att fungera.</p>
+      <p class="hint" style="margin-top:8px">Den som har koden kan gå med. Byt kod om den har kommit på villovägar, då slutar den gamla att fungera.</p>
     </div>
-    <form class="card form" data-form="rename" data-keep>
-      <h2>Namn</h2>
-      <label class="field"><span>Hushållets namn</span><input name="house" id="st-house" required maxlength="40" value="${esc(S.house?.name || "")}"></label>
-      <label class="field"><span>Ditt namn, så ser de andra vem som har loggat</span><input name="name" id="st-name" required maxlength="30" value="${esc(myName())}"></label>
-      <button class="btn primary block" type="submit">Spara</button>
-    </form>
     <div class="card">
       <h2>Utseende</h2>
       <div class="theme-grid" role="group" aria-label="Tema">
@@ -4920,6 +4916,18 @@ const ACTIONS = {
   },
   "export-log"() { exportLog(); },
   "export-all"() { exportAll(); },
+  "rename-house"() {
+    openSheet("Hushållets namn", `<form class="form" data-form="rename-one" data-what="house" novalidate>
+      ${field("Hushållets namn", `<input name="v" id="rn-v" maxlength="40" value="${esc(S.house?.name || "")}" autocomplete="off">`, "Syns för alla ni som delar och i inbjudan.")}
+      <p class="err" id="form-err" hidden></p>
+      <button class="btn primary block" type="submit">Spara</button></form>`);
+  },
+  "rename-me"() {
+    openSheet("Ditt namn", `<form class="form" data-form="rename-one" data-what="me" novalidate>
+      ${field("Ditt namn", `<input name="v" id="rn-v" maxlength="30" value="${esc(myName())}" autocomplete="given-name">`, "Så ser de andra vem som har loggat.")}
+      <p class="err" id="form-err" hidden></p>
+      <button class="btn primary block" type="submit">Spara</button></form>`);
+  },
   "open-admin"() { S.prevView = "installningar"; S.adminData = null; setView("admin"); },
   "admin-reload"() { S.adminData = null; render(); },
   "hide-start"() { pref.set("startHidden." + S.hid, "1"); render(); showToast("Dolt. Du hittar allt under Bilen och Inställningar."); },
@@ -4984,16 +4992,19 @@ async function onSubmit(ev) {
     if (kind === "booking") return saveBooking(form, ev.submitter?.value === "1");
     if (kind === "todo") return saveTodo(form);
     if (kind === "doc") return await saveDoc(form);
-    if (kind === "rename") {
-      const fd = new FormData(form);
-      const name = String(fd.get("name") || "").trim();
-      const house = String(fd.get("house") || "").trim();
-      if (!name || !house) return showToast("Fyll i både hushållets namn och ditt namn.");
-      updateDoc(doc(db, "households", S.hid), { name: house, [`memberInfo.${uid()}.name`]: name }).catch(onWriteError);
-      syncInviteName(house);
-      delete form.dataset.dirty;
-      document.activeElement?.blur?.();
-      showToast("Namnen är sparade");
+    if (kind === "rename-one") {
+      const v = String(new FormData(form).get("v") || "").trim();
+      if (!v) return formError("Skriv ett namn.");
+      if (form.dataset.what === "house") {
+        updateDoc(doc(db, "households", S.hid), { name: v }).catch(onWriteError);
+        S.house = { ...S.house, name: v };
+        syncInviteName(v);
+      } else {
+        updateDoc(doc(db, "households", S.hid), { [`memberInfo.${uid()}.name`]: v }).catch(onWriteError);
+      }
+      closeSheet();
+      render();
+      showToast("Namnet är sparat");
     }
   } catch (e) {
     console.error(e);
