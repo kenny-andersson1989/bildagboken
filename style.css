@@ -1012,3 +1012,12 @@ body.arranging [data-card].lifted { animation: none; z-index: 30; position: rela
 .start-step .step-n, .dl.as-btn > .step-n { width: 28px; height: 28px; justify-self: center; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font: 700 13.5px var(--f-body); flex: none; }
 .start-step.done .step-n { background: var(--sage-soft); color: var(--sage); }
 .start-step.done .dl-t { color: var(--ink-3); text-decoration: line-through; }
+/* Lika stort mellanrum mellan menyn och korten som mellan kolumnerna */
+@media (min-width: 900px) {
+  .app:not(.no-nav) { padding-left: 0; }
+}
+/* Telefon på tvären: ingen rubrik (Hej, Logg, Ekonomi …), menyn visar redan var man är */
+@media (min-width: 900px) and (max-height: 520px) {
+  .app:not(.no-nav) > .top { display: none; }
+  .app:not(.no-nav) { padding-top: calc(12px + env(safe-area-inset-top, 0px)); }
+}
