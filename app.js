@@ -625,10 +625,12 @@ function deadlines(c) {
 }
 
 /* Bokade tider (service, besiktning m.m.) sparas som en lista på bilen. */
-function bookingWhen(b) {
+// Kort form i listorna: "Fre 13 nov 09:00". Lång form annars: "Fredag 13 november kl 09:00".
+function bookingWhen(b, short = false) {
   const d = parseDate(b.date);
   if (!d) return "";
   const year = d.getFullYear() !== new Date().getFullYear() ? ` ${d.getFullYear()}` : "";
+  if (short) return `${["Sön", "Mån", "Tis", "Ons", "Tors", "Fre", "Lör"][d.getDay()]} ${d.getDate()} ${MONTHS_SHORT[d.getMonth()].toLowerCase()}${year}${b.time ? ` ${b.time}` : ""}`;
   return `${WEEKDAYS[d.getDay()].replace(/^./, (x) => x.toUpperCase())} ${d.getDate()} ${MONTHS[d.getMonth()]}${year}${b.time ? ` kl ${b.time}` : ""}`;
 }
 function sortedBookings(c) {
@@ -645,7 +647,7 @@ function bookingRows(c) {
     return {
       icon: "calendar",
       title: past ? `${kind}: blev det gjort?` : `${kind} bokad`,
-      sub: [bookingWhen(b), b.place, lastDay].filter(Boolean).join(" · "),
+      sub: [bookingWhen(b, true), b.place, lastDay].filter(Boolean).join(" · "),
       days,
       level: past || late || days <= 1 ? "urgent" : days <= 7 ? "soon" : "ok",
       label: past ? "Logga" : days === 0 ? "I dag" : days === 1 ? "I morgon" : daysText(days),
@@ -803,6 +805,9 @@ let columnsWide = window.matchMedia("(min-width: 760px)").matches;
 function sizeBackground() {
   document.documentElement.style.setProperty("--vh", window.innerHeight + "px");
   document.documentElement.style.setProperty("--vw", window.innerWidth + "px");
+  // Telefon på tvären: kameraskåran sitter bara på ena sidan, så den andra sidan kan användas.
+  const ang = typeof window.orientation === "number" ? window.orientation : (screen.orientation?.angle ?? 0);
+  document.documentElement.dataset.notch = ang === 90 ? "left" : ang === -90 || ang === 270 ? "right" : "";
 }
 sizeBackground();
 window.addEventListener("orientationchange", () => setTimeout(sizeBackground, 250));
@@ -1211,8 +1216,8 @@ function rememberPrev(next) {
 
 function rowHtml(x) {
   const inner = `<span class="dl-ic">${icon(x.icon, 22)}</span>
-    <span><span class="dl-t">${esc(x.title)}</span><span class="dl-s">${esc(x.sub || "")}</span></span>
-    <span class="pill ${x.level}">${esc(x.label)}</span>`;
+    <span><span class="dl-t">${esc(x.title)}</span><span class="dl-s">${x.label ? `<span class="pill pill-in ${x.level}">${esc(x.label)}</span>` : ""}${esc(x.sub || "")}</span></span>
+    <span class="pill pill-out ${x.level}">${esc(x.label)}</span>`;
   return x.act
     ? `<button class="dl as-btn" type="button" data-act="${x.act}" data-id="${esc(x.id || "")}"${x.type ? ` data-type="${esc(x.type)}"` : ""}>${inner}</button>`
     : `<div class="dl">${inner}</div>`;
