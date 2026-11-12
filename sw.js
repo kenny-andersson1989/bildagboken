@@ -1,5 +1,5 @@
 // Service worker: gör att appen startar även utan nät och kan visa notiser.
-const CACHE = "bildagboken-v130";
+const CACHE = "bildagboken-v131";
 const SHELL = [
   "./",
   "./index.html",
@@ -11,6 +11,7 @@ const SHELL = [
   "./icons/icon-192.png",
   "./icons/logo.svg",
   "./icons/logo-dark.svg",
+  "./icons/logo-symbol.svg",
   "./integritet.html",
   "./en.js"
 ];
