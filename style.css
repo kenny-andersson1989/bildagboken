@@ -1151,3 +1151,14 @@ body.arranging [data-card].lifted { animation: none; z-index: 30; position: rela
 .theme-btn[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .theme-sw { width: 44px; height: 30px; border-radius: 9px; position: relative; overflow: hidden; border: 1px solid rgba(0, 0, 0, .12); }
 .theme-sw i { position: absolute; right: 5px; bottom: 5px; width: 12px; height: 12px; border-radius: 50%; }
+
+/* Flyttläget: kryss uppe till vänster som döljer kortet */
+body.arranging [data-card] { position: relative; }
+.card-hide {
+  position: absolute; z-index: 3; top: -8px; left: -8px; width: 28px; height: 28px; padding: 0;
+  display: grid; place-items: center; border-radius: 50%; border: 0; cursor: pointer;
+  background: var(--ink-2); color: var(--ground); box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+  pointer-events: auto !important;
+}
+.card-hide svg { pointer-events: none; }
+[data-card].card-gone { transition: opacity .18s, scale .18s; opacity: 0; scale: .9; }

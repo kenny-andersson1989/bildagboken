@@ -764,6 +764,7 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   app.innerHTML = html;
   arrangeColumns();
   alignNav();
+  addHideButtons();
   if (active) {
     const again = document.getElementById(active.id);
     if (again && again !== active) {
@@ -1957,7 +1958,34 @@ function enterArrange(view) {
   navigator.vibrate?.(12);
   document.getElementById("arrange-bar")?.remove();
   document.body.insertAdjacentHTML("beforeend", `<div class="arrange-bar" id="arrange-bar" role="status">
-    <span>Dra korten dit du vill ha dem</span><button class="btn primary" type="button" id="arrange-done">Klar</button></div>`);
+    <span>Dra för att flytta, tryck på krysset för att dölja</span><button class="btn primary" type="button" id="arrange-done">Klar</button></div>`);
+  addHideButtons();
+}
+// Ett kryss uppe till vänster på varje kort i flyttläget, som döljer kortet.
+function addHideButtons() {
+  if (!arranging) return;
+  const names = CARD_VIEWS[arranging].names;
+  app.querySelectorAll(`[data-card][data-view="${arranging}"]`).forEach((el) => {
+    if (el.querySelector(":scope > .card-hide")) return;
+    el.insertAdjacentHTML("afterbegin", `<button class="card-hide" type="button" data-key="${el.dataset.card}" aria-label="Dölj ${esc(names[el.dataset.card] || "kortet")}">${icon("close", 14)}</button>`);
+  });
+}
+function hideCardNow(btn) {
+  const view = arranging, key = btn.dataset.key;
+  const el = btn.closest("[data-card]");
+  const p = cardPrefs(view);
+  if (!p.hidden.includes(key)) p.hidden.push(key);
+  saveCardPrefs(view, p);
+  navigator.vibrate?.(8);
+  el.classList.add("card-gone");
+  setTimeout(() => { el.remove(); }, 180);
+  const name = CARD_VIEWS[view].names[key] || "Kortet";
+  showToast(`${name} är dolt. Du kan visa det igen under Inställningar.`, 6000, () => {
+    const q = cardPrefs(view);
+    saveCardPrefs(view, { ...q, hidden: q.hidden.filter((k) => k !== key) });
+    if (arranging) exitArrange(true); else render();
+    showToast(`${name} visas igen`);
+  });
 }
 function exitArrange(save = true) {
   if (!arranging) return;
@@ -1970,9 +1998,11 @@ function exitArrange(save = true) {
     const els = [...app.querySelectorAll(`[data-card][data-view="${view}"]`)];
     const pos = new Map(els.map((el) => [el, el.getBoundingClientRect()]));
     const shown = els.sort((a, b) => (Math.abs(pos.get(a).top - pos.get(b).top) < 24 ? pos.get(a).left - pos.get(b).left : pos.get(a).top - pos.get(b).top)).map((el) => el.dataset.card);
+    // De synliga korten får sina nya platser, dolda kort ligger kvar där de var.
     const p = cardPrefs(view);
-    const rest = p.order.filter((k) => !shown.includes(k));
-    saveCardPrefs(view, { ...p, order: [...shown, ...rest] });
+    const queue = [...shown];
+    const order = p.order.map((k) => (shown.includes(k) ? queue.shift() : k));
+    saveCardPrefs(view, { ...p, order });
   }
   render();
 }
@@ -2056,6 +2086,9 @@ document.addEventListener("mouseup", () => { clearTimeout(pressTimer); pressStar
 // I flyttläget gör knapparna på korten ingenting. Klar eller ett tryck (på ett kort eller bredvid) avslutar.
 document.addEventListener("click", (ev) => {
   if (ev.target.closest?.("#arrange-done")) { ev.preventDefault(); exitArrange(true); return; }
+  const hideBtn = arranging && ev.target.closest?.(".card-hide");
+  if (hideBtn) { ev.preventDefault(); ev.stopPropagation(); suppressClick = false; hideCardNow(hideBtn); return; }
+  if (arranging && ev.target.closest?.("#toast")) return;
   if (suppressClick) { suppressClick = false; ev.preventDefault(); ev.stopPropagation(); return; }
   if (!arranging) return;
   if (ev.target.closest?.("#arrange-bar")) return;
