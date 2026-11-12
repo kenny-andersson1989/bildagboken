@@ -3808,31 +3808,55 @@ function currentPosition() {
   });
 }
 
-function workRowHtml(r, w, n) {
+// En rad i "Det här gjordes": namnet, vad som gjordes och var på bilen (menyer), och ett kryss för att ta bort raden.
+function posOptions(itemId, chosen) {
+  const val = (a) => a.join("|");
+  const opts = itemId === "torkare"
+    ? [["Fram", ["Fram"]], ["Bak", ["Bak"]], ["Fram och bak", ["Fram", "Bak"]]]
+    : [["Fram", ["Vänster fram", "Höger fram"]], ["Bak", ["Vänster bak", "Höger bak"]], ["Alla fyra", CORNERS], ...CORNERS.map((x) => [x, [x]])];
+  const cur = val([...chosen].sort());
+  const known = opts.some(([, a]) => val([...a].sort()) === cur);
+  const all = [["Var?", []], ...opts, ...(chosen.length && !known ? [[sidesText(chosen).replace(/^./, (x) => x.toUpperCase()), chosen]] : [])];
+  return all.map(([l, a]) => `<option value="${esc(val(a))}"${val([...a].sort()) === cur ? " selected" : ""}>${esc(l)}</option>`).join("");
+}
+function workRowHtml(r, w) {
   const showPos = !(r.itemId && NO_POSITION.includes(r.itemId));
   const action = w?.action || "bytt";
   return `<div class="work-row" data-key="${esc(r.key)}" data-item="${esc(r.itemId || "")}" data-name="${esc(r.name)}">
-    <label class="check"><input type="checkbox" class="w-on"${w ? " checked" : ""}> ${esc(r.name)}</label>
-    <div class="w-opts">
-      <div class="w-act" role="radiogroup" aria-label="Vad gjordes med ${esc(r.name.toLowerCase())}">${Object.entries(WORK_ACTIONS).map(([k, l]) => `<label><input type="radio" name="wa${n}" value="${k}"${action === k ? " checked" : ""}><span>${l}</span></label>`).join("")}</div>
-      ${showPos ? `<div class="w-sides${positionsFor(r.itemId) === CORNERS ? " corners" : ""}" role="group" aria-label="Var på bilen">${positionsFor(r.itemId).map((pos) => `<label><input type="checkbox" value="${pos}"${sidesOf(w).includes(pos) ? " checked" : ""}><span>${pos}</span></label>`).join("")}</div>` : ""}
-    </div>
+    <input type="checkbox" class="w-on vh" checked tabindex="-1" aria-hidden="true">
+    <span class="w-name">${esc(r.name)}</span>
+    <span class="w-sel"><select class="w-action" aria-label="Vad gjordes med ${esc(r.name.toLowerCase())}">${Object.entries(WORK_ACTIONS).map(([k, l]) => `<option value="${k}"${action === k ? " selected" : ""}>${l}</option>`).join("")}</select>
+    ${showPos ? `<select class="w-pos" aria-label="Var på bilen">${posOptions(r.itemId, sidesOf(w))}</select>` : ""}</span>
+    <button class="w-del" type="button" data-act="w-remove" aria-label="Ta bort ${esc(r.name)}">${icon("close", 14)}</button>
   </div>`;
 }
-
-let workRowSeq = 0;
+// Förslag under knappen: underhållspunkter som inte redan är tillagda.
+function workChipsHtml(c = car()) {
+  const present = new Set([...document.querySelectorAll("#work-rows .work-row")].map((r) => r.dataset.key));
+  const items = (c.items || []).filter((i) => !present.has(`item:${i.id}`)).slice(0, 6);
+  return items.length ? `<span class="w-sug-l">Förslag:</span>${items.map((i) => `<button type="button" class="w-chip" data-act="w-add" data-item="${esc(i.id)}" data-name="${esc(i.name)}">${esc(i.name)}</button>`).join("")}` : "";
+}
+function refreshWorkUi() {
+  const chips = $("#w-chips");
+  if (chips) chips.innerHTML = workChipsHtml();
+  const empty = $("#w-empty");
+  if (empty) empty.hidden = !!document.querySelector("#work-rows .work-row");
+}
 function workFormHtml(c, work) {
-  const byKey = new Map(work.map((w) => [w.itemId ? `item:${w.itemId}` : normWord(w.name), w]));
-  const rows = (c.items || []).map((i) => ({ key: `item:${i.id}`, itemId: i.id, name: i.name }));
-  // Egna delar som redan finns i posten (till exempel när man ändrar en service).
-  for (const w of work) if (!w.itemId) rows.push({ key: normWord(w.name), itemId: null, name: w.name });
+  const rows = work.map((w) => ({ key: w.itemId ? `item:${w.itemId}` : normWord(w.name), itemId: w.itemId || null, name: w.name || (c.items || []).find((i) => i.id === w.itemId)?.name || "", w }));
+  const present = new Set(rows.map((r) => r.key));
+  const sug = (c.items || []).filter((i) => !present.has(`item:${i.id}`)).slice(0, 6);
   return `<fieldset><legend>Det här gjordes</legend>
-    <div class="checks" id="work-rows">${rows.map((r) => workRowHtml(r, byKey.get(r.key), ++workRowSeq)).join("")}</div>
+    <div id="work-rows">${rows.map((r) => workRowHtml(r, r.w)).join("")}</div>
+    <p class="hint" id="w-empty"${rows.length ? " hidden" : ""}>Lägg till det som gjordes. Bara Bytt räknas som nytt byte för underhållet.</p>
     <div class="w-add">
-      <input id="w-search" placeholder="Sök eller lägg till en del, till exempel bromsskivor" autocomplete="off" aria-label="Sök eller lägg till en del">
-      <span class="suggest" id="w-suggest" role="listbox" hidden></span>
+      <button class="btn-soft" type="button" data-act="w-open" id="w-open">${icon("plus", 16)} Lägg till del</button>
+      <div id="w-searchbox" hidden>
+        <input id="w-search" placeholder="Sök eller skriv en del, till exempel bromsskivor" autocomplete="off" aria-label="Sök eller lägg till en del">
+        <span class="suggest" id="w-suggest" role="listbox" hidden></span>
+      </div>
+      <div class="w-chips" id="w-chips">${sug.length ? `<span class="w-sug-l">Förslag:</span>${sug.map((i) => `<button type="button" class="w-chip" data-act="w-add" data-item="${esc(i.id)}" data-name="${esc(i.name)}">${esc(i.name)}</button>`).join("")}` : ""}</div>
     </div>
-    <p class="hint" style="margin-top:6px">Kryssa i det som gjordes. Bara <b>Bytt</b> räknas som nytt byte för underhållet. Fyllt på, rengjort och kontrollerat syns i historiken.</p>
   </fieldset>`;
 }
 
@@ -3849,7 +3873,7 @@ function workSuggest(q) {
   const exact = known.some((x) => x.key === t) || itemHit;
   box.innerHTML = [
     ...known.map((x) => `<button type="button" data-act="w-add" data-name="${esc(x.name)}"><b>${esc(x.name)}</b><span>Använd förut</span></button>`),
-    itemHit ? `<button type="button" data-act="w-add" data-item="${esc(itemHit.id)}" data-name="${esc(itemHit.name)}"><b>${esc(itemHit.name)}</b><span>Finns i listan ovan, kryssa i den</span></button>` : "",
+    itemHit && !present.has(`item:${itemHit.id}`) ? `<button type="button" data-act="w-add" data-item="${esc(itemHit.id)}" data-name="${esc(itemHit.name)}"><b>${esc(itemHit.name)}</b><span>Underhållspunkt</span></button>` : "",
     !exact ? `<button type="button" data-act="w-add" data-name="${esc(q.trim().replace(/^./, (x) => x.toUpperCase()))}"><b>Lägg till ”${esc(q.trim())}”</b><span>Ny del</span></button>` : "",
   ].join("");
   box.hidden = !box.innerHTML;
@@ -3936,8 +3960,8 @@ async function saveEntry(form) {
           key: row.dataset.key,
           itemId: row.dataset.item || null,
           name: row.dataset.name,
-          action: row.querySelector(".w-act input:checked")?.value || "bytt",
-          sides: [...row.querySelectorAll(".w-sides input:checked")].map((x) => x.value),
+          action: row.querySelector(".w-action")?.value || "bytt",
+          sides: (row.querySelector(".w-pos")?.value || "").split("|").filter(Boolean),
         })).filter((w) => !seen.has(w.key) && seen.add(w.key));
         data.items = data.work.filter((w) => w.action === "bytt" && w.itemId).map((w) => w.itemId);
         data.parts = data.work.filter((w) => w.action === "bytt" && !w.itemId).map((w) => w.name);
@@ -4772,13 +4796,22 @@ const ACTIONS = {
     const key = itemId ? `item:${itemId}` : normWord(el.dataset.name);
     let row = list.querySelector(`.work-row[data-key="${CSS.escape(key)}"]`);
     if (!row) {
-      list.insertAdjacentHTML("beforeend", workRowHtml({ key, itemId, name: el.dataset.name }, { action: "bytt" }, ++workRowSeq));
+      list.insertAdjacentHTML("beforeend", workRowHtml({ key, itemId, name: el.dataset.name }, { action: "bytt" }));
       row = list.lastElementChild;
     }
-    row.querySelector(".w-on").checked = true;
     row.scrollIntoView({ block: "nearest" });
     const s = $("#w-search"); if (s) s.value = "";
     const box = $("#w-suggest"); if (box) box.hidden = true;
+    const sb = $("#w-searchbox"); if (sb) sb.hidden = true;
+    const ob = $("#w-open"); if (ob) ob.hidden = false;
+    refreshWorkUi();
+  },
+  "w-remove"(el) { el.closest(".work-row")?.remove(); refreshWorkUi(); },
+  "w-open"() {
+    const sb = $("#w-searchbox"), ob = $("#w-open");
+    if (!sb) return;
+    sb.hidden = false; if (ob) ob.hidden = true;
+    $("#w-search")?.focus();
   },
   "toggle-parts"() { S.partsAll = !S.partsAll; render(); },
   "open-part"(el) { partSheet(el.dataset.id); },
