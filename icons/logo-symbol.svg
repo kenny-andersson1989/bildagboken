@@ -2,12 +2,12 @@
   <path d="M8 46 V150 Q8 158 16 158 H82 Q93 158 100 168 Q107 158 118 158 H184 Q192 158 192 150 V46" fill="none" stroke="#E8711F" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
   <path d="M22 26 Q62 12 97 30 V150 Q62 134 22 146 Z" fill="#E8711F"/>
   <path d="M178 26 Q138 12 103 30 V150 Q138 134 178 146 Z" fill="#E8711F"/>
-  <path d="M38 92 Q38 76 54 74 L72 72 L88 56 Q93 51 101 51 H128 Q136 51 142 57 L155 72 L168 74 Q182 76 182 90 V95 Q182 100 177 100 H43 Q38 100 38 95 Z" fill="#fff"/>
+  <g transform="translate(-10 0)"><path d="M38 92 Q38 76 54 74 L72 72 L88 56 Q93 51 101 51 H128 Q136 51 142 57 L155 72 L168 74 Q182 76 182 90 V95 Q182 100 177 100 H43 Q38 100 38 95 Z" fill="#fff"/>
   <path d="M80 72 L92 59 Q94 57 98 57 H109 V72 Z" fill="#E8711F"/>
   <path d="M115 72 V57 H127 Q132 57 135 61 L144 72 Z" fill="#E8711F"/>
   <circle cx="68" cy="100" r="13" fill="#fff" stroke="#E8711F" stroke-width="5"/>
   <circle cx="152" cy="100" r="13" fill="#fff" stroke="#E8711F" stroke-width="5"/>
-  <g stroke="#fff" stroke-width="6" stroke-linecap="round">
+  </g><g stroke="#fff" stroke-width="6" stroke-linecap="round">
     <path d="M36 122 H88"/><path d="M36 134 H88"/><path d="M112 122 H164"/><path d="M112 134 H164"/>
   </g>
 </g></svg>
