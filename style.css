@@ -1022,8 +1022,8 @@ body.arranging [data-card].lifted { animation: none; z-index: 30; position: rela
   .app:not(.no-nav) { padding-top: calc(12px + env(safe-area-inset-top, 0px)); }
 }
 
-/* Pillret i textraden (används på smala kolumner) */
-.pill-in { display: none; }
+/* Pillret och tiden på rubrikraden (används på smala kolumner) */
+.pill-in, .dl-when, .t-short { display: none; }
 .fuel-pct { white-space: nowrap; }
 /* Kameraskåran sitter bara på ena sidan när telefonen ligger ner */
 :root { --safe-l: env(safe-area-inset-left, 0px); --safe-r: env(safe-area-inset-right, 0px); }
@@ -1046,7 +1046,15 @@ body.arranging [data-card].lifted { animation: none; z-index: 30; position: rela
   /* Pillret först i textraden, så att texten får hela bredden */
   .dl:has(> .pill-out) { grid-template-columns: 40px minmax(0, 1fr); }
   .dl > .pill-out { display: none !important; }
-  .pill-in { display: inline-block; font-size: 11.5px; padding: 2px 8px; margin-right: 6px; vertical-align: 1px; }
+  /* Rubriken till vänster, pillret och tiden uppe till höger */
+  .dl .dl-t { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .dl-tt { min-width: 0; }
+  .dl-when { display: flex; align-items: center; gap: 6px; flex: none; white-space: nowrap; align-self: center; }
+  .pill-in { display: inline-block; font-size: 11.5px; padding: 2px 8px; }
+  .when-t { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+  .sub-when, .t-long { display: none; }
+  .t-short { display: inline; }
+  .dl-tt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row-quick { flex-wrap: nowrap; }
   /* Bilkortet: regnummer och namn på en rad, år och drivmedel under, lägre bild */
   .hero > .hero-car { flex-wrap: wrap; gap: 4px 10px; }

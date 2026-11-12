@@ -647,7 +647,12 @@ function bookingRows(c) {
     return {
       icon: "calendar",
       title: past ? `${kind}: blev det gjort?` : `${kind} bokad`,
-      sub: [bookingWhen(b, true), b.place, lastDay].filter(Boolean).join(" · "),
+      short: past ? null : kind,
+      when: bookingWhen(b, true),
+      // Uppe till höger på smala kolumner: "I morgon 09:00" eller "15 dec 13:00" (veckodagen får inte plats).
+      whenShort: days === 0 || days === 1 ? `${days === 0 ? "I dag" : "I morgon"}${b.time ? ` ${b.time}` : ""}` : bookingWhen(b, true).replace(/^\S+ /, ""),
+      relDay: days === 0 || days === 1,
+      sub: [b.place, lastDay].filter(Boolean).join(" · "),
       days,
       level: past || late || days <= 1 ? "urgent" : days <= 7 ? "soon" : "ok",
       label: past ? "Logga" : days === 0 ? "I dag" : days === 1 ? "I morgon" : daysText(days),
@@ -1216,7 +1221,7 @@ function rememberPrev(next) {
 
 function rowHtml(x) {
   const inner = `<span class="dl-ic">${icon(x.icon, 22)}</span>
-    <span><span class="dl-t">${esc(x.title)}</span><span class="dl-s">${x.label ? `<span class="pill pill-in ${x.level}">${esc(x.label)}</span>` : ""}${esc(x.sub || "")}</span></span>
+    <span><span class="dl-t"><span class="dl-tt">${x.short ? `<span class="t-long">${esc(x.title)}</span><span class="t-short">${esc(x.short)}</span>` : esc(x.title)}</span>${x.label || x.when ? `<span class="dl-when">${x.relDay ? `<span class="pill pill-in ${x.level}">${esc(x.whenShort)}</span>` : `${x.label ? `<span class="pill pill-in ${x.level}">${esc(x.label)}</span>` : ""}${x.whenShort ? `<span class="when-t">${esc(x.whenShort)}</span>` : ""}`}</span>` : ""}</span><span class="dl-s">${x.when ? `<span class="sub-when">${esc(x.when)}${x.sub ? " · " : ""}</span>` : ""}${esc(x.sub || "")}</span></span>
     <span class="pill pill-out ${x.level}">${esc(x.label)}</span>`;
   return x.act
     ? `<button class="dl as-btn" type="button" data-act="${x.act}" data-id="${esc(x.id || "")}"${x.type ? ` data-type="${esc(x.type)}"` : ""}>${inner}</button>`
