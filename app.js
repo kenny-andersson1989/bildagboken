@@ -985,7 +985,7 @@ function renderLogin(error = "") {
   // Välkomstsidan: logotyp, bild, rubrik och inloggning.
   setScreen("login", `
     <section class="login">
-      <h1 class="login-brand"><img class="login-logo logo-l" src="icons/logo.svg" alt="Bildagboken" width="936" height="200"><img class="login-logo logo-d" src="icons/logo-dark.svg" alt="" aria-hidden="true" width="936" height="200"></h1>
+      <h1 class="login-brand"><img class="login-logo logo-l" src="icons/logo.svg?v=2" alt="Bildagboken" width="936" height="200"><img class="login-logo logo-d" src="icons/logo-dark.svg?v=2" alt="" aria-hidden="true" width="936" height="200"></h1>
       <img class="login-art" src="icons/welcome.webp" alt="" width="702" height="697">
       <h2 class="login-title">Håll koll på bilen,<br>tillsammans.</h2>
       <p class="login-sub">Tankning, service, däck, datum och kostnader. Alla ni som delar bilen ser samma sak.</p>
