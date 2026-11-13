@@ -3470,7 +3470,10 @@ function entryForm(type, e = {}, opts = {}) {
       body = `${e.category === "Besiktning"
         ? `<input type="hidden" name="category" id="ef-category" value="Besiktning">`
         : field("Typ", `<select name="category" id="ef-category">${COST_CATS.filter((k) => !["Tvätt", "Parkering", "Besiktning"].includes(k) || e.category === k).map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
-        ${field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
+        ${e.category === "Besiktning"
+          ? `${field("Var", geoInput("place", "ef-place", e.place || (e.title || "").replace(/^Besiktning hos /, "") || "", "vehicle_inspection", "Till exempel Bilprovningen Mölndal"))}
+             <input type="hidden" name="title" value="${v("title")}">`
+          : field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
         ${amount(e.category === "Besiktning" ? "520" : "3 200")}${date}
         ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast (valfritt)", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(suggestNextInspection(e.date || todayStr(), c)) : ""}">`, "Uträknat från besiktningens datum. Kontrollera mot protokollet.")}</div>
         <p class="hint" id="ef-old-besikt" hidden>Det här är en äldre besiktning, så nästa datum behövs inte. Den sparas bara i loggen.</p>` : ""}
@@ -4030,6 +4033,7 @@ async function saveEntry(form) {
     case "kostnad":
       data.category = str("category");
       data.title = str("title") || null;
+      data.place = data.category === "Besiktning" ? str("place") || null : null;
       if (data.amount == null && data.category !== "Besiktning") return formError("Fyll i kostnaden.");
       if (data.category === "Besiktning" && str("nextBesiktning") && str("nextBesiktning") <= data.date) return formError("Nästa besiktning ska ligga efter den här.");
       break;
@@ -4523,7 +4527,7 @@ const ACTIONS = {
     const input = document.getElementById(el.dataset.target);
     const picks = document.getElementById(el.dataset.target + "-picks");
     if (!input || el.disabled) return;
-    const what = { fuel: "mack", parking: "parkering" }[el.dataset.kind] || "biltvätt";
+    const what = { fuel: "mack", parking: "parkering", vehicle_inspection: "besiktningsstation" }[el.dataset.kind] || "biltvätt";
     el.disabled = true;
     el.classList.add("busy");
     try {
