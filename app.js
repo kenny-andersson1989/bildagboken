@@ -2,7 +2,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
 import {
   getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
-  linkWithPopup, linkWithRedirect, onAuthStateChanged, signOut, reauthenticateWithPopup, deleteUser
+  linkWithPopup, linkWithRedirect, onAuthStateChanged, signOut, reauthenticateWithPopup, deleteUser,
+  signInWithCredential, linkWithCredential, reauthenticateWithCredential
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
@@ -18,6 +19,10 @@ const VERSION = "2.8";
 /* ---------------------------------------------------------------- språk */
 
 // Svenska är grundspråket. Med engelska översätts allt som visas på skärmen när det ritas (se trTree längre ner).
+// iPhone-appen (ett skal runt webbappen): inloggning och notiser går via iOS, eftersom Google
+// inte tillåter inloggning i en inbäddad webbläsare och webbnotiser inte finns där.
+const NATIVE = !!window.Capacitor?.isNativePlatform?.();
+const nativePlugin = (name) => window.Capacitor?.Plugins?.[name] || window.Capacitor?.registerPlugin?.(name);
 const LANG = (() => { try { return localStorage.getItem("bildagboken.lang") === "en" ? "en" : "sv"; } catch { return "sv"; } })();
 let EN = null, EN_RULES = [];
 if (LANG === "en") {
@@ -1380,7 +1385,7 @@ function rowWithQuick(x) {
 
 function installCard() {
   const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
-  if (standalone || pref.get("installDismissed")) return "";
+  if (NATIVE || standalone || pref.get("installDismissed")) return "";
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const desktop = !ios && window.matchMedia("(pointer: fine)").matches;
   return `<article class="card">
@@ -2708,7 +2713,7 @@ function viewNotifications() {
     ...allItemStatus(c).filter((s) => !s.unknown && s.level === "urgent").map((s) => ({ icon: "wrench", title: `Dags för ${s.item.name.toLowerCase()}`, sub: s.label, group: "Nu", level: "urgent", days: 0, act: "edit-item", id: s.item.id })),
   ];
   const feed = [...S.entries, ...bookingFeed()].sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt)).slice(0, 40);
-  const perm = "Notification" in window ? Notification.permission : "unsupported";
+  const perm = NATIVE ? (pref.get("pushPerm") || "default") : "Notification" in window ? Notification.permission : "unsupported";
   return `${subHeader("Det ni gjort med bilen", "Aviseringar", true)}
     ${!pushOn() && perm !== "denied" ? `<div class="card"><h2>Få notiser i telefonen</h2><p class="muted">Påminnelser om bokade tider och datum, och en notis när någon av de andra loggar något. Även när appen är stängd.</p><div class="ask"><button class="btn-soft" type="button" data-act="enable-notif">Slå på notiser</button></div></div>` : ""}
     ${reminders.length ? `<div class="card"><h2>Påminnelser</h2>${kollListHtml(reminders)}</div>` : ""}
@@ -2729,7 +2734,7 @@ function viewNotifications() {
 
 function viewSettings() {
   const members = S.house?.members || [];
-  const perm = "Notification" in window ? Notification.permission : "unsupported";
+  const perm = NATIVE ? (pref.get("pushPerm") || "default") : "Notification" in window ? Notification.permission : "unsupported";
   const permText = { granted: "Påslagna", denied: "Avstängda i telefonens inställningar", default: "Inte påslagna", unsupported: "Stöds inte här. På iPhone: lägg först till appen på hemskärmen." }[perm];
   return `${subHeader(S.house?.name || "Hushållet", "Inställningar", true)}
     <div class="card">
@@ -2764,7 +2769,7 @@ function viewSettings() {
           <div class="ask"><button class="link" type="button" data-act="push-off">Stäng av alla notiser på den här enheten</button></div>`
         : `<p class="muted">${perm === "denied" ? "Notiserna är avstängda i telefonens inställningar för den här appen." : "Få påminnelser om bokade tider, besiktning, försäkring och däckbyte, och en notis när någon av de andra loggar något. Även när appen är stängd."}</p>
           ${perm !== "denied" ? `<div class="ask"><button class="btn-soft" type="button" data-act="push-on">${icon("bell", 16)} Slå på notiser</button></div>` : ""}
-          ${/iphone|ipad/i.test(navigator.userAgent) && !(window.matchMedia("(display-mode: standalone)").matches || navigator.standalone) ? `<p class="hint" style="margin-top:10px">På iPhone fungerar notiser bara när appen är tillagd på hemskärmen och öppnad därifrån.</p>` : ""}`}
+          ${!NATIVE && /iphone|ipad/i.test(navigator.userAgent) && !(window.matchMedia("(display-mode: standalone)").matches || navigator.standalone) ? `<p class="hint" style="margin-top:10px">På iPhone fungerar notiser bara när appen är tillagd på hemskärmen och öppnad därifrån.</p>` : ""}`}
     </div>
     <div class="card">
       <h2>Utseende och språk</h2>
@@ -2808,9 +2813,10 @@ function viewSettings() {
 // Notiser även när appen är stängd. Telefonens adress för notiser (en token från Firebase) sparas i hushållet,
 // och en funktion hos Firebase skickar påminnelser varje morgon och när någon av de andra loggar något.
 const VAPID_KEY = "BHLhh-EYDJjPAQMpNMjAjM_brJKBw9Iik4lO7JIf4QeT4UMiRIq9ZKy885ug7POzXcqA5DrU5aqexV3EauRA70E";
-const pushSupported = () => "Notification" in window && "serviceWorker" in navigator && "PushManager" in window;
-const pushOn = () => pushSupported() && Notification.permission === "granted" && !!pref.get("pushToken");
+const pushSupported = () => NATIVE || ("Notification" in window && "serviceWorker" in navigator && "PushManager" in window);
+const pushOn = () => pushSupported() && (NATIVE || Notification.permission === "granted") && !!pref.get("pushToken");
 async function pushToken() {
+  if (NATIVE) return (await nativePlugin("FirebaseMessaging").getToken()).token;
   const m = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-messaging.js");
   if (!(await m.isSupported())) throw new Error("unsupported");
   const reg = await navigator.serviceWorker.ready;
@@ -2837,14 +2843,17 @@ async function setPushPref(kind, on) {
 async function savePushToken(token) {
   if (!token || !S.hid) return;
   const old = pref.get("pushToken");
-  await setDoc(doc(db, "households", S.hid, "tokens", token), { token, uid: uid(), lang: LANG, ua: navigator.userAgent.slice(0, 120), prefs: pushPrefs(), updatedAt: serverTimestamp() });
+  await setDoc(doc(db, "households", S.hid, "tokens", token), { token, uid: uid(), lang: LANG, platform: NATIVE ? "ios" : "web", ua: navigator.userAgent.slice(0, 120), prefs: pushPrefs(), updatedAt: serverTimestamp() });
   if (old && old !== token) deleteDoc(doc(db, "households", S.hid, "tokens", old)).catch(() => {});
   pref.set("pushToken", token);
   pref.set("pushDay", todayStr());
 }
 async function enablePush() {
   if (!pushSupported()) return showToast(/iphone|ipad/i.test(navigator.userAgent) ? "Lägg först till appen på hemskärmen och öppna den därifrån, sedan kan du slå på notiser." : "Notiser stöds inte i den här webbläsaren.", 7000);
-  const p = await Notification.requestPermission();
+  const p = NATIVE
+    ? ({ granted: "granted", denied: "denied" }[(await nativePlugin("FirebaseMessaging").requestPermissions()).receive] || "default")
+    : await Notification.requestPermission();
+  if (NATIVE) pref.set("pushPerm", p);
   if (p !== "granted") { render(); return showToast(p === "denied" ? "Notiserna är avstängda i telefonens inställningar." : "Notiser slogs inte på"); }
   try {
     await savePushToken(await pushToken());
@@ -2859,11 +2868,20 @@ async function disablePush() {
   const t = pref.get("pushToken");
   pref.set("pushToken", "");
   if (t && S.hid) await deleteDoc(doc(db, "households", S.hid, "tokens", t)).catch(() => {});
-  try { const m = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-messaging.js"); await m.deleteToken(m.getMessaging(fb)); } catch { /* redan borta */ }
+  try {
+    if (NATIVE) await nativePlugin("FirebaseMessaging").deleteToken();
+    else { const m = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-messaging.js"); await m.deleteToken(m.getMessaging(fb)); }
+  } catch { /* redan borta */ }
   render();
   showToast("Pushnotiser är avstängda på den här enheten");
 }
 // En gång per dag: hämta adressen igen (den kan bytas) och spara språket.
+if (NATIVE) {
+  nativePlugin("FirebaseMessaging")?.addListener("notificationActionPerformed", (ev) => {
+    const hash = String(ev?.notification?.data?.url || "").split("#")[1];
+    if (hash) location.hash = hash;
+  });
+}
 function refreshPush() {
   if (!pushOn() || pref.get("pushDay") === todayStr()) return;
   pushToken().then(savePushToken).catch(() => {});
@@ -4494,6 +4512,11 @@ async function copyText(text) {
 
 const ACTIONS = {
   async login(el) {
+    if (NATIVE) {
+      try { await signInWithCredential(auth, await nativeCredential(el?.dataset.provider || "google")); }
+      catch (e) { if (!nativeCancelled(e)) renderLogin(authError(e)); }
+      return;
+    }
     const provider = authProvider(el?.dataset.provider || "google");
     try {
       await signInWithPopup(auth, provider);
@@ -4510,7 +4533,8 @@ const ACTIONS = {
     const name = el.dataset.provider;
     const provider = authProvider(name);
     try {
-      await linkWithPopup(auth.currentUser, provider);
+      if (NATIVE) await linkWithCredential(auth.currentUser, await nativeCredential(name));
+      else await linkWithPopup(auth.currentUser, provider);
       await auth.currentUser.reload?.();
       S.user = auth.currentUser;
       showToast(`${PROVIDER_NAMES[name]} är kopplat. Nu kan du logga in med det också.`, 5000);
@@ -4518,7 +4542,7 @@ const ACTIONS = {
     } catch (e) {
       if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment", "auth/cancelled-popup-request"].includes(e.code)) {
         try { await linkWithRedirect(auth.currentUser, provider); } catch (e2) { showToast(authError(e2), 8000); }
-      } else if (e.code !== "auth/popup-closed-by-user") {
+      } else if (e.code !== "auth/popup-closed-by-user" && !(NATIVE && nativeCancelled(e))) {
         showToast(authError(e, name), 9000);
       }
     }
@@ -4538,9 +4562,10 @@ const ACTIONS = {
     const signedInAgo = Date.now() - Date.parse(auth.currentUser?.metadata?.lastSignInTime || 0);
     if (!(signedInAgo < 4 * 60e3)) {
       try {
-        await reauthenticateWithPopup(auth.currentUser, authProvider(linkedProviders()[0] || "google"));
+        if (NATIVE) await reauthenticateWithCredential(auth.currentUser, await nativeCredential(linkedProviders()[0] || "google"));
+        else await reauthenticateWithPopup(auth.currentUser, authProvider(linkedProviders()[0] || "google"));
       } catch (e) {
-        if (e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request") return showToast("Kontot är inte raderat.");
+        if (e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request" || (NATIVE && nativeCancelled(e))) return showToast("Kontot är inte raderat.");
         return showToast("Logga ut och logga in igen, och radera sedan kontot direkt efteråt.", 7000);
       }
     }
@@ -4560,6 +4585,7 @@ const ACTIONS = {
   },
   async logout() {
     cleanup();
+    if (NATIVE) await nativePlugin("FirebaseAuthentication")?.signOut().catch(() => {});
     await signOut(auth);
   },
   "close-sheet"() { closeSheet(); },
@@ -5080,6 +5106,17 @@ const ACTIONS = {
 
 const PROVIDER_NAMES = { google: "Google", apple: "Apple" };
 const PROVIDER_IDS = { google: "google.com", apple: "apple.com" };
+
+const nativeCancelled = (e) => /cancel|avbr|1001|-5\b/i.test(String(e?.message || e?.code || e));
+async function nativeCredential(name) {
+  const fa = nativePlugin("FirebaseAuthentication");
+  if (name === "apple") {
+    const r = await fa.signInWithApple({ scopes: ["email", "name"], skipNativeAuth: true });
+    return new OAuthProvider("apple.com").credential({ idToken: r.credential.idToken, rawNonce: r.credential.nonce });
+  }
+  const r = await fa.signInWithGoogle({ skipNativeAuth: true });
+  return GoogleAuthProvider.credential(r.credential.idToken, r.credential.accessToken);
+}
 
 function authProvider(name) {
   if (name === "apple") {

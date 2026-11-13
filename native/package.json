@@ -1,0 +1,15 @@
+{
+  "name": "bildagboken-ios",
+  "private": true,
+  "description": "iPhone-appen: ett skal runt bildagboken.com med inloggning och notiser via iOS",
+  "scripts": {
+    "sync": "cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor/cli": "8.6.2",
+    "@capacitor/core": "8.6.2",
+    "@capacitor/ios": "8.6.2",
+    "@capacitor-firebase/authentication": "8.6.0",
+    "@capacitor-firebase/messaging": "8.6.0"
+  }
+}
