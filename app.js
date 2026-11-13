@@ -3056,16 +3056,23 @@ function bookingForm(b = {}) {
       ${isEdit ? `<button class="btn ghost block" type="button" data-act="booking-done" data-id="${esc(b.id)}">${b.kind === "annat" ? "Klart, ta bort bokningen" : "Klart, logga det"}</button>` : ""}
       ${field("Vad är bokat?", `<select name="kind" id="bk-kind">${kinds.map(([k, l]) => `<option value="${k}"${(b.kind || "service") === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
       ${(() => {
-        // Datum i ett stort fält och tiden i ett snurrhjul som i Apples egna appar. Heldag betyder ingen tid.
+        // Datum och tid på en rad, som i Apples Kalender. Tryck på tiden för att öppna ett litet snurrhjul. Heldag betyder ingen tid.
         const t = b.time || "";
-        return field("Datum", `<input type="date" name="date" id="bk-date" required value="${esc(b.date || "")}" class="big-date">`)
-          + `<div class="field"><span>Tid</span>
-            <label class="ios-switch-row"><span>Heldag</span><input type="checkbox" id="bk-allday" class="ios-switch"${b.id && !t ? " checked" : ""}></label>
-            <div class="wheel" id="bk-wheel"${b.id && !t ? " hidden" : ""} aria-label="Välj tid">
-              <div class="wheel-band" aria-hidden="true"></div>
-              ${wheelCol("h", Array.from({ length: 24 }, (_, i) => pad(i)), "Timme")}
-              <span class="wheel-sep" aria-hidden="true">:</span>
-              ${wheelCol("m", wheelMinutes(t), "Minut")}
+        const allDay = !!b.id && !t;
+        const shown = allDay ? "Heldag" : t || "09:00";
+        return `<div class="field"><span>Datum och tid</span>
+            <div class="dt-row">
+              <input type="date" name="date" id="bk-date" required value="${esc(b.date || "")}" aria-label="Datum">
+              <button class="dt-time" type="button" id="bk-time-btn" data-act="bk-time-toggle" aria-expanded="false" aria-controls="bk-time-pop">${esc(shown)}</button>
+            </div>
+            <div class="dt-pop" id="bk-time-pop" hidden>
+              <label class="ios-switch-row"><span>Heldag</span><input type="checkbox" id="bk-allday" class="ios-switch"${allDay ? " checked" : ""}></label>
+              <div class="wheel compact" id="bk-wheel"${allDay ? " hidden" : ""} aria-label="Välj tid">
+                <div class="wheel-band" aria-hidden="true"></div>
+                ${wheelCol("h", Array.from({ length: 24 }, (_, i) => pad(i)), "Timme")}
+                <span class="wheel-sep" aria-hidden="true">:</span>
+                ${wheelCol("m", wheelMinutes(t), "Minut")}
+              </div>
             </div>
             <input type="hidden" name="time" id="bk-time" value="${esc(t || (b.id ? "" : "09:00"))}"></div>`;
       })()}
@@ -3140,7 +3147,10 @@ let wheelTimer = null;
 document.addEventListener("scroll", (ev) => {
   if (!ev.target.classList?.contains("wheel-col")) return;
   clearTimeout(wheelTimer);
-  wheelTimer = setTimeout(() => { const v = wheelValue(); const hid = $("#bk-time"); if (hid && !$("#bk-allday")?.checked) hid.value = v; }, 90);
+  wheelTimer = setTimeout(() => {
+    const v = wheelValue(); const hid = $("#bk-time");
+    if (hid && !$("#bk-allday")?.checked) { hid.value = v; const btn = $("#bk-time-btn"); if (btn) btn.textContent = v; }
+  }, 90);
 }, true);
 // Tryck på ett värde i hjulet: rulla dit.
 document.addEventListener("click", (ev) => {
@@ -4728,6 +4738,14 @@ const ACTIONS = {
   "print-shared"() { if (sharedBookData) exportServiceBook(sharedBookData, pdfName(sharedBookData)); },
   "pdf-share"() { if (pendingPdf) { sharePdf(pendingPdf.blob, pendingPdf.name); closeSheet(); } },
   "bk-time"(el) { setBookingTime(el.dataset.v); },
+  "bk-time-toggle"(el) {
+    const pop = $("#bk-time-pop");
+    if (!pop) return;
+    pop.hidden = !pop.hidden;
+    el.setAttribute("aria-expanded", String(!pop.hidden));
+    el.classList.toggle("open", !pop.hidden);
+    if (!pop.hidden && !$("#bk-allday")?.checked) requestAnimationFrame(() => setWheel($("#bk-time")?.value || "09:00"));
+  },
   "todo-toggle"(el) {
     const c = car();
     const t = (c.todos || []).find((x) => x.id === el.dataset.id);
@@ -5340,6 +5358,7 @@ function onChange(ev) {
     const wheel = $("#bk-wheel"), hid = $("#bk-time");
     if (wheel) wheel.hidden = ev.target.checked;
     if (hid) hid.value = ev.target.checked ? "" : "09:00";
+    const btn = $("#bk-time-btn"); if (btn) btn.textContent = ev.target.checked ? "Heldag" : "09:00";
     if (!ev.target.checked) requestAnimationFrame(() => setWheel("09:00"));
   }
   if (ev.target.dataset?.pushKind) { setPushPref(ev.target.dataset.pushKind, ev.target.checked); return; }
