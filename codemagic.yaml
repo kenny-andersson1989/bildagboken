@@ -1,0 +1,16 @@
+# iPhone-appen byggs hos Codemagic och skickas till App Store Connect (TestFlight).
+# Starta ett bygge under Codemagic → Bildagboken → Start new build.
+# Nycklarna ligger i Codemagic under Environment variables, gruppen "appstore".
+workflows:
+  iphone:
+    name: iPhone-appen till TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      groups:
+        - appstore
+      node: 22
+      xcode: latest
+    scripts:
+      - name: Bygg och skicka till App Store Connect
+        script: BUILD_NUMBER=$((PROJECT_BUILD_NUMBER + 10)) native/build-ios.sh
