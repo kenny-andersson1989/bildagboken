@@ -148,7 +148,6 @@ export const EN = {
   "Vad gjordes": "What was done",
   "Körsträcka": "Distance",
   "Laddar upp": "Uploading",
-  "Logga igen": "Log again",
   "Oftast hos": "Usually at",
   "Översikten": "Overview",
   "Sluta dela": "Stop sharing",
