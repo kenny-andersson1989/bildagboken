@@ -874,6 +874,8 @@ export const EN = {
   "På": "On",
   "januari": "January", "februari": "February", "mars": "March", "april": "April", "maj": "May", "juni": "June", "juli": "July", "augusti": "August", "september": "September", "oktober": "October", "november": "November", "december": "December",
   "Språk": "Language",
+  "Kostnad per månad de senaste sex månaderna": "Cost per month for the last six months",
+  "Valfritt, till exempel Halvförsäkring 2027": "Optional, for example Partial cover 2027",
   "Datumet är framåt i tiden. Vill du boka en tid i stället?": "The date is in the future. Do you want to book a time instead?",
   "Lägg in som bokad tid": "Add as a booking",
   "Datum och tid": "Date and time",
@@ -962,4 +964,6 @@ export const EN_RULES = [
   [/\b(\d+) st\b/g, "$1"],
   [/\b(\d+) av (\d+)\b/g, "$1 of $2"],
   [/\bkl (\d{1,2}:\d{2})\b/g, "at $1"],
+  [/\bför ([\d  ,]+) kr\b/g, "for $1 kr"],
+  [/\b(\d+) nya\b/g, "$1 new"],
 ];
