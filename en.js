@@ -874,6 +874,8 @@ export const EN = {
   "På": "On",
   "januari": "January", "februari": "February", "mars": "March", "april": "April", "maj": "May", "juni": "June", "juli": "July", "augusti": "August", "september": "September", "oktober": "October", "november": "November", "december": "December",
   "Språk": "Language",
+  "Till exempel Bilprovningen Mölndal": "For example Bilprovningen Mölndal",
+  "besiktningsstation": "inspection station",
   "Påslagna på den här enheten. Välj vad du vill få notiser om": "On for this device. Choose what you want notifications about",
   "Stäng av alla notiser på den här enheten": "Turn off all notifications on this device",
   "Datum att hålla koll på": "Dates to keep track of",
