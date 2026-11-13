@@ -11,6 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { MAPKIT_TOKEN } from "./maps-config.js";
+import { CAR_MODELS } from "./car-models.js";
 
 const VERSION = "2.8";
 
@@ -1031,6 +1032,36 @@ function renderOnboarding(error = "") {
   if (join && !window.matchMedia("(pointer: coarse)").matches) $("#ob-code")?.focus();
 }
 
+// Förslag på märke och modell. Märken och modeller som redan finns i hushållet kommer först.
+const findMake = (m) => Object.keys(CAR_MODELS).find((k) => k.toLowerCase() === String(m || "").trim().toLowerCase()) || null;
+const modelList = (make) => (CAR_MODELS[findMake(make)] || []).map((x) => { const [name, fuel] = x.split(":"); return { name, fuel: fuel || null }; });
+function makeOptions() {
+  const own = [...new Set(S.cars.map((c) => c.make).filter(Boolean))];
+  return [...own, ...Object.keys(CAR_MODELS).filter((k) => !own.includes(k))].map((k) => `<option value="${esc(k)}"></option>`).join("");
+}
+function modelOptions(make) {
+  const own = S.cars.filter((c) => findMake(c.make) === findMake(make) && c.model).map((c) => c.model);
+  const list = [...new Set([...own, ...modelList(make).map((m) => m.name)])];
+  return list.map((m) => `<option value="${esc(m)}"></option>`).join("");
+}
+// När märke eller modell ändras: uppdatera modellförslagen och föreslå El för rena elbilar.
+function onCarNameInput(ev) {
+  if (ev.target.id === "cf-make") {
+    const dl = $("#dl-model");
+    if (dl) dl.innerHTML = modelOptions(ev.target.value);
+    const mk = findMake(ev.target.value);
+    if (mk && mk !== ev.target.value && ev.type === "change") ev.target.value = mk;
+  }
+  if (ev.target.id === "cf-model" || ev.target.id === "cf-make") {
+    const m = modelList($("#cf-make")?.value).find((x) => x.name.toLowerCase() === String($("#cf-model")?.value || "").trim().toLowerCase());
+    const fuel = $("#cf-fuel");
+    if (m?.fuel === "El" && fuel && !fuel.dataset.touched && fuel.value !== "El") { fuel.value = "El"; fuel.classList.add("auto-filled"); }
+  }
+  if (ev.target.id === "cf-fuel") ev.target.dataset.touched = "1";
+}
+document.addEventListener("input", onCarNameInput);
+document.addEventListener("change", onCarNameInput);
+
 // Formuläret för bilen är uppdelat i delar, så att varje "Ändra" bara visar sin egen del.
 const CAR_SECTIONS = {
   basic: "Uppgifter om bilen",
@@ -1051,9 +1082,11 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
   const parts = {};
   parts.basic = `
     <div class="row2">
-      ${inp("make", "Märke", c.make, 'required placeholder="Till exempel Volvo"')}
-      ${inp("model", "Modell", c.model, 'required placeholder="Till exempel V50"')}
+      ${inp("make", "Märke", c.make, 'required placeholder="Till exempel Volvo" list="dl-make" autocomplete="off"')}
+      ${inp("model", "Modell", c.model, 'required placeholder="Till exempel V50" list="dl-model" autocomplete="off"')}
     </div>
+    <datalist id="dl-make">${makeOptions()}</datalist>
+    <datalist id="dl-model">${modelOptions(c.make)}</datalist>
     <div class="row2">
       ${inp("year", "Årsmodell", c.year, 'inputmode="numeric" placeholder="Till exempel 2007"')}
       ${inp("engine", "Motor", c.engine, 'placeholder="Till exempel 1.8F"')}

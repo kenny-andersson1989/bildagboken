@@ -1,5 +1,5 @@
 // Service worker: gör att appen startar även utan nät och kan visa notiser.
-const CACHE = "bildagboken-v144";
+const CACHE = "bildagboken-v145";
 const SHELL = [
   "./",
   "./index.html",
@@ -7,6 +7,7 @@ const SHELL = [
   "./app.js",
   "./firebase-config.js",
   "./maps-config.js",
+  "./car-models.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/logo.svg",
