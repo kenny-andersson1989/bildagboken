@@ -96,7 +96,7 @@
 }
 
 /* segmented control (Utseende) */
-.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 16px; background: var(--track); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 4px; border-radius: 16px; background: var(--track); }
 .seg button { border: 0; background: none; padding: 10px 6px; border-radius: 12px; font: 600 13.5px var(--f-body); color: var(--ink-2); cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--glass-strong); color: var(--ink); box-shadow: var(--shadow); }
 
