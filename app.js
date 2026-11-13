@@ -3414,12 +3414,10 @@ function entryForm(type, e = {}, opts = {}) {
           return last.length ? `<div class="date-quick">${last.map((a) => `<button type="button" class="chip-btn" data-act="amount-quick" data-v="${esc(fmtKr(a))}">${esc(fmtKr(a))} kr</button>`).join("")}</div>` : "";
         })() : ""}
         <label class="check"><input type="checkbox" name="full" id="ef-full"${e.full === false ? "" : " checked"}> Tankade fullt</label>
+        ${placeField("station", "ef-station", e.station, "fuel", "Circle K Mölndal")}
         ${odo(false)}
         ${date}
-        ${more(`<div class="row2">
-              ${field("Drivmedel", `<select name="fuel" id="ef-fuel">${fuels.map((f) => `<option${(e.fuel || pref.get("fuel." + c.id) || fuels[0]) === f ? " selected" : ""}>${esc(f)}</option>`).join("")}</select>`)}
-              ${field("Station", geoInput("station", "ef-station", e.station, "fuel", ""))}
-            </div>`, !!e.station)}`;
+        ${more(field("Drivmedel", `<select name="fuel" id="ef-fuel">${fuels.map((f) => `<option${(e.fuel || pref.get("fuel." + c.id) || fuels[0]) === f ? " selected" : ""}>${esc(f)}</option>`).join("")}</select>`))}`;
       break;
     }
     case "matare":
@@ -3428,7 +3426,7 @@ function entryForm(type, e = {}, opts = {}) {
     // Samma ordning i alla formulär: vad → belopp → mätarställning → datum → detaljer.
     case "service":
       body = `${items}${parts}
-        ${field("Verkstad", `<input name="workshop" id="ef-workshop" value="${v("workshop")}" placeholder="Till exempel Mekonomen">`)}
+        ${placeField("workshop", "ef-workshop", e.workshop, "car_repair", "Mekonomen Mölndal")}
         ${amount("2 500")}${odo(false)}${date}${more()}`;
       break;
     case "eget":
@@ -3442,17 +3440,17 @@ function entryForm(type, e = {}, opts = {}) {
           <div id="ef-tirekind-box"${isSwap(actDefault) ? " hidden" : ""}>${field("Vilka däck?", `<select name="tireKind" id="ef-tireKind"><option value="">Välj</option><option value="sommar"${e.tireKind === "sommar" ? " selected" : ""}>Sommardäck</option><option value="vinter"${e.tireKind === "vinter" ? " selected" : ""}>Vinterdäck</option></select>`)}</div>
           ${field("Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}" placeholder="Valfritt">`)}
         </div>
-        ${field("Var", `<input name="place" id="ef-place" value="${v("place")}" placeholder="Valfritt, till exempel Mölndals däckservice" autocomplete="off">`)}
+        ${placeField("place", "ef-place", e.place, "tyres", "Däckia Mölndal")}
         ${amount("800")}${odo(false)}${date}${more()}`;
       break;
     }
     case "tvatt":
-      body = `${field("Var", geoInput("place", "ef-place", e.place ?? (e.id ? "" : pref.get("wash." + c.id) || ""), "car_wash", "Till exempel Circle K Mölndal"))}
+      body = `${placeField("place", "ef-place", e.place ?? (e.id ? "" : pref.get("wash." + c.id) || ""), "car_wash", "Circle K Mölndal")}
         ${amount("149")}
         ${date}${more()}`;
       break;
     case "parkering":
-      body = `${field("Var", geoInput("place", "ef-place", e.place, "parking", "Till exempel Kungsgatan, Göteborg"))}
+      body = `${placeField("place", "ef-place", e.place, "parking", "Kungsgatan, Göteborg")}
         ${amount("45")}
         <label class="check"><input type="checkbox" name="fine" id="ef-fine"${e.fine ? " checked" : ""}> P-bot eller felparkeringsavgift</label>
         ${!e.id ? `<label class="check"><input type="checkbox" name="recurring" id="ef-recurring"${opts.recurringId ? " checked" : ""}> Återkommande (hyrd plats)</label>
@@ -3471,7 +3469,7 @@ function entryForm(type, e = {}, opts = {}) {
         ? `<input type="hidden" name="category" id="ef-category" value="Besiktning">`
         : field("Typ", `<select name="category" id="ef-category">${COST_CATS.filter((k) => !["Tvätt", "Parkering", "Besiktning"].includes(k) || e.category === k).map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
         ${e.category === "Besiktning"
-          ? `${field("Var", geoInput("place", "ef-place", e.place || (e.title || "").replace(/^Besiktning hos /, "") || "", "vehicle_inspection", "Till exempel Bilprovningen Mölndal"))}
+          ? `${placeField("place", "ef-place", e.place || (e.title || "").replace(/^Besiktning hos /, "") || "", "vehicle_inspection", "Bilprovningen Mölndal")}
              <input type="hidden" name="title" value="${v("title")}">`
           : field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
         ${amount(e.category === "Besiktning" ? "520" : "3 200")}${date}
@@ -3787,6 +3785,10 @@ function mapChoiceDialog(title, q, apple, google) {
 /* ----------------------------------------------------------- plats (GPS) */
 
 // Textfält med en knapp som fyller i närmaste tvätt eller mack utifrån telefonens position.
+// Samma fält för plats i alla formulär: "Var", med knapp som hittar närmaste ställe av rätt sort.
+function placeField(name, id, value, kind, example) {
+  return field("Var", geoInput(name, id, value, kind, `Till exempel ${example}`));
+}
 function geoInput(name, id, value, kind, placeholder) {
   return `<span class="geo-row"><input name="${name}" id="${id}" value="${esc(value ?? "")}" placeholder="${esc(placeholder)}" autocomplete="off">
     <button class="geo-btn" type="button" data-act="geo-fill" data-kind="${kind}" data-target="${id}" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span>
@@ -3802,7 +3804,9 @@ const distM = (a, b) => {
 
 // Biltvättar eller mackar nära positionen, närmast först, från OpenStreetMap (Overpass).
 async function nearbyPlaces(kind, lat, lon, radius) {
-  const q = `[out:json][timeout:10];(node(around:${radius},${lat},${lon})[amenity=${kind}];way(around:${radius},${lat},${lon})[amenity=${kind}];);out center tags 20;`;
+  // Verkstäder och däckfirmor är butiker i OpenStreetMap, resten är "amenity".
+  const tag = ["car_repair", "tyres"].includes(kind) ? `shop=${kind}` : `amenity=${kind}`;
+  const q = `[out:json][timeout:10];(node(around:${radius},${lat},${lon})[${tag}];way(around:${radius},${lat},${lon})[${tag}];);out center tags 20;`;
   const res = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: "data=" + encodeURIComponent(q), headers: { "Content-Type": "application/x-www-form-urlencoded" } });
   if (!res.ok) throw new Error("overpass " + res.status);
   const j = await res.json();
@@ -4096,10 +4100,10 @@ async function saveEntry(form) {
 }
 
 // Var något gjordes: verkstaden, platsen eller namnet från bokningen.
-const PLACE_TYPES = ["service", "dack", "kostnad", "tvatt"];
+const PLACE_TYPES = ["tank", "service", "dack", "kostnad", "tvatt", "parkering"];
 function entryPlaceName(e) {
   if (!PLACE_TYPES.includes(e.type) && !e.loc) return "";
-  return e.loc?.name || e.workshop || e.place || (e.type === "kostnad" && e.category === "Besiktning" ? (e.title || "").replace(/^Besiktning hos /, "") : "") || "";
+  return e.loc?.name || e.workshop || e.station || e.place || (e.type === "kostnad" && e.category === "Besiktning" ? (e.title || "").replace(/^Besiktning hos /, "") : "") || "";
 }
 // Kartan i en post. Saknar posten position letas platsen upp i Apple Maps en gång och sparas.
 // En adress med gata och nummer, inte bara en ort ("Kråketorpsgatan 20, 431 53 Mölndal").
@@ -4129,7 +4133,8 @@ async function showEntryMap(e) {
         loc = hit
           ? clean({ name: e.loc?.name || name, addr: hit.addr, lat: hit.lat, lon: hit.lon, pid: hit.pid || null })
           : loc?.lat != null ? { ...loc, checked: true } : null;
-        if (loc) { updateDoc(ref("entries", e.id), { loc }).catch(onWriteError); e.loc = loc; }
+        // Återkommande parkeringar räknas fram och finns inte som egna poster, så där sparas inget.
+        if (loc) { if (!String(e.id).startsWith("rec:")) updateDoc(ref("entries", e.id), { loc }).catch(onWriteError); e.loc = loc; }
         // Visa adressen i listan ovanför kartan när den har hittats.
         const dd = [...document.querySelectorAll("#sheet .detail-list dt")].find((d) => d.textContent === "Adress");
         if (hit && dd) dd.nextElementSibling.textContent = hit.addr;
@@ -4162,10 +4167,8 @@ function openEntry(id, { fromCat = null } = {}) {
     e.liters != null ? ["Mängd", `${fmt(e.liters, 2)} ${/kWh/.test(e.fuel || "") ? "kWh" : "l"} ${e.fuel || ""}`] : null,
     e.pricePerL != null ? ["Pris", `${fmt(e.pricePerL, 2)} kr per enhet`] : null,
     e.type === "tank" ? ["Fulltankad", e.full ? "Ja" : "Nej"] : null,
-    e.station ? ["Station", e.station] : null,
-    e.place ? ["Plats", e.place] : null,
+    e.station || e.place || e.workshop ? ["Plats", e.station || e.place || e.workshop] : null,
     e.type === "parkering" && e.fine ? ["Typ", "P-bot eller felparkeringsavgift"] : null,
-    e.workshop ? ["Verkstad", e.workshop] : null,
     hasStreet(e.loc?.addr) ? ["Adress", e.loc.addr] : null,
     e.category && e.type === "kostnad" ? ["Typ", e.category] : null,
     e.depth != null ? ["Mönsterdjup", `${fmt(e.depth, 1)} mm`] : null,
@@ -4538,7 +4541,7 @@ const ACTIONS = {
     const input = document.getElementById(el.dataset.target);
     const picks = document.getElementById(el.dataset.target + "-picks");
     if (!input || el.disabled) return;
-    const what = { fuel: "mack", parking: "parkering", vehicle_inspection: "besiktningsstation" }[el.dataset.kind] || "biltvätt";
+    const what = { fuel: "mack", parking: "parkering", vehicle_inspection: "besiktningsstation", car_repair: "verkstad", tyres: "däckverkstad" }[el.dataset.kind] || "biltvätt";
     el.disabled = true;
     el.classList.add("busy");
     try {
