@@ -598,6 +598,31 @@ function suggestNextInspection(dateStr, c) {
   return next && next >= todayStr() ? next : "";
 }
 
+// Ny bil: uppskattad sista dag för nästa besiktning från senaste besiktningens månad,
+// eller från månaden bilen kom i trafik (första besiktningen inom 36 månader).
+// Första dagen i månaden används, så att förslaget hellre är för tidigt än för sent.
+function estimateInspection(month, notInspected, year) {
+  const m = String(month || "").match(/^(\d{4})-(\d{1,2})/);
+  if (!m) return "";
+  const first = `${m[1]}-${pad(Number(m[2]))}-01`;
+  if (notInspected) { const d = parseDate(first); return ymd(new Date(d.getFullYear(), d.getMonth() + 36, 1)); }
+  return nextInspectionDate(first, { year });
+}
+function updateInspectionEstimate() {
+  const out = $("#cf-bes-out"), not = $("#cf-notInspected")?.checked;
+  if (!out) return;
+  $("#cf-bes-label").textContent = tr(not ? "I trafik sedan" : "Senast besiktad");
+  const est = estimateInspection($("#cf-lastInspection").value, not, $("#cf-year")?.value);
+  out.classList.toggle("warn", !!est && est < todayStr());
+  out.textContent = !est
+    ? tr(not ? "Månaden bilen registrerades första gången. Nya bilar besiktas första gången inom tre år." : "Månaden räcker, den står i besiktningsprotokollet. Då föreslår appen när nästa besiktning senast ska vara gjord.")
+    : est < todayStr()
+      ? tr("Då borde bilen redan ha besiktats igen. Fyll i den senaste besiktningen, eller lägg in datumet under Bilen.")
+      : `${tr("Nästa besiktning senast")}: ${fmtDate(est)} (${tr("uppskattat")}). ${tr("Du får en påminnelse i god tid. Ändra under Bilen om det inte stämmer.")}`;
+}
+document.addEventListener("input", (ev) => { if (["cf-lastInspection", "cf-notInspected", "cf-year"].includes(ev.target.id)) updateInspectionEstimate(); });
+document.addEventListener("change", (ev) => { if (["cf-lastInspection", "cf-notInspected"].includes(ev.target.id)) updateInspectionEstimate(); });
+
 function nextInspectionDate(dateStr, c) {
   const d = parseDate(dateStr);
   if (!d) return "";
@@ -1097,7 +1122,13 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       ${inp("plate", "Registreringsnummer", c.plate, 'placeholder="Till exempel ABC 123" autocapitalize="characters"')}
     </div>
     ${isNew
-      ? inp("odometer", "Mätarställning (mil)", "", 'inputmode="numeric" placeholder="Till exempel 21 480"')
+      ? inp("odometer", "Mätarställning (mil)", "", 'inputmode="numeric" placeholder="Till exempel 21 480"') + `
+        <div class="field">
+          <span id="cf-bes-label">Senast besiktad</span>
+          <input type="month" name="lastInspection" id="cf-lastInspection" max="${todayStr().slice(0, 7)}" placeholder="ÅÅÅÅ-MM">
+          <label class="check"><input type="checkbox" name="notInspected" id="cf-notInspected"> Bilen är ny och har inte besiktats än</label>
+          <small id="cf-bes-out">Månaden räcker, den står i besiktningsprotokollet. Då föreslår appen när nästa besiktning senast ska vara gjord.</small>
+        </div>`
       : `<div class="field"><span>Mätarställning</span>
           <div class="odo-row"><b>${odoOf(c) != null ? `${fmt(odoOf(c))} mil` : "Inte angiven"}</b>
           <button class="btn-soft" type="button" data-act="odo-from-car">Uppdatera</button></div>
@@ -1168,7 +1199,7 @@ function renderCarSetup() {
     <form class="card form" data-form="car-new" data-keep>
       ${carFormFields({}, { sections: ["basic"], isNew: true })}
       <button class="btn primary block" type="submit">Spara bilen</button>
-      <p class="hint">Datum för besiktning, försäkring och däck lägger du till under Bilen efteråt.</p>
+      <p class="hint">Försäkring, skatt och däck lägger du till under Bilen efteråt.</p>
     </form>
     ${inviteCard()}`, { keepForm: true });
 }
@@ -4411,6 +4442,10 @@ function readCarForm(form) {
   }
   // Bara för en ny bil: blir bilens första loggpost.
   if (has("odometer")) data.odometer = num(fd.get("odometer"));
+  if (has("lastInspection")) {
+    const est = estimateInspection(str("lastInspection"), fd.get("notInspected") === "on", str("year"));
+    if (est && est >= todayStr()) data.besiktning = est;
+  }
   if (has("besiktning")) {
     Object.assign(data, {
       besiktning: str("besiktning") || null,
