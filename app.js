@@ -4092,7 +4092,7 @@ async function saveEntry(form) {
 }
 
 // Var något gjordes: verkstaden, platsen eller namnet från bokningen.
-const PLACE_TYPES = ["service", "dack", "kostnad"];
+const PLACE_TYPES = ["service", "dack", "kostnad", "tvatt"];
 function entryPlaceName(e) {
   if (!PLACE_TYPES.includes(e.type) && !e.loc) return "";
   return e.loc?.name || e.workshop || e.place || (e.type === "kostnad" && e.category === "Besiktning" ? (e.title || "").replace(/^Besiktning hos /, "") : "") || "";
