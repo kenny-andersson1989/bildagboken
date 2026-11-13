@@ -1840,12 +1840,14 @@ function shortcutsCard() {
   return `<div class="card">
     <h2>Genvägar</h2>
     <p class="muted">Länkar som öppnar ett formulär direkt. Lägg dem i appen Genvägar på iPhone och sedan på hemskärmen, så loggar du med ett tryck.</p>
+    <details class="more" style="margin-top:10px"><summary>Visa genvägarna</summary>
     <div class="rows" style="margin-top:8px">${SHORTCUTS.map(([k, l]) => `<div class="dl"><span class="dl-ic">${icon(k === "bokning" ? "calendar" : k === "meny" ? "plus" : TYPE[k].icon, 20)}</span>
       <span><span class="dl-t">${esc(l)}</span><span class="dl-s">${esc(shortcutUrl(k).replace(/^https?:\/\//, ""))}</span></span>
       <button class="link" type="button" data-act="copy-shortcut" data-id="${k}">Kopiera</button></div>`).join("")}</div>
     <details class="more" style="margin-top:12px"><summary>Så gör du på iPhone</summary>
       <ol class="steps"><li>Kopiera länken du vill ha.</li><li>Öppna appen <b>Genvägar</b> och tryck på plus.</li><li>Lägg till åtgärden <b>Öppna URL:er</b> och klistra in länken.</li><li>Tryck på dela-knappen och välj <b>Lägg till på hemskärmen</b>.</li></ol>
       <p class="hint">Länken öppnas i Safari. Första gången behöver du logga in där också, sedan kommer Safari ihåg dig.</p>
+    </details>
     </details>
   </div>`;
 }
@@ -2206,7 +2208,10 @@ function cardsSettingsCard(view = "oversikt") {
   const v = CARD_VIEWS[view];
   const { order, hidden } = cardPrefs(view);
   return `<div class="card">
-    <h2>${esc(v.title)}</h2>
+    <h2>Anpassa sidorna</h2>
+    <div class="seg" role="group" aria-label="Sida" style="margin-bottom:12px">
+      ${Object.entries(CARD_VIEWS).map(([k, x]) => `<button type="button" data-act="cards-view" data-v="${k}" aria-pressed="${k === view}">${esc(x.title)}</button>`).join("")}
+    </div>
     <p class="muted">Välj vilka kort som syns. Håll i handtaget och dra för att ändra ordningen.${view === "oversikt" ? " Du kan också hålla fingret på ett kort direkt på sidan." : ""} Gäller den här telefonen.</p>
     <div class="card-order" data-view="${view}">${order.map((k) => `<div class="card-row" data-key="${k}">
       <label class="check"><input type="checkbox" data-act="card-toggle" data-view="${view}" data-id="${k}"${hidden.includes(k) ? "" : " checked"}> ${esc(v.names[k])}</label>
@@ -2713,18 +2718,12 @@ function viewSettings() {
       <p class="hint" style="margin-top:8px">Den som har koden kan gå med. Byt kod om den har kommit på villovägar, då slutar den gamla att fungera.</p>
     </div>
     <div class="card">
-      <h2>Utseende</h2>
-      <div class="theme-grid" role="group" aria-label="Tema">
-        ${Object.entries(THEMES).map(([k, t]) => `<button class="theme-btn" type="button" data-act="theme" data-v="${k}" aria-pressed="${(pref.get("theme") || "auto") === k}">
-          <span class="theme-sw" style="background:${t.sw}" aria-hidden="true"><i style="background:${t.dot}"></i></span>${t.name}</button>`).join("")}
-      </div>
-      <p class="hint" style="margin-top:10px">Automatiskt följer telefonen: Ljust eller Mörkt beroende på om telefonen har mörkt läge påslaget.</p>
-    </div>
-    <div class="card">
-      <h2>Språk</h2>
-      <div class="seg" role="group" aria-label="Språk">
-        ${[["sv", "Svenska"], ["en", "English"]].map(([k, l]) => `<button type="button" data-act="lang" data-v="${k}" aria-pressed="${LANG === k}" data-notr>${l}</button>`).join("")}
-      </div>
+      <h2>Bilar</h2>
+      <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(carName(x))}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
+        <span class="row-actions">${x.id === S.carId ? `<span class="pill ok">Vald</span>` : `<button class="link" type="button" data-act="pick-car" data-id="${esc(x.id)}">Välj</button>`}
+        <button class="link danger" type="button" data-act="delete-car" data-id="${esc(x.id)}" aria-label="Ta bort ${esc(carName(x))}">Ta bort</button></span></div>`).join("")}</div>
+      <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för alla ni som delar bilen. Du får frågan en gång till innan något tas bort.</p>
+      <div class="ask"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>
     </div>
     <div class="card">
       <h2>Notiser</h2>
@@ -2737,21 +2736,25 @@ function viewSettings() {
           ${/iphone|ipad/i.test(navigator.userAgent) && !(window.matchMedia("(display-mode: standalone)").matches || navigator.standalone) ? `<p class="hint" style="margin-top:10px">På iPhone fungerar notiser bara när appen är tillagd på hemskärmen och öppnad därifrån.</p>` : ""}`}
     </div>
     <div class="card">
-      <h2>Bilar</h2>
-      <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(carName(x))}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
-        <span class="row-actions">${x.id === S.carId ? `<span class="pill ok">Vald</span>` : `<button class="link" type="button" data-act="pick-car" data-id="${esc(x.id)}">Välj</button>`}
-        <button class="link danger" type="button" data-act="delete-car" data-id="${esc(x.id)}" aria-label="Ta bort ${esc(carName(x))}">Ta bort</button></span></div>`).join("")}</div>
-      <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för alla ni som delar bilen. Du får frågan en gång till innan något tas bort.</p>
-      <div class="ask"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>
+      <h2>Utseende och språk</h2>
+      <div class="theme-grid" role="group" aria-label="Tema">
+        ${Object.entries(THEMES).map(([k, t]) => `<button class="theme-btn" type="button" data-act="theme" data-v="${k}" aria-pressed="${(pref.get("theme") || "auto") === k}">
+          <span class="theme-sw" style="background:${t.sw}" aria-hidden="true"><i style="background:${t.dot}"></i></span>${t.name}</button>`).join("")}
+      </div>
+      <p class="hint" style="margin-top:10px">Automatiskt följer telefonen: Ljust eller Mörkt beroende på om telefonen har mörkt läge påslaget.</p>
+      <p class="label" style="margin:16px 0 8px">Språk</p>
+      <div class="seg" role="group" aria-label="Språk">
+        ${[["sv", "Svenska"], ["en", "English"]].map(([k, l]) => `<button type="button" data-act="lang" data-v="${k}" aria-pressed="${LANG === k}" data-notr>${l}</button>`).join("")}
+      </div>
     </div>
-    ${cardsSettingsCard("oversikt")}
-    ${cardsSettingsCard("bilen")}
+    ${cardsSettingsCard(S.cardsView || "oversikt")}
     ${shortcutsCard()}
     <div class="card">
-      <h2>Säkerhetskopia</h2>
+      <h2>Dina uppgifter</h2>
       <p class="muted"><b>Loggen</b> som kalkylark, med bokade tider, för Excel eller Numbers. Bra att ha med vid försäljning av bilen.</p>
       <p class="muted"><b>Allt</b> i en fil: uppgifter, datum, däck, underhåll, anteckningar, bokningar och hela loggen. Bilder kommer inte med.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="export-log">Ladda ner loggen</button><button class="btn-soft" type="button" data-act="export-all">Ladda ner allt</button></div>
+      <div class="ask"><a class="link" href="integritet.html" target="_blank" rel="noopener">Så hanteras dina uppgifter</a></div>
     </div>
     <div class="card">
       <h2>Konto</h2>
@@ -2763,13 +2766,10 @@ function viewSettings() {
       }).join("")}</div>
       <p class="hint" style="margin-top:10px">Koppla både Google och Apple så kan du logga in med vilket du vill och ändå se samma bilar och logg.</p>
       <div class="ask"><button class="btn ghost block" type="button" data-act="logout">Logga ut</button></div>
-      <div class="ask" style="justify-content:space-between">
-        <a class="link" href="integritet.html" target="_blank" rel="noopener">Så hanteras dina uppgifter</a>
-        <button class="link danger" type="button" data-act="delete-account">Radera mitt konto</button>
-      </div>
+      <div class="ask"><button class="link danger" type="button" data-act="delete-account">Radera mitt konto</button></div>
     </div>
     ${isAdmin() ? `<div class="card"><h2>Användare</h2><p class="muted">Alla hushåll och användare, och vilka funktioner de använder. Bara du ser det här.</p><div class="ask"><button class="btn-soft" type="button" data-act="open-admin">Visa översikten</button></div></div>` : ""}
-    <p class="hint" style="text-align:center">Bildagboken ${VERSION}</p>`;
+    <p class="hint" style="text-align:center">Bildagboken ${VERSION} · <span>Frågor eller idéer?</span> <a class="link" href="mailto:kontakt@bildagboken.com" data-notr>kontakt@bildagboken.com</a></p>`;
 }
 
 /* ------------------------------------------------------------ pushnotiser */
@@ -4968,6 +4968,7 @@ const ACTIONS = {
       el.disabled = false;
     }
   },
+  "cards-view"(el) { S.cardsView = el.dataset.v; render(); },
   lang(el) {
     const v = el.dataset.v;
     if (v === LANG) return;
