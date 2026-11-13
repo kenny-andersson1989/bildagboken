@@ -1,87 +1,20 @@
-# Bygger iPhone-appen och skickar den till App Store Connect (TestFlight).
-# Körs när något under native/ ändras på main, eller för hand under Actions → iPhone-appen → Run workflow.
-# Själva innehållet hämtas från bildagboken.com, så vanliga ändringar i webbappen kräver ingen ny version.
+# Reserv: bygger iPhone-appen hos GitHub. Startas bara för hand (Actions → iPhone-appen → Run workflow).
+# Det vanliga bygget görs hos Codemagic (codemagic.yaml), eftersom GitHub inte ger kontot några Mac-maskiner.
 name: iPhone-appen
-on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ["native/**", ".github/workflows/ios.yml"]
-
-concurrency: { group: ios, cancel-in-progress: true }
-
+on: workflow_dispatch
 jobs:
   testflight:
     runs-on: macos-latest
     timeout-minutes: 60
-    env:
-      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-      ASC_KEY: ${{ secrets.ASC_KEY }}
-      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APP: native/ios/App
     steps:
       - uses: actions/checkout@v5
-
-      - name: Kontrollera att allt finns
-        id: check
-        run: |
-          miss=""
-          for v in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY TEAM_ID; do [ -n "${!v}" ] || miss="$miss $v"; done
-          [ -f "$APP/App/GoogleService-Info.plist" ] || miss="$miss GoogleService-Info.plist"
-          if [ -n "$miss" ]; then
-            echo "::warning::Inte klart att bygga än. Saknas:$miss"
-            [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && exit 1
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Välj senaste Xcode
-        if: steps.check.outputs.ready == 'true'
-        run: |
-          X=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
-          echo "Använder $X"; sudo xcode-select -s "$X"; xcodebuild -version
-
       - uses: actions/setup-node@v5
-        if: steps.check.outputs.ready == 'true'
         with: { node-version: 22 }
-
-      - name: Förbered projektet
-        if: steps.check.outputs.ready == 'true'
-        working-directory: native
-        run: npm ci && npx cap sync ios
-
-      - name: Nyckel till App Store Connect
-        if: steps.check.outputs.ready == 'true'
-        run: |
-          mkdir -p "$RUNNER_TEMP/keys"
-          printf '%s\n' "$ASC_KEY" > "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
-          echo "AUTH=-allowProvisioningUpdates -authenticationKeyPath $RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8 -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID" >> "$GITHUB_ENV"
-
-      - name: Bygg
-        if: steps.check.outputs.ready == 'true'
-        run: |
-          REV=$(/usr/libexec/PlistBuddy -c "Print :REVERSED_CLIENT_ID" "$APP/App/GoogleService-Info.plist")
-          xcodebuild -version
-          xcodebuild -project "$APP/App.xcodeproj" -scheme App -configuration Release \
-            -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/App.xcarchive" archive $AUTH \
-            DEVELOPMENT_TEAM="$TEAM_ID" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" GOOGLE_REVERSED_CLIENT_ID="$REV" \
-            | tail -n 80; exit ${PIPESTATUS[0]}
-
-      - name: Skicka till App Store Connect
-        if: steps.check.outputs.ready == 'true'
-        run: |
-          cat > "$RUNNER_TEMP/export.plist" <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>upload</string>
-            <key>signingStyle</key><string>automatic</string>
-            <key>teamID</key><string>$TEAM_ID</string>
-            <key>manageAppVersionAndBuildNumber</key><false/>
-          </dict></plist>
-          PLIST
-          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
-            -exportOptionsPlist "$RUNNER_TEMP/export.plist" -exportPath "$RUNNER_TEMP/export" $AUTH
+      - name: Bygg och skicka till App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY: ${{ secrets.ASC_KEY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUILD_NUMBER: ${{ github.run_number }}0
+        run: native/build-ios.sh
