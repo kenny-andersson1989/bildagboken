@@ -4114,6 +4114,9 @@ async function showEntryMap(e) {
     const name = entryPlaceName(e);
     if (!name || name === "Besiktning") { if (loc?.lat == null) return; }
     else {
+      // Visa att adressen letas upp, och säg till om den inte hittas, i stället för att inget händer.
+      const note = $("#en-map-note");
+      if (note) { note.hidden = false; note.textContent = "Letar upp adressen …"; }
       try {
         const city = loc?.addr && !hasStreet(loc.addr) ? loc.addr : "";
         let hit = null;
@@ -4132,7 +4135,14 @@ async function showEntryMap(e) {
         if (hit && dd) dd.nextElementSibling.textContent = hit.addr;
         else if (hit) document.querySelector("#sheet .detail-list")?.insertAdjacentHTML("beforeend", `<div><dt>Adress</dt><dd>${esc(hit.addr)}</dd></div>`);
         if (!hit) dd?.parentElement.remove();
-      } catch { if (loc?.lat == null) return; }
+        if (note) {
+          note.hidden = !!hit;
+          if (!hit) note.textContent = `Hittade ingen adress för ”${name}”. Tryck Ändra och skriv med orten, till exempel ”${name} Mölndal”.`;
+        }
+      } catch {
+        if (note) note.textContent = "Kunde inte leta upp adressen just nu. Öppna posten igen om en stund.";
+        if (loc?.lat == null) return;
+      }
     }
     if (!loc || loc.lat == null) return;
   }
@@ -4164,6 +4174,7 @@ function openEntry(id, { fromCat = null } = {}) {
   ].filter(Boolean);
   openSheet(entryTitle(e), `
     <dl class="detail-list">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
+    ${entryPlaceName(e) && e.loc?.lat == null ? `<p class="hint" id="en-map-note" hidden style="margin-top:10px"></p>` : ""}
     ${entryPlaceName(e) ? `<div class="bk-map" id="en-map"${e.loc?.lat != null ? "" : " hidden"} style="margin-top:14px">
       <div class="bk-map-inner" id="en-map-inner"></div>
       <button class="bk-map-open" type="button" data-act="entry-map" data-id="${esc(e.id)}" aria-label="Öppna platsen i en kartapp"><span>${icon("pin", 14)} Öppna i kartan</span></button>
