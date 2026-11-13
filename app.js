@@ -3400,7 +3400,10 @@ function removeBooking(carId, bookingId) {
 function entryForm(type, e = {}, opts = {}) {
   const c = car();
   const v = (k) => esc(e[k] ?? "");
-  const date = field("Datum", `<input type="date" name="date" id="ef-date" required value="${esc(e.date || todayStr())}">`);
+  // Väljer man ett datum framåt i tiden är det troligen en bokning: då visas en knapp som byter till Bokad tid.
+  const bookKind = { service: "service", dack: "dack" }[type] || (type === "kostnad" && e.category === "Besiktning" ? "besiktning" : null);
+  const date = field("Datum", `<input type="date" name="date" id="ef-date" required value="${esc(e.date || todayStr())}">`)
+    + (bookKind && !e.id ? `<div class="future-hint" id="ef-future" data-kind="${bookKind}" hidden><span>Datumet är framåt i tiden. Vill du boka en tid i stället?</span><button class="btn-soft" type="button" data-act="to-booking">${icon("calendar", 16)} Lägg in som bokad tid</button></div>` : "");
   const odo = (required = false) => field("Mätarställning (mil)", `<input name="odometer" id="ef-odometer" inputmode="numeric" ${required ? "required" : ""} placeholder="${odoOf(c) != null ? `Senast ${fmt(odoOf(c))}` : "Till exempel 21 480"}" value="${e.odometer ?? ""}">`);
   const amount = (example, label = "Kostnad (kr)", extra = "", hint = "") => field(label, `<input name="amount" id="ef-amount" inputmode="decimal"${extra} value="${e.amount ?? ""}" placeholder="Till exempel ${example}">`, hint);
   const note = field("Anteckning", `<textarea name="note" id="ef-note" rows="2">${v("note")}</textarea>`);
@@ -4535,6 +4538,14 @@ const ACTIONS = {
     });
   },
   "new-booking"() { bookingForm(); },
+  "to-booking"() {
+    // Ta med det som redan är ifyllt till formuläret för bokad tid.
+    const box = $("#ef-future");
+    const date = $("#ef-date")?.value || "";
+    const place = ($("#ef-workshop") || $("#ef-place"))?.value || "";
+    const note = $("#ef-note")?.value || "";
+    bookingForm({ kind: box?.dataset.kind || "service", date, place: place || undefined, note: note || undefined });
+  },
   "booking-calendar"(el) {
     const c = car();
     const b = (c.bookings || []).find((x) => x.id === el.dataset.id);
@@ -5304,6 +5315,7 @@ function updateNextInspection() {
 }
 
 function onInput(ev) {
+  if (ev.target.id === "ef-date" && $("#ef-future")) $("#ef-future").hidden = !(ev.target.value > todayStr());
   if (ev.isTrusted && ev.target.classList?.contains("from-receipt")) ev.target.classList.remove("from-receipt");
   if (ev.target.id === "ef-recurring") {
     const b = $("#ef-rec-box"); if (b) b.hidden = !ev.target.checked;
@@ -5353,6 +5365,7 @@ function onInput(ev) {
 }
 
 function onChange(ev) {
+  if (ev.target.id === "ef-date" && $("#ef-future")) $("#ef-future").hidden = !(ev.target.value > todayStr());
   if (ev.target.id === "bk-time-other") setBookingTime(ev.target.value);
   if (ev.target.id === "bk-allday") {
     const wheel = $("#bk-wheel"), hid = $("#bk-time");
