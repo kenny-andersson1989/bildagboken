@@ -4264,7 +4264,7 @@ function openEntry(id, { fromCat = null } = {}) {
       <button class="btn primary" type="button" data-act="edit-entry" data-id="${esc(e.id)}">Ändra</button>
       <button class="btn danger" type="button" data-act="delete-entry" data-id="${esc(e.id)}">Ta bort</button>
     </div>
-    ${e.recurringId || e._virtual ? "" : `<button class="btn ghost block" type="button" data-act="log-again" data-id="${esc(e.id)}" style="margin-top:10px">${icon("plus", 18)} Logga igen</button>`}`, fromCat?.startsWith("item:") ? { back: "edit-item", backId: fromCat.slice(5) } : fromCat?.startsWith("part:") ? { back: "open-part", backId: fromCat.slice(5) } : fromCat ? { back: "open-cat", backId: fromCat } : {});
+`, fromCat?.startsWith("item:") ? { back: "edit-item", backId: fromCat.slice(5) } : fromCat?.startsWith("part:") ? { back: "open-part", backId: fromCat.slice(5) } : fromCat ? { back: "open-cat", backId: fromCat } : {});
   if (entryPlaceName(e)) showEntryMap(e);
   if (e.photoId) {
     getDoc(ref("photos", e.photoId)).then((s) => {
@@ -4779,12 +4779,6 @@ const ACTIONS = {
     });
   },
   // Ny post med samma uppgifter som en tidigare, till exempel samma tvätt eller parkering. Datum, mätarställning och bild är nya.
-  "log-again"(el) {
-    const e = S.entries.find((x) => x.id === el.dataset.id);
-    if (!e) return;
-    const { id, date, odometer, photoId, createdAt, createdBy, tireAction, recurringId, ...rest } = e;
-    entryForm(e.type, rest, { back: "open-entry", backId: e.id });
-  },
   "photo-zoom"(el) { openLightbox(el.querySelector("img")?.src, el.querySelector("img")?.alt); },
   "lightbox-close"() { $("#lightbox")?.remove(); },
   "entry-map"(el) {
