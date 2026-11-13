@@ -1288,3 +1288,16 @@ div.koll-main { cursor: default; }
 .push-kind:first-child { border-top: 0; }
 .push-kind b { display: block; font: 600 15px var(--f-body); }
 .push-kind small { display: block; font-size: 13px; color: var(--ink-3); margin-top: 1px; }
+
+/* Bokning: datum och tid på en rad, tiden öppnar ett litet hjul */
+.dt-row { display: flex; gap: 8px; align-items: stretch; }
+.dt-row input[type=date] { flex: 1; min-width: 0; }
+.dt-time { flex: none; min-width: 92px; padding: 0 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--input); color: var(--ink); font: 600 16px var(--f-body); font-variant-numeric: tabular-nums; cursor: pointer; }
+.dt-time.open { border-color: var(--accent); color: var(--accent-text); box-shadow: 0 0 0 1px var(--accent) inset; }
+.dt-pop { margin-top: 8px; padding: 4px 10px 10px; border-radius: 16px; background: var(--input); border: 1px solid var(--line); }
+.dt-pop .ios-switch-row { min-height: 40px; padding: 4px 2px; }
+.wheel.compact { height: 120px; margin-top: 4px; background: none; border: 0; }
+.wheel.compact .wheel-col { height: 120px; }
+.wheel.compact .wheel-pad { height: 40px; }
+.wheel.compact .wheel-band { top: 40px; }
+.wheel.compact .wheel-item { font-size: 20px; }

@@ -874,6 +874,7 @@ export const EN = {
   "På": "On",
   "januari": "January", "februari": "February", "mars": "March", "april": "April", "maj": "May", "juni": "June", "juli": "July", "augusti": "August", "september": "September", "oktober": "October", "november": "November", "december": "December",
   "Språk": "Language",
+  "Datum och tid": "Date and time",
   "Letar upp adressen …": "Looking up the address …",
   "Kunde inte leta upp adressen just nu. Öppna posten igen om en stund": "Could not look up the address right now. Open the entry again in a while",
   "Hittade ingen adress för": "No address found for",
