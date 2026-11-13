@@ -1301,3 +1301,6 @@ div.koll-main { cursor: default; }
 .wheel.compact .wheel-pad { height: 40px; }
 .wheel.compact .wheel-band { top: 40px; }
 .wheel.compact .wheel-item { font-size: 20px; }
+
+/* Loggformulär med datum framåt i tiden: förslag att boka i stället */
+.future-hint { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 8px; padding: 12px 14px; border-radius: 14px; background: var(--accent-soft); font-size: 14px; color: var(--ink); }
