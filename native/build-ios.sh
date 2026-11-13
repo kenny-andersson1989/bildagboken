@@ -37,6 +37,14 @@ X=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
 xcodebuild -version
 command -v app-store-connect >/dev/null || pip3 install --quiet codemagic-cli-tools
 
+echo "▶ Kontrollerar nyckelns format (värdena visas inte)"
+ok() { [ "$1" = 0 ] && echo "  ✓ $2" || echo "  ✗ $2"; }
+[[ "$APP_STORE_CONNECT_KEY_IDENTIFIER" =~ ^[A-Z0-9]{10}$ ]]; ok $? "ASC_KEY_ID är 10 tecken, versaler och siffror (är ${#APP_STORE_CONNECT_KEY_IDENTIFIER} tecken)"
+[[ "$APP_STORE_CONNECT_ISSUER_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; ok $? "ASC_ISSUER_ID ser ut som 69a6de7c-…-…-…-… (är ${#APP_STORE_CONNECT_ISSUER_ID} tecken)"
+printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" | grep -q -- '-----BEGIN PRIVATE KEY-----'; ok $? "ASC_KEY börjar med -----BEGIN PRIVATE KEY-----"
+printf '%s\n' "$APP_STORE_CONNECT_PRIVATE_KEY" | openssl pkey -noout 2>/dev/null; ok $? "ASC_KEY går att läsa som nyckel"
+[ "$APP_STORE_CONNECT_KEY_IDENTIFIER" != "QR73ZL9K37" ]; ok $? "ASC_KEY_ID är inte notisnyckelns id"
+
 echo "▶ Kontrollerar nyckeln hos Apple"
 if ! app-store-connect apps list >/dev/null; then
   echo "❌ Apple godkänner inte nyckeln. Kontrollera att ASC_KEY_ID, ASC_ISSUER_ID och ASC_KEY hör till samma nyckel"
