@@ -2,7 +2,7 @@
 // skyddet ligger i säkerhetsreglerna (firestore.rules).
 export const firebaseConfig = {
   apiKey: "AIzaSyCFnuuAxGzKuof8loLse8VwNcVfII5kBog",
-  authDomain: "bildagboken-3f931.firebaseapp.com",
+  authDomain: "auth.bildagboken.com",
   projectId: "bildagboken-3f931",
   storageBucket: "bildagboken-3f931.firebasestorage.app",
   messagingSenderId: "1076414093587",
