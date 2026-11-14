@@ -3556,11 +3556,6 @@ function entryForm(type, e = {}, opts = {}) {
     case "tank": {
       const fuels = fuelOptions(c);
       body = `${amount("579", "Kostnad (kr)", " required", "Läs av pumpen med kameran: tryck i fältet, välj <b>Skanna text</b> och peka på totalsumman.")}
-        ${!e.id ? (() => {
-          const seen = new Set();
-          const last = S.entries.filter((x) => x.carId === c.id && x.type === "tank" && x.amount > 0).map((x) => x.amount).filter((a) => !seen.has(a) && seen.add(a)).slice(0, 3);
-          return last.length ? `<div class="date-quick">${last.map((a) => `<button type="button" class="chip-btn" data-act="amount-quick" data-v="${esc(fmtKr(a))}">${esc(fmtKr(a))} kr</button>`).join("")}</div>` : "";
-        })() : ""}
         <label class="check"><input type="checkbox" name="full" id="ef-full"${e.full === false ? "" : " checked"}> Tankade fullt</label>
         ${placeField("station", "ef-station", e.station, "fuel", "Circle K")}
         ${odo(false)}
@@ -4959,7 +4954,6 @@ const ACTIONS = {
     render();
     document.querySelector(`[data-act="card-move"][data-id="${el.dataset.id}"][data-d="${el.dataset.d}"]`)?.focus({ preventScroll: true });
   },
-  "amount-quick"(el) { const a = $("#ef-amount"); if (a) { a.value = el.dataset.v; a.dispatchEvent(new Event("input", { bubbles: true })); } },
   "edit-doc"(el) { const d = (car()?.docs || []).find((x) => x.id === el.dataset.id); if (d) docForm(d); },
   "hide-photos"() { S.showPhotos = false; render(); },
   async "show-photos"() { S.showPhotos = true; render(); await loadPhotoGrid(); },
