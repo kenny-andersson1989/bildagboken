@@ -3943,7 +3943,6 @@ function placeField(name, id, value, kind, example) {
 function geoInput(name, id, value, kind, placeholder) {
   return `<span class="geo-row"><input name="${name}" id="${id}" value="${esc(value ?? "")}" placeholder="${esc(placeholder)}" autocomplete="off">
     <button class="geo-btn" type="button" data-act="geo-fill" data-kind="${kind}" data-target="${id}" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span>
-    <span class="geo-picks" id="${id}-picks" hidden></span>
     <span class="suggest" id="${id}-suggest" role="listbox" hidden></span>`;
 }
 
@@ -4741,7 +4740,6 @@ const ACTIONS = {
     const what = { fuel: "mackar", parking: "parkeringar", vehicle_inspection: "besiktningsstationer", car_repair: "verkstäder", tyres: "däckverkstäder" }[kind] || "biltvättar";
     el.disabled = true;
     el.classList.add("busy");
-    document.getElementById(id + "-picks")?.setAttribute("hidden", "");
     // Visa direkt att något händer.
     if (box) { box.innerHTML = `<p class="hint">Söker närmaste ${what} …</p>`; box.hidden = false; }
     try {
@@ -4812,12 +4810,6 @@ const ACTIONS = {
   "map-choice-close"() {
     document.getElementById("map-choice")?.remove();
     document.getElementById("map-choice-scrim")?.remove();
-  },
-  "geo-pick"(el) {
-    const input = document.getElementById(el.dataset.target);
-    if (input) { input.value = el.dataset.v; input.dispatchEvent(new Event("input", { bubbles: true })); }
-    const picks = document.getElementById(el.dataset.target + "-picks");
-    if (picks) picks.hidden = true;
   },
   "toggle-koll"() { S.kollAll = !S.kollAll; render(); nudgeFixed(); },
   "toggle-maint"() { S.maintAll = !S.maintAll; render(); },

@@ -974,6 +974,7 @@ export const EN_RULES = [
   [/\bvar (\d+) år\b/g, "every $1 years"],
   [/\bvar (\d+) mån\b/g, "every $1 months"],
   [/\bför (.+?) sedan\b/g, "$1 ago"],
+  [/ för ([\d\s  ]+(?:,\d+)?) kr\b/g, " for $1 kr"],
   [/\b1 år\b/g, "1 year"],
   [/\b(\d+) år\b/g, "$1 years"],
   [/\b(\d+) mån\b/g, "$1 mo"],
