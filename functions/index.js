@@ -108,6 +108,8 @@ async function send(hid, tokenDocs, msg) {
       tokens: list.map((t) => t.token),
       data: { title: text.title, body: text.body, tag: msg.tag || "", url: msg.url || "./#oversikt" },
       webpush: { headers: { Urgency: "high", TTL: "43200" } },
+      // Android-appen: Android visar notisen själv.
+      android: { priority: "high", ttl: 43200000, notification: { title: text.title, body: text.body, color: "#E8711F", icon: "ic_stat_notify", ...(msg.tag ? { tag: msg.tag } : {}) } },
       // iPhone-appen: iOS visar notisen själv. Webbens adresser bryr sig inte om den här delen.
       apns: { headers: { "apns-priority": "10" }, payload: { aps: { alert: { title: text.title, body: text.body }, sound: "default", "thread-id": msg.tag || "bildagboken" } } },
     });
