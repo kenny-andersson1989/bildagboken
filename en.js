@@ -873,6 +873,7 @@ export const EN = {
   "På": "On",
   "januari": "January", "februari": "February", "mars": "March", "april": "April", "maj": "May", "juni": "June", "juli": "July", "augusti": "August", "september": "September", "oktober": "October", "november": "November", "december": "December",
   "Språk": "Language",
+  "Dra för att ange": "Drag to set",
   "Nästa besiktning senast": "Next inspection by",
   "Senast besiktad": "Last inspected",
   "I trafik sedan": "On the road since",

@@ -1296,3 +1296,15 @@ div.koll-main { cursor: default; }
 #cf-bes-out.warn { color: var(--warn, #b45309); }
 /* Med tangentbordet uppe: rutan står ovanför det, med rundade hörn och utan extra luft längst ner. */
 .sheet.kb { border-radius: 26px; padding-bottom: 16px; }
+
+/* Bränsle: en stapel med procenten i, röd när tanken är tom och grön när den är full. */
+.fuel-tile { gap: 8px; }
+.fuel-e { position: relative; height: 34px; margin-top: auto; border-radius: 17px; background: var(--track); overflow: hidden; cursor: ew-resize; touch-action: none; -webkit-user-select: none; user-select: none; }
+.fuel-e:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.fuel-e i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 17px; transition: width .08s linear, background .15s; }
+.fuel-ic { position: absolute; left: 0; top: 0; width: 34px; height: 34px; display: grid; place-items: center; color: #fff; z-index: 1; pointer-events: none; }
+.fuel-e.unset .fuel-ic { color: var(--ink-3); }
+.fuel-val { position: absolute; left: 31px; top: 0; bottom: 0; z-index: 1; display: flex; align-items: center; font: 800 15px var(--f-display); font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; pointer-events: none; }
+.fuel-val.out { color: var(--ink); }
+.fuel-e.unset .fuel-val { font: 600 12.5px var(--f-body); color: var(--ink-3); }
+.fuel-e em { position: absolute; right: 12px; top: 0; bottom: 0; display: flex; align-items: center; font-style: normal; font-size: 11px; font-weight: 600; color: var(--ink-3); pointer-events: none; }
