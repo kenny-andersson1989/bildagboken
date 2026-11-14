@@ -21,6 +21,8 @@ const OWNER = "mjQJQzsMCpVURkuVSyK5ctKVhG23";
     tokens: tokens.map((t) => t.token),
     data: { title: "Bildagboken", body: "Testnotis: pushnotiserna fungerar! 🎉", tag: "test", url: "./#oversikt" },
     webpush: { headers: { Urgency: "high" } },
+    apns: { headers: { "apns-priority": "10" }, payload: { aps: { alert: { title: "Bildagboken", body: "Testnotis: pushnotiserna fungerar! 🎉" }, sound: "default" } } },
+    android: { priority: "high", notification: { title: "Bildagboken", body: "Testnotis: pushnotiserna fungerar! 🎉", icon: "ic_stat_notify", color: "#E8711F" } },
   });
-  res.responses.forEach((r, i) => console.log(`${r.success ? "✓ Skickad" : "✗ Misslyckades"} · ${tokens[i].ua || "okänd enhet"}${r.error ? ` · ${r.error.code}` : ""}`));
+  res.responses.forEach((r, i) => console.log(`${r.success ? "✓ Skickad" : "✗ Misslyckades"} · ${tokens[i].platform === "ios" ? "iPhone-appen" : tokens[i].ua || "okänd enhet"}${r.error ? ` · ${r.error.code}` : ""}`));
 })().catch((e) => { console.error("Fel:", e.message); process.exit(1); });
