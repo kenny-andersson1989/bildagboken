@@ -3593,7 +3593,7 @@ function entryForm(type, e = {}, opts = {}) {
     <form class="form" data-form="entry" data-type="${type}"${isEdit ? ` data-id="${esc(e.id)}"` : ""}${opts.recurringId ? ` data-rec="${esc(opts.recurringId)}"` : ""}${opts.bookingId ? ` data-booking="${esc(opts.bookingId)}"` : ""} novalidate>
       ${!isEdit && RECEIPT_TYPES.includes(type) ? receiptButton() : ""}
       ${body}
-      ${e.loc ? `<input type="hidden" name="loc" value="${esc(JSON.stringify(e.loc))}">` : ""}
+      <input type="hidden" name="loc" id="ef-loc" value="${e.loc ? esc(JSON.stringify(e.loc)) : ""}">
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
     </form>`, opts.back ? { back: opts.back, backId: opts.backId } : isEdit ? { back: "open-entry", backId: e.id } : { back: opts.bookingId ? null : "new-entry" });
@@ -3615,6 +3615,10 @@ function entryForm(type, e = {}, opts = {}) {
 const PLACE_FIELDS = {
   poi: { input: "bk-place", box: "bk-suggest" },
   addr: { input: "bk-addr", box: "bk-addr-suggest" },
+  // Var-fälten i posterna söker företag på samma sätt.
+  "ef-station": { input: "ef-station", box: "ef-station-suggest", search: "poi" },
+  "ef-place": { input: "ef-place", box: "ef-place-suggest", search: "poi" },
+  "ef-workshop": { input: "ef-workshop", box: "ef-workshop-suggest", search: "poi" },
 };
 let placeTimer = null, placeAbort = null;
 function placeSearchSoon(kind) {
@@ -3675,13 +3679,14 @@ async function searchCenter() {
   const fresh = (p) => p && Date.now() - p.at < 30 * 60000;
   if (fresh(searchCenterCache)) return searchCenterCache;
   try { const saved = JSON.parse(pref.get("searchPos") || "null"); if (fresh(saved)) return (searchCenterCache = saved); } catch { /* inget sparat */ }
-  if (pref.get("searchPosDenied") !== "1" && "geolocation" in navigator) {
-    try {
-      const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: false, timeout: 6000, maximumAge: 10 * 60000 }));
+  // Positionen hämtas i bakgrunden, så att första sökningen inte behöver vänta på den.
+  if (pref.get("searchPosDenied") !== "1" && "geolocation" in navigator && !searchCenter.pending) {
+    searchCenter.pending = true;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      searchCenter.pending = false;
       searchCenterCache = { lat: pos.coords.latitude, lon: pos.coords.longitude, at: Date.now(), gps: true };
       pref.set("searchPos", JSON.stringify(searchCenterCache));
-      return searchCenterCache;
-    } catch (e) { if (e?.code === 1) pref.set("searchPosDenied", "1"); }
+    }, (e) => { searchCenter.pending = false; if (e?.code === 1) pref.set("searchPosDenied", "1"); }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 10 * 60000 });
   }
   // Mitten av de platser ni har sparat (bokningar och poster med position).
   const pts = [...S.cars.flatMap((c) => (c.bookings || []).filter((b) => b.lat != null).map((b) => [b.lat, b.lon])), ...S.entries.filter((e) => e.loc?.lat != null).map((e) => [e.loc.lat, e.loc.lon])];
@@ -3691,7 +3696,7 @@ async function searchCenter() {
   }
   return null;
 }
-async function appleSearch(kind, q) {
+async function appleSearch(kind, q, quick = false) {
   const mk = await loadMapKit();
   const center = await searchCenter();
   const region = center
@@ -3709,12 +3714,8 @@ async function appleSearch(kind, q) {
     try { search.autocomplete(q, (err, d) => resolve(err ? [] : d?.results || []), opts); } catch { resolve([]); }
   });
   const [direct, suggestions] = await Promise.all([run(q), suggest()]);
-  const extra = [];
-  for (const r of suggestions.slice(0, 4)) {
-    // Ett förslag utan position söks upp, så att det får adress och plats på kartan.
-    const places = await run(r);
-    if (places[0]) extra.push(places[0]);
-  }
+  // Ett förslag utan position söks upp, så att det får adress och plats på kartan. Alla samtidigt.
+  const extra = (await Promise.all(suggestions.slice(0, quick ? 3 : 4).map((r) => run(r).then((p) => p[0]).catch(() => null)))).filter(Boolean);
   const seenPlace = new Set();
   const places = [...direct, ...extra].filter((pl) => {
     const key = `${pl.name}|${pl.coordinate?.latitude?.toFixed?.(4)}|${pl.coordinate?.longitude?.toFixed?.(4)}`;
@@ -3756,8 +3757,9 @@ async function photonSearch(kind, q, signal) {
     });
 }
 
-async function placeSearch(kind, q) {
-  const f = PLACE_FIELDS[kind];
+async function placeSearch(field, q) {
+  const f = PLACE_FIELDS[field];
+  const kind = f.search || field;
   const input = document.getElementById(f.input), box = document.getElementById(f.box);
   if (!box || !input) return;
   placeAbort?.abort();
@@ -3765,7 +3767,7 @@ async function placeSearch(kind, q) {
   const signal = placeAbort.signal;
   try {
     let found;
-    try { found = await appleSearch(kind, q); } catch { found = null; }
+    try { found = await appleSearch(kind, q, field.startsWith("ef-")); } catch { found = null; }
     if (signal.aborted) return;
     // Hittar Apple inget, eller svarar inte, provas OpenStreetMap.
     if (!found || !found.length) found = await photonSearch(kind, q, signal).catch(() => found || []);
@@ -3773,7 +3775,8 @@ async function placeSearch(kind, q) {
     const seen = new Set();
     const list = found.filter((x) => x.title && !seen.has(x.title + x.sub) && seen.add(x.title + x.sub)).slice(0, 6);
     box.innerHTML = list.length
-      ? list.map((x) => `<button type="button" role="option" data-act="place-pick" data-kind="${kind}" data-name="${esc(x.name)}" data-addr="${esc(x.addr)}" data-lat="${x.lat ?? ""}" data-lon="${x.lon ?? ""}" data-pid="${esc(x.pid || "")}" data-tel="${esc(x.tel || "")}" data-src="${x.src || ""}"><b>${esc(x.title)}</b>${x.sub ? `<span>${esc(x.sub)}</span>` : ""}</button>`).join("")
+      ? list.map((x) => `<button type="button" role="option" data-act="place-pick" data-kind="${field}" data-name="${esc(x.name)}" data-addr="${esc(x.addr)}" data-lat="${x.lat ?? ""}" data-lon="${x.lon ?? ""}" data-pid="${esc(x.pid || "")}" data-tel="${esc(x.tel || "")}" data-src="${x.src || ""}"><b>${esc(x.title)}</b>${x.sub ? `<span>${esc(x.sub)}</span>` : ""}</button>`).join("")
+      : field.startsWith("ef-") ? `<p class="hint">Hittade inget med det namnet. Det du har skrivit sparas ändå.</p>`
       : `<p class="hint">${kind === "poi" ? "Hittade inget företag med det namnet. Skriv namnet själv och fyll i adressen nedanför." : "Hittade ingen adress. Skriv den själv, den kommer ändå med i kalendern."}</p>`;
     box.hidden = false;
     input.setAttribute("aria-expanded", "true");
@@ -3901,7 +3904,8 @@ function placeField(name, id, value, kind, example) {
 function geoInput(name, id, value, kind, placeholder) {
   return `<span class="geo-row"><input name="${name}" id="${id}" value="${esc(value ?? "")}" placeholder="${esc(placeholder)}" autocomplete="off">
     <button class="geo-btn" type="button" data-act="geo-fill" data-kind="${kind}" data-target="${id}" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span>
-    <span class="geo-picks" id="${id}-picks" hidden></span>`;
+    <span class="geo-picks" id="${id}-picks" hidden></span>
+    <span class="suggest" id="${id}-suggest" role="listbox" hidden></span>`;
 }
 
 const distM = (a, b) => {
@@ -4055,7 +4059,7 @@ async function saveEntry(form) {
   const str = (k) => String(fd.get(k) ?? "").trim();
   const data = { type, carId: existing?.carId || c.id, date: str("date") || todayStr(), note: str("note") || null };
   try { const l = JSON.parse(str("loc") || "null"); if (l && typeof l === "object") data.loc = l; } catch { /* ingen plats */ }
-  const typedPlace = str("workshop") || str("place");
+  const typedPlace = str("workshop") || str("place") || str("station");
   if (data.loc?.name && typedPlace && typedPlace !== data.loc.name) data.loc = null;
   data.odometer = num(fd.get("odometer"));
   if (fd.has("amount")) data.amount = num(fd.get("amount"));
@@ -4715,6 +4719,19 @@ const ACTIONS = {
   },
   "place-pick"(el) {
     const set = (id, v) => { const x = document.getElementById(id); if (x) x.value = v; };
+    const hideAll = () => Object.values(PLACE_FIELDS).forEach((x) => {
+      const b = document.getElementById(x.box); if (b) b.hidden = true;
+      document.getElementById(x.input)?.setAttribute("aria-expanded", "false");
+    });
+    // Var-fälten i en post: namnet i fältet, och platsen sparas med posten så att kartan blir rätt.
+    if (el.dataset.kind.startsWith("ef-")) {
+      const d = el.dataset;
+      set(d.kind, d.name);
+      const lat = num(d.lat), lon = num(d.lon);
+      set("ef-loc", lat != null && lon != null ? JSON.stringify(clean({ name: d.name, addr: d.addr || null, lat, lon, pid: d.pid || null })) : "");
+      hideAll();
+      return;
+    }
     if (el.dataset.kind === "poi") set("bk-place", el.dataset.name);
     // Ett företag utan adress i kartan lämnar en adress man redan har skrivit orörd.
     if (el.dataset.addr || el.dataset.kind === "addr") set("bk-addr", el.dataset.addr);
@@ -5443,6 +5460,7 @@ function onInput(ev) {
   }
   if (ev.target.id === "w-search") workSuggest(ev.target.value);
   if (ev.target.id === "bk-place") placeSearchSoon("poi");
+  if (["ef-station", "ef-place", "ef-workshop"].includes(ev.target.id)) placeSearchSoon(ev.target.id);
   if (ev.target.id === "bk-addr") {
     // Egen adress: positionen från ett tidigare förslag gäller inte längre.
     ["bk-lat", "bk-lon", "bk-pid", "bk-src"].forEach((id) => { const x = document.getElementById(id); if (x) x.value = ""; });
