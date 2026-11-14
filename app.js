@@ -4089,8 +4089,9 @@ function workRowHtml(r, w) {
     <span class="w-name">${esc(r.name)}</span>
     <span class="w-sel"><select class="w-action" aria-label="Vad gjordes med ${esc(r.name.toLowerCase())}">${Object.entries(WORK_ACTIONS).map(([k, l]) => `<option value="${k}"${action === k ? " selected" : ""}>${l}</option>`).join("")}</select>
     <select class="w-pos" aria-label="Var på bilen"${showPos ? "" : " hidden"}>${posOptions(r.itemId, sides, kind || (sides.some((x) => x === "Fram" || x === "Bak") ? "fb" : "corners"))}</select>
-    ${showPos || (r.itemId && NO_POSITION.includes(r.itemId)) ? "" : `<button class="link w-posbtn" type="button" data-act="w-pos-show">Var på bilen?</button>`}</span>
+    </span>
     <button class="w-del" type="button" data-act="w-remove" aria-label="Ta bort ${esc(r.name)}">${icon("close", 14)}</button>
+    ${showPos || (r.itemId && NO_POSITION.includes(r.itemId)) ? "" : `<button class="link w-posbtn" type="button" data-act="w-pos-show">Ange var på bilen</button>`}
   </div>`;
 }
 // Förslag under knappen: underhållspunkter som inte redan är tillagda.
@@ -4133,10 +4134,13 @@ function workSuggest(q) {
   const c = car();
   const itemHit = (c.items || []).find((i) => normWord(i.name) === t || nameMatchesItem(q, i));
   const known = extraParts(c).filter((x) => !present.has(x.key) && x.key.includes(t)).slice(0, 5);
-  const exact = known.some((x) => x.key === t) || itemHit;
+  // Det man skrivit går alltid att lägga till som egen del, utom när det är exakt samma namn som något som redan finns.
+  const exact = known.some((x) => x.key === t) || (itemHit && normWord(itemHit.name) === t) || present.has(t);
+  const itemThere = itemHit && present.has(`item:${itemHit.id}`);
   box.innerHTML = [
     ...known.map((x) => `<button type="button" data-act="w-add" data-name="${esc(x.name)}"><b>${esc(x.name)}</b><span>Använd förut</span></button>`),
-    itemHit && !present.has(`item:${itemHit.id}`) ? `<button type="button" data-act="w-add" data-item="${esc(itemHit.id)}" data-name="${esc(itemHit.name)}"><b>${esc(itemHit.name)}</b><span>Underhållspunkt</span></button>` : "",
+    itemHit && !itemThere ? `<button type="button" data-act="w-add" data-item="${esc(itemHit.id)}" data-name="${esc(itemHit.name)}"><b>${esc(itemHit.name)}</b><span>Underhållspunkt</span></button>` : "",
+    itemThere ? `<p class="hint">${esc(itemHit.name)} finns redan i listan ovanför.</p>` : "",
     !exact ? `<button type="button" data-act="w-add" data-name="${esc(q.trim().replace(/^./, (x) => x.toUpperCase()))}"><b>Lägg till ”${esc(q.trim())}”</b><span>Ny del</span></button>` : "",
   ].join("");
   box.hidden = !box.innerHTML;
