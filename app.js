@@ -1027,7 +1027,7 @@ function renderLogin(error = "") {
         ${ANDROID ? "" : `<button class="btn apple block" type="button" data-act="login" data-provider="apple">${icon("apple", 20)} Fortsätt med Apple</button>`}
         <button class="btn google block" type="button" data-act="login" data-provider="google">${icon("google", 20)} Fortsätt med Google</button>
         ${error ? `<p class="err">${esc(error)}</p>` : ""}
-        <p class="la-legal">Har du fått en inbjudan? Logga in först, sedan skriver du in koden.<br><a href="integritet.html" target="_blank" rel="noopener">Så hanteras dina uppgifter</a></p>
+        <p class="la-legal">Har du fått en inbjudan? Logga in först, sedan skriver du in koden.<br><a href="${LANG === "en" ? "privacy.html" : "integritet.html"}" target="_blank" rel="noopener">Så hanteras dina uppgifter</a></p>
       </div>
     </section>`);
 }
@@ -2803,7 +2803,7 @@ function viewSettings() {
       <p class="muted"><b>Loggen</b> som kalkylark, med bokade tider, för Excel eller Numbers. Bra att ha med vid försäljning av bilen.</p>
       <p class="muted"><b>Allt</b> i en fil: uppgifter, datum, däck, underhåll, anteckningar, bokningar och hela loggen. Bilder kommer inte med.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="export-log">Ladda ner loggen</button><button class="btn-soft" type="button" data-act="export-all">Ladda ner allt</button></div>
-      <div class="ask"><a class="link" href="integritet.html" target="_blank" rel="noopener">Så hanteras dina uppgifter</a></div>
+      <div class="ask"><a class="link" href="${LANG === "en" ? "privacy.html" : "integritet.html"}" target="_blank" rel="noopener">Så hanteras dina uppgifter</a></div>
     </div>
     <div class="card">
       <h2>Konto</h2>
