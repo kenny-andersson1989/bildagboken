@@ -14,3 +14,18 @@ workflows:
     scripts:
       - name: Bygg och skicka till App Store Connect
         script: BUILD_NUMBER=$((PROJECT_BUILD_NUMBER + 10)) native/build-ios.sh
+
+  android:
+    name: Android-appen till Google Play
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      groups:
+        - android
+      node: 22
+      java: 21
+    scripts:
+      - name: Bygg Android-appen
+        script: BUILD_NUMBER=$((PROJECT_BUILD_NUMBER + 10)) native/build-android.sh
+    artifacts:
+      - native/android/app/build/outputs/bundle/release/*.aab

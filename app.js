@@ -22,6 +22,8 @@ const VERSION = "2.8";
 // iPhone-appen (ett skal runt webbappen): inloggning och notiser går via iOS, eftersom Google
 // inte tillåter inloggning i en inbäddad webbläsare och webbnotiser inte finns där.
 const NATIVE = !!window.Capacitor?.isNativePlatform?.();
+// Android-appen: Apple-inloggning går inte smidigt där, så bara Google visas.
+const ANDROID = NATIVE && window.Capacitor?.getPlatform?.() === "android";
 const nativePlugin = (name) => window.Capacitor?.Plugins?.[name] || window.Capacitor?.registerPlugin?.(name);
 const LANG = (() => { try { return localStorage.getItem("bildagboken.lang") === "en" ? "en" : "sv"; } catch { return "sv"; } })();
 let EN = null, EN_RULES = [];
@@ -1022,7 +1024,7 @@ function renderLogin(error = "") {
         <div class="la-f"><span class="la-ic">${icon("car", 20)}</span><span><b>Dela med de du kör med</b><small>Familj eller den du delar bil med</small></span></div>
       </div>
       <div class="la-btns">
-        <button class="btn apple block" type="button" data-act="login" data-provider="apple">${icon("apple", 20)} Fortsätt med Apple</button>
+        ${ANDROID ? "" : `<button class="btn apple block" type="button" data-act="login" data-provider="apple">${icon("apple", 20)} Fortsätt med Apple</button>`}
         <button class="btn google block" type="button" data-act="login" data-provider="google">${icon("google", 20)} Fortsätt med Google</button>
         ${error ? `<p class="err">${esc(error)}</p>` : ""}
         <p class="la-legal">Har du fått en inbjudan? Logga in först, sedan skriver du in koden.<br><a href="integritet.html" target="_blank" rel="noopener">Så hanteras dina uppgifter</a></p>
@@ -2806,7 +2808,7 @@ function viewSettings() {
     <div class="card">
       <h2>Konto</h2>
       <p class="muted">Inloggad som ${esc(S.user.email || "")}</p>
-      <div class="rows" style="margin-top:8px">${Object.keys(PROVIDER_IDS).map((k) => {
+      <div class="rows" style="margin-top:8px">${Object.keys(PROVIDER_IDS).filter((k) => !(ANDROID && k === "apple" && !linkedProviders().includes(k))).map((k) => {
         const on = linkedProviders().includes(k);
         return `<div class="dl"><div class="dl-ic">${icon(k, 20)}</div><div><div class="dl-t">${PROVIDER_NAMES[k]}</div><div class="dl-s">${on ? "Kopplat, du kan logga in med det" : "Inte kopplat"}</div></div>
           ${on ? `<span class="pill ok">Kopplat</span>` : `<button class="link" type="button" data-act="link-provider" data-provider="${k}">Koppla</button>`}</div>`;
