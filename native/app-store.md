@@ -44,10 +44,11 @@ bil,logg,service,besiktning,tankning,däck,bilkostnad,verkstad,påminnelse,servi
 **Upphovsrätt:** 2026 Kenny Andersson
 
 ## App Review Information
-- **Inloggning krävs:** Ja. Apple vill kunna logga in. Skapa ett testhushåll och skriv i anteckningen:
-  "Logga in med Sign in with Apple med valfritt Apple-ID. Skapa ett hushåll med valfritt namn och lägg till en bil, så syns alla funktioner."
-  Då behövs inget användarnamn och lösenord (bocka ur "Sign-in required" om det går, annars skriv texten ovan i Notes).
-- **Kontakt:** ditt namn, telefon och kontakt@bildagboken.com
+- **Sign-in required:** bocka ur om det går. Annars: lämna användarnamn och lösenord tomma och klistra in texten nedan i **Notes**.
+- **Contact information:** ditt namn, telefonnummer och kontakt@bildagboken.com
+- **Notes** (på engelska, granskarna läser engelska):
+
+> Bildagboken is a shared car diary for a household. Sign in with "Sign in with Apple" using any Apple ID – no invitation or demo account is needed. After signing in, enter a name, create a household with any name, and add a car (for example Volvo V60). All features are then available: log refuelling, service and other costs with the + button, see upcoming bookings and reminders under Overview, costs under Costs, and car details, maintenance and tyres under Car. Push notifications can be turned on under Settings → Notifications. Account deletion is available under Settings → Account → Delete my account. The app requests location only when the user taps the pin button next to a "Where" field, to suggest the nearest petrol stations or workshops, and the camera only when the user adds a receipt or photo.
 
 ## App Privacy (Integritet)
 Data som samlas in: **Ja**. Inget används för spårning, och inget säljs.
@@ -64,4 +65,4 @@ Data som samlas in: **Ja**. Inget används för spårning, och inget säljs.
 **Integritetspolicy-URL:** https://bildagboken.com/integritet.html
 
 ## Skärmbilder
-iPhone 6,9" (1320 × 2868). Jag tar fram dem från appen.
+iPhone 6,9" (1320 × 2868), i mappen `app-store-bilder`. Ladda upp dem i ordning 1–6.
