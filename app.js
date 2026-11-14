@@ -159,6 +159,12 @@ const FUELS = ["Bensin", "Diesel", "Flexifuel (bensin/E85)", "Laddhybrid", "Hybr
 const COST_CATS = ["Försäkring", "Skatt", "Besiktning", "Parkering", "Tvätt", "Tillbehör", "Övrigt"];
 // Vid ett byte vet appen vilka däck det gäller, så frågan "Vilka däck?" behövs bara för övriga däckposter.
 const isSwap = (a) => a === "till_vinter" || a === "till_sommar";
+// Resultatet av en besiktning, som det står på protokollet.
+const INSP_RESULTS = { godkand: "Godkänd", anmarkning: "Godkänd med anmärkning", efterkontroll: "Underkänd, efterkontroll", korforbud: "Körförbud" };
+const INSP_SHORT = { godkand: "Godkänd", anmarkning: "Anmärkning", efterkontroll: "Efterkontroll", korforbud: "Körförbud" };
+const inspFailed = (r) => r === "efterkontroll" || r === "korforbud";
+const isInspection = (e) => e?.type === "kostnad" && e.category === "Besiktning";
+
 const TIRE_ACTIONS = {
   till_vinter: "Bytte till vinterdäck",
   till_sommar: "Bytte till sommardäck",
@@ -527,7 +533,7 @@ function entryDetail(e, c = car()) {
       const rule = e.recurringId ? (c?.recurring || []).find((x) => x.id === e.recurringId) : null;
       return [e.place, rule ? `återkommande, ${PERIODS[rule.period]?.toLowerCase()}` : "", e.note].filter(Boolean).join(" · ");
     }
-    case "kostnad": return e.title && e.category ? e.category : e.note || "";
+    case "kostnad": return isInspection(e) && e.result ? [INSP_RESULTS[e.result], e.defects?.length ? `${e.defects.length} ${e.defects.length === 1 ? "brist" : "brister"}` : ""].filter(Boolean).join(" · ") : e.title && e.category ? e.category : e.note || "";
     default: return "";
   }
 }
@@ -718,6 +724,10 @@ function deadlines(c) {
   if (c.besiktning && !booked) {
     const d = parseDate(c.besiktning);
     out.push({ key: "besiktning", date: d, calTitle: "Sista dag för besiktning", icon: "check", title: "Sista dag för besiktning", sub: [`Senast ${fmtDate(d)}`, c.besiktningPlats].filter(Boolean).join(" · "), place: c.besiktningPlats || null, days: daysUntil(d) });
+  }
+  if (c.efterkontroll?.by) {
+    const d = parseDate(c.efterkontroll.by);
+    out.push({ key: "efterkontroll", date: d, calTitle: "Efterkontroll på besiktningen", icon: "check", title: c.efterkontroll.result === "korforbud" ? "Efterkontroll (körförbud)" : "Efterkontroll", sub: `Senast ${fmtDate(d)}${c.besiktningPlats ? ` · ${c.besiktningPlats}` : ""}`, place: c.besiktningPlats || null, days: daysUntil(d), level: c.efterkontroll.result === "korforbud" || daysUntil(d) <= 7 ? "urgent" : undefined });
   }
   if (c.forsakringDatum) {
     const d = parseDate(c.forsakringDatum);
@@ -1468,7 +1478,7 @@ function inviteCard() {
 function todoItemsHtml(items) {
   return `<div class="todos">${items.map((t) => `<label class="todo${t.done ? " done" : ""}">
       <input type="checkbox" class="vh" data-act="todo-toggle" data-id="${esc(t.id)}"${t.done ? " checked" : ""}><span class="box" aria-hidden="true"></span>
-      <span class="todo-t">${esc(t.text)}</span><small>${esc(whoName(t.by))}</small></label>`).join("")}</div>`;
+      <span class="todo-t">${esc(t.text)}</span>${t.src === "besiktning" ? `<em class="todo-src">Besiktning</em>` : ""}<small>${esc(whoName(t.by))}</small></label>`).join("")}</div>`;
 }
 function todoFormHtml() {
   return `<form class="todo-add" data-form="todo" data-keep novalidate>
@@ -1623,7 +1633,7 @@ function serviceBookData(c) {
   const ents = carEntries().filter((e) => ["service", "eget", "dack"].includes(e.type) || (e.type === "kostnad" && e.category === "Besiktning"))
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const what = (e) => {
-    if (e.type === "kostnad") return ["Besiktning", e.title].filter(Boolean).join(" · ");
+    if (e.type === "kostnad") return [e.recheck ? "Efterkontroll" : "Besiktning", e.result ? INSP_RESULTS[e.result] : "", e.defects?.length ? `Brister: ${e.defects.join(", ")}` : ""].filter(Boolean).join(" · ");
     if (e.type === "dack") return [TIRE_ACTIONS[e.tireAction] || "Däck", e.tireBrand, e.tireSize, e.depth != null ? `${fmt(e.depth, 1)} mm` : ""].filter(Boolean).join(" · ");
     const w = workOf(e, c).map(workText).join(", ");
     return [e.type === "eget" ? e.title || "Eget jobb" : "Service", w].filter(Boolean).join(": ");
@@ -3529,12 +3539,13 @@ function deadlineSheet(key) {
   if (!x) return;
   const section = key === "dack" ? "tires" : "dates";
   const about = {
+    efterkontroll: "Bilen blev underkänd vid besiktningen och ska tillbaka för efterkontroll senast det här datumet. Åtgärda bristerna först, de finns i Att göra. När efterkontrollen är klar loggar ni den som en besiktning.",
     besiktning: "Det här är sista dagen bilen måste vara besiktigad. Datumet står i besiktningsprotokollet och hos Transportstyrelsen. När du har bokat en tid hos stationen, lägg in den som bokad tid, så visas den i stället.",
     forsakring: "Dagen då försäkringen förnyas. Bra tillfälle att jämföra priser några veckor innan.",
     skatt: "Månaden då fordonsskatten ska betalas, senast sista dagen i månaden. Den styrs av sista siffran i registreringsnumret, men går att ändra under Ändra datum.",
     dack: "Räknas ut från årstiden och vilka däck som sitter på.",
   }[key];
-  const removable = key === "besiktning" || key === "forsakring" || key === "skatt";
+  const removable = key === "besiktning" || key === "forsakring" || key === "skatt" || key === "efterkontroll";
   openSheet(x.title, `
     ${about ? `<p class="muted" style="margin:0 0 14px">${esc(about)}</p>` : ""}
     <dl class="detail-list">
@@ -3548,9 +3559,9 @@ function deadlineSheet(key) {
       })()}
     </dl>
     <div class="form" style="margin-top:18px">
-      ${key === "besiktning" ? `<button class="btn primary block" type="button" data-act="book-inspection">${icon("calendar", 18)} Lägg in bokad tid</button>` : ""}
-      <button class="btn ${key === "besiktning" ? "ghost" : "primary"} block" type="button" data-act="deadline-calendar" data-id="${esc(key)}">${icon("calendar", 18)} Lägg till i kalendern</button>
-      <button class="btn ghost block" type="button" data-act="edit-car" data-section="${section}">Ändra datum</button>
+      ${key === "besiktning" || key === "efterkontroll" ? `<button class="btn primary block" type="button" data-act="book-inspection">${icon("calendar", 18)} Lägg in bokad tid</button>` : ""}
+      <button class="btn ${key === "besiktning" || key === "efterkontroll" ? "ghost" : "primary"} block" type="button" data-act="deadline-calendar" data-id="${esc(key)}">${icon("calendar", 18)} Lägg till i kalendern</button>
+      ${key === "efterkontroll" ? "" : `<button class="btn ghost block" type="button" data-act="edit-car" data-section="${section}">Ändra datum</button>`}
       ${removable ? `<button class="btn danger block" type="button" data-act="deadline-remove" data-id="${esc(key)}">Ta bort datumet</button>` : ""}
       <p class="hint">Kalendern påminner dig en vecka innan.</p>
     </div>`);
@@ -3659,7 +3670,8 @@ function entryForm(type, e = {}, opts = {}) {
         ${e.category === "Besiktning"
           ? `${placeField("place", "ef-place", e.place || (e.title || "").replace(/^Besiktning hos /, "") || "", "vehicle_inspection", "Bilprovningen")}
              ${handlerField(e.handler ?? (e.id ? "" : lastHandler(e.place || (e.title || "").replace(/^Besiktning hos /, ""))))}
-             <input type="hidden" name="title" value="${v("title")}">`
+             <input type="hidden" name="title" value="${v("title")}">
+             ${inspectionFields(e, c)}`
           : field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
         ${amount(e.category === "Besiktning" ? "520" : "3 200")}${e.category === "Besiktning" ? odo(false) : ""}${date}
         ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast (valfritt)", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(suggestNextInspection(e.date || todayStr(), c)) : ""}">`, "Uträknat från besiktningens datum. Kontrollera mot protokollet.")}</div>
@@ -3980,6 +3992,18 @@ function mapChoiceDialog(title, q, apple, google) {
 // Textfält med en knapp som fyller i närmaste tvätt eller mack utifrån telefonens position.
 // Samma fält för plats i alla formulär: "Var", med knapp som hittar närmaste ställe av rätt sort.
 // Handläggare: den man hade kontakt med på verkstaden eller besiktningen.
+// Besiktningens resultat, brister och efterkontroll. Bristerna och efterkontrollen visas bara när de behövs.
+function inspectionFields(e, c) {
+  const res = e.result || "godkand";
+  const recheckBy = e.recheckBy || ymd(addMonths(parseDate(e.date || todayStr()), 1));
+  const pending = !e.id && c.efterkontroll?.by;
+  return `<div class="field"><span>Resultat</span>
+      <div class="seg res-seg" role="radiogroup" aria-label="Resultat">${Object.entries(INSP_SHORT).map(([k, l]) => `<label class="res-${k}"><input type="radio" class="vh" name="result" value="${k}"${res === k ? " checked" : ""}><span>${l}</span></label>`).join("")}</div></div>
+    ${pending ? `<label class="check"><input type="checkbox" name="recheck" id="ef-recheck" checked> Det här var efterkontrollen</label>` : e.recheck ? `<input type="hidden" name="recheck" value="on">` : ""}
+    <div id="ef-defects-box"${res === "godkand" ? " hidden" : ""}>${field("Brister", `<textarea name="defects" id="ef-defects" rows="3" placeholder="En brist per rad, till exempel Bromsskiva bak höger">${esc((e.defects || []).join("\n"))}</textarea>`, e.id ? "" : "Varje brist hamnar i Att göra, så att ni inte glömmer att åtgärda den.")}</div>
+    <div id="ef-recheck-box"${inspFailed(res) ? "" : " hidden"}>${field("Efterkontroll senast", `<input type="date" name="recheckBy" id="ef-recheckBy" value="${esc(recheckBy)}">`, "Står på protokollet. Appen påminner er i tid.")}</div>`;
+}
+
 const handlerField = (value, id = "ef-handler") => field("Handläggare", `<input name="handler" id="${id}" value="${esc(value || "")}" placeholder="Valfritt, till exempel Johan" autocomplete="off">`);
 // Senaste handläggaren på samma ställe, så att den kan föreslås.
 function lastHandler(place) {
@@ -4325,7 +4349,15 @@ async function saveEntry(form) {
       data.title = str("title") || null;
       data.place = data.category === "Besiktning" ? str("place") || null : null;
       if (data.amount == null && data.category !== "Besiktning") return formError("Fyll i kostnaden.");
-      if (data.category === "Besiktning" && str("nextBesiktning") && str("nextBesiktning") <= data.date) return formError("Nästa besiktning ska ligga efter den här.");
+      if (data.category === "Besiktning") {
+        data.result = str("result") || "godkand";
+        data.defects = data.result === "godkand" ? null : str("defects").split(/\n+/).map((x) => x.trim()).filter(Boolean);
+        if (data.defects && !data.defects.length) data.defects = null;
+        data.recheckBy = inspFailed(data.result) ? str("recheckBy") || null : null;
+        data.recheck = fd.get("recheck") === "on" || null;
+        if (data.recheckBy && data.recheckBy <= data.date) return formError("Efterkontrollen ska ligga efter besiktningen.");
+        if (!inspFailed(data.result) && str("nextBesiktning") && str("nextBesiktning") <= data.date) return formError("Nästa besiktning ska ligga efter den här.");
+      }
       break;
   }
 
@@ -4363,6 +4395,7 @@ async function saveEntry(form) {
   // Håll bilens uppgifter i takt med loggen.
   const carTarget = S.cars.find((x) => x.id === data.carId) || c;
   const carUpdate = {};
+  let extraNote = "";
   if (type === "dack" && !existing) {
     if (data.tireAction === "till_vinter") carUpdate.tiresOn = "vinter";
     if (data.tireAction === "till_sommar") carUpdate.tiresOn = "sommar";
@@ -4388,14 +4421,34 @@ async function saveEntry(form) {
   }
   // Gjord besiktning: flytta "Besiktning senast" till nästa datum.
   // Bara om det nya datumet är senare än det som redan finns, så att en gammal besiktning inte flyttar sista dagen bakåt.
-  if (type === "kostnad" && data.category === "Besiktning" && str("nextBesiktning") && str("nextBesiktning") > (carTarget.besiktning || "")) carUpdate.besiktning = str("nextBesiktning");
+  if (type === "kostnad" && data.category === "Besiktning") {
+    // Godkänd: nästa besiktning sätts och en väntande efterkontroll är klar. Underkänd: efterkontrollen läggs in.
+    if (!inspFailed(data.result) && str("nextBesiktning") && str("nextBesiktning") > (carTarget.besiktning || "")) carUpdate.besiktning = str("nextBesiktning");
+    if (inspFailed(data.result) && data.recheckBy) carUpdate.efterkontroll = { by: data.recheckBy, result: data.result, date: data.date };
+    else if (carTarget.efterkontroll && (data.recheck || !existing)) carUpdate.efterkontroll = deleteField();
+    // Bristerna läggs i Att göra, utan dubbletter.
+    if (data.defects?.length) {
+      const todos = [...(carTarget.todos || [])];
+      const have = new Set(todos.filter((t) => !t.done).map((t) => normWord(t.text)));
+      const add = data.defects.filter((d) => !have.has(normWord(d))).map((d) => ({ id: "t" + randomId(8), text: d, done: false, by: uid(), at: Date.now(), src: "besiktning" }));
+      if (add.length) { carUpdate.todos = [...todos, ...add]; extraNote = `${add.length === 1 ? "Bristen" : `${add.length} brister`} har lagts i Att göra.`; }
+    }
+  }
+  // Service som byter en del bockar av samma brist från besiktningen i Att göra.
+  if ((type === "service" || type === "eget") && data.work?.length && (carTarget.todos || []).some((t) => t.src === "besiktning" && !t.done)) {
+    const stem = (x) => normWord(x).slice(0, 6);
+    const names = data.work.map((w) => stem(w.name)).filter((x) => x.length >= 4);
+    let n = 0;
+    const todos = (carUpdate.todos || carTarget.todos).map((t) => (t.src === "besiktning" && !t.done && names.some((x) => stem(t.text).startsWith(x) || x.startsWith(stem(t.text))) ? (n++, { ...t, done: true, doneAt: Date.now(), doneBy: uid() }) : t));
+    if (n) { carUpdate.todos = todos; extraNote = n === 1 ? "En brist från besiktningen är avbockad i Att göra." : `${n} brister från besiktningen är avbockade i Att göra.`; }
+  }
   if (form.dataset.booking) {
     carUpdate.bookings = (carTarget.bookings || []).filter((x) => x.id !== form.dataset.booking);
   }
   if (Object.keys(carUpdate).length) updateDoc(ref("cars", carTarget.id), carUpdate).catch(onWriteError);
 
   closeSheet();
-  showToast(existing ? "Ändringen är sparad" : `${TYPE[type].label} sparad${type === "tank" ? ". De andra ser den direkt." : ""}`);
+  showToast(extraNote ? `${existing ? "Ändringen är sparad" : `${isInspection(data) ? "Besiktning" : TYPE[type].label} sparad`}. ${extraNote}` : existing ? "Ändringen är sparad" : `${TYPE[type].label} sparad${type === "tank" ? ". De andra ser den direkt." : ""}`, extraNote ? 6000 : undefined);
   if (!existing && S.view !== "oversikt" && S.view !== "logg") setView("logg");
 }
 
@@ -4471,7 +4524,10 @@ function openEntry(id, { fromCat = null } = {}) {
     e.handler ? ["Handläggare", e.handler] : null,
     e.type === "parkering" && e.fine ? ["Typ", "P-bot eller felparkeringsavgift"] : null,
     hasStreet(e.loc?.addr) ? ["Adress", e.loc.addr] : null,
-    e.category && e.type === "kostnad" ? ["Typ", e.category] : null,
+    e.category && e.type === "kostnad" ? ["Typ", e.recheck ? "Besiktning, efterkontroll" : e.category] : null,
+    isInspection(e) && e.result ? ["Resultat", INSP_RESULTS[e.result]] : null,
+    isInspection(e) && e.defects?.length ? ["Brister", e.defects.join("\n")] : null,
+    isInspection(e) && e.recheckBy ? ["Efterkontroll senast", fmtDate(e.recheckBy)] : null,
     e.tireBrand ? ["Märke", e.tireBrand] : null,
     e.tireSize ? ["Dimension", e.tireSize] : null,
     e.tireYear ? ["Tillverkningsår", e.tireYear] : null,
@@ -4957,7 +5013,7 @@ const ACTIONS = {
   "book-inspection"() { bookingForm({ kind: "besiktning" }); },
   "deadline-remove"(el) {
     const key = el.dataset.id;
-    const fields = { besiktning: { besiktning: null }, forsakring: { forsakringDatum: null }, skatt: { skattManad: "av" } }[key];
+    const fields = { besiktning: { besiktning: null }, forsakring: { forsakringDatum: null }, skatt: { skattManad: "av" }, efterkontroll: { efterkontroll: null } }[key];
     if (!fields) return;
     const c = car(), carId = S.carId;
     const before = Object.fromEntries(Object.keys(fields).map((k) => [k, c[k] ?? null]));
@@ -5712,6 +5768,13 @@ function onChange(ev) {
   if (ev.target.id === "ef-tireAction") {
     const box = $("#ef-tirekind-box"); if (box) box.hidden = isSwap(ev.target.value);
     const nb = $("#ef-newtire-box"); if (nb) nb.hidden = ev.target.value !== "nya";
+  }
+  if (ev.target.name === "result" && $("#ef-defects-box")) {
+    const r = ev.target.value;
+    $("#ef-defects-box").hidden = r === "godkand";
+    $("#ef-recheck-box").hidden = !inspFailed(r);
+    // Nästa besiktning sätts först när bilen är godkänd.
+    const nb = $("#ef-next-besikt"); if (nb && !$("#ef-old-besikt:not([hidden])")) nb.hidden = inspFailed(r);
   }
   if (ev.target.id === "ef-tireKind") { const sb = $("#ef-studded-box"); if (sb) sb.hidden = ev.target.value !== "vinter"; }
   if (ev.target.id === "ef-scan") { scanReceipt(ev.target.files?.[0]); ev.target.value = ""; }
