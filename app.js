@@ -292,6 +292,16 @@ function profileFor(c) {
   return PROFILES.find((p) => p.test(c)) || null;
 }
 
+// Bilar som skapades innan AC-service och bilbatteri fanns får dem en gång.
+function addNewItems(cars) {
+  for (const c of cars) {
+    if (!Array.isArray(c.items) || c.itemsV >= 2 || c.metadata?.hasPendingWrites) continue;
+    const add = [{ id: "ac", name: "AC-service", mil: null, months: 24 }, { id: "batteri", name: "Bilbatteri", mil: null, months: 60 }].filter((x) => !c.items.some((i) => i.id === x.id));
+    c.itemsV = 2;
+    updateDoc(doc(db, "households", S.hid, "cars", c.id), { items: [...c.items, ...add], itemsV: 2 }).catch(() => {});
+  }
+}
+
 function defaultItems(c) {
   const el = isElectric(c), diesel = isDiesel(c), flex = isFlex(c);
   const p = profileFor(c);
@@ -302,6 +312,8 @@ function defaultItems(c) {
   if (!el && !diesel) items.push({ id: "tandstift", name: "Tändstift", mil: flex ? 3000 : 6000, months: 72 });
   items.push({ id: "bromsvatska", name: "Bromsvätska", mil: null, months: 24 });
   items.push({ id: "torkare", name: "Torkarblad", mil: null, months: 12 });
+  items.push({ id: "ac", name: "AC-service", mil: null, months: 24 });
+  items.push({ id: "batteri", name: "Bilbatteri", mil: null, months: 60 });
   if (!el && !(p && p.chain)) items.push({ id: "kamrem", name: "Kamrem", mil: 12000, months: 120 });
   return items;
 }
@@ -425,7 +437,17 @@ function sidesText(sides) {
   return out.join(", ");
 }
 // Punkter där sida eller position inte har betydelse.
-const NO_POSITION = ["olja", "luftfilter", "kupefilter", "bromsvatska", "kamrem", "tandstift"];
+const NO_POSITION = ["olja", "luftfilter", "kupefilter", "bromsvatska", "kamrem", "tandstift", "ac", "batteri"];
+// Menyn "Var på bilen" visas bara för delar som sitter på flera ställen. Appen känner igen dem på namnet.
+// Allt annat (AC, batteri, vätskor, filter och liknande) får en liten länk för att ange det ändå.
+const POS_FRONTBACK = /torkar|lamp|lykt|strålkastar|blinker/i;
+const POS_CORNERS = /broms(?!vätsk)|belägg|skiv|bromsok|däck|hjul|fälg|stötdämp|dämpare|fjäder|länkarm|bussning|drivknut|drivaxel|spindel|styrled|kulled|krängning/i;
+function posKind(itemId, name) {
+  if (itemId && NO_POSITION.includes(itemId)) return null;
+  if (itemId === "torkare" || POS_FRONTBACK.test(name || "")) return "fb";
+  if (POS_CORNERS.test(name || "")) return "corners";
+  return null;
+}
 function workOf(e, c = car()) {
   if (Array.isArray(e.work)) return e.work;
   const items = c?.items || [];
@@ -3145,7 +3167,7 @@ function typePicker() {
 }
 
 // Förslag i textfälten från det ni har skrivit förut: verkstäder, mackar och platser, de vanligaste först.
-const SUGGEST_FIELDS = { "ef-workshop": ["workshop"], "ef-station": ["station"], "ef-place": ["place"] };
+const SUGGEST_FIELDS = { "ef-workshop": ["workshop"], "ef-station": ["station"], "ef-place": ["place"], "ef-handler": ["handler"] };
 function attachSuggestions(form, type) {
   for (const [id, keys] of Object.entries(SUGGEST_FIELDS)) {
     const input = form.querySelector("#" + id);
@@ -3220,6 +3242,7 @@ function bookingForm(b = {}) {
         <input type="hidden" name="placeSrc" id="bk-src" value="${esc(b.geoSrc || "")}">
         <span class="suggest" id="bk-addr-suggest" role="listbox" hidden></span>`, "Med gatuadress hittar kartan rätt när bokningen ligger i kalendern.")}
       ${field("Telefon", `<input type="tel" name="phone" id="bk-phone" value="${esc(b.phone || "")}" placeholder="Fylls i från kartan om det finns" autocomplete="off">`)}
+      ${handlerField(b.handler ?? lastHandler(b.place), "bk-handler")}
       <div class="bk-map" id="bk-map" hidden>
         <div class="bk-map-inner" id="bk-map-inner"></div>
         <button class="bk-map-open" type="button" data-act="map-open" aria-label="Öppna platsen i en kartapp"><span>${icon("pin", 14)} Öppna i kartan</span></button>
@@ -3330,7 +3353,7 @@ function saveBooking(form, wantCalendar = false) {
     id, kind: str("kind") || "service", date, time: time || null, place: str("place") || null,
     addr: str("placeAddr") || null, lat: lat ?? null, lon: lon ?? null,
     placeId: lat != null ? str("placeId") || null : null, geoSrc: lat != null ? str("placeSrc") || null : null,
-    note: str("note") || null, phone: str("phone") || null,
+    note: str("note") || null, phone: str("phone") || null, handler: str("handler") || null,
     // Vem som bokade och när behålls när bokningen ändras (visas under Senaste).
     createdBy: prev?.createdBy || uid(), createdAt: prev?.createdAt || Date.now(),
   });
@@ -3365,17 +3388,17 @@ function exportLog() {
     const t = typeof v === "number" ? String(v).replace(".", ",") : String(v);
     return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
   };
-  const head = ["Bil", "Reg.nr", "Datum", "Typ", "Vad", "Detaljer", "Belopp (kr)", "Mätarställning (mil)", "Mängd", "Drivmedel", "Verkstad", "Station eller plats", "Anteckning", "Loggad av"];
+  const head = ["Bil", "Reg.nr", "Datum", "Typ", "Vad", "Detaljer", "Belopp (kr)", "Mätarställning (mil)", "Mängd", "Drivmedel", "Verkstad", "Station eller plats", "Handläggare", "Anteckning", "Loggad av"];
   const rows = [...S.entries, ...S.cars.flatMap((x) => recurringEntries(x))].sort((a, b) => (a.date || "").localeCompare(b.date || "")).map((e) => {
     const c = S.cars.find((x) => x.id === e.carId);
     return [
       c ? carName(c) : "Borttagen bil", c?.plate, e.date, TYPE[e.type]?.label || e.type, entryTitle(e), entryDetail(e, c),
-      e.amount, e.odometer, e.liters, e.fuel, e.workshop, e.station || e.place, e.note, memberName(e.createdBy),
+      e.amount, e.odometer, e.liters, e.fuel, e.workshop, e.station || e.place, e.handler, e.note, memberName(e.createdBy),
     ].map(cell).join(";");
   });
   const bookRows = bookings.sort((x, y) => (x.b.date || "").localeCompare(y.b.date || "")).map(({ c, b }) => [
     carName(c), c.plate, b.date, "Bokad tid", BOOK_KINDS[b.kind] || "Bokning", [b.time ? `kl ${b.time}` : "", b.addr].filter(Boolean).join(" · "),
-    "", "", "", "", "", b.place, b.note, memberName(b.createdBy),
+    "", "", "", "", "", b.place, b.handler, b.note, memberName(b.createdBy),
   ].map(cell).join(";"));
   downloadFile(`Bildagboken ${todayStr()}.csv`, "﻿" + [head.join(";"), ...rows, ...bookRows].join("\r\n"), "text/csv;charset=utf-8");
   showToast(`Loggen är nedladdad (${S.entries.length} poster${bookings.length ? ` och ${bookings.length} bokade tider` : ""}).`);
@@ -3570,6 +3593,7 @@ function entryForm(type, e = {}, opts = {}) {
     case "service":
       body = `${items}${parts}
         ${placeField("workshop", "ef-workshop", e.workshop, "car_repair", "Mekonomen")}
+        ${handlerField(e.handler ?? (e.id ? "" : lastHandler(e.workshop)))}
         ${amount("2 500")}${odo(false)}${date}${more()}`;
       break;
     case "eget":
@@ -3613,6 +3637,7 @@ function entryForm(type, e = {}, opts = {}) {
         : field("Typ", `<select name="category" id="ef-category">${COST_CATS.filter((k) => !["Tvätt", "Parkering", "Besiktning"].includes(k) || e.category === k).map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
         ${e.category === "Besiktning"
           ? `${placeField("place", "ef-place", e.place || (e.title || "").replace(/^Besiktning hos /, "") || "", "vehicle_inspection", "Bilprovningen")}
+             ${handlerField(e.handler ?? (e.id ? "" : lastHandler(e.place || (e.title || "").replace(/^Besiktning hos /, ""))))}
              <input type="hidden" name="title" value="${v("title")}">`
           : field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
         ${amount(e.category === "Besiktning" ? "520" : "3 200")}${date}
@@ -3932,6 +3957,30 @@ function mapChoiceDialog(title, q, apple, google) {
 
 // Textfält med en knapp som fyller i närmaste tvätt eller mack utifrån telefonens position.
 // Samma fält för plats i alla formulär: "Var", med knapp som hittar närmaste ställe av rätt sort.
+// Handläggare: den man hade kontakt med på verkstaden eller besiktningen.
+const handlerField = (value, id = "ef-handler") => field("Handläggare", `<input name="handler" id="${id}" value="${esc(value || "")}" placeholder="Valfritt, till exempel Johan" autocomplete="off">`);
+// Senaste handläggaren på samma ställe, så att den kan föreslås.
+function lastHandler(place) {
+  const p = String(place || "").trim().toLowerCase();
+  if (!p) return "";
+  const hits = [
+    ...S.entries.filter((e) => e.handler && [e.workshop, e.place].some((x) => String(x || "").trim().toLowerCase() === p)).map((e) => [e.date || "", e.handler]),
+    ...S.cars.flatMap((c) => (c.bookings || []).filter((b) => b.handler && String(b.place || "").trim().toLowerCase() === p).map((b) => [b.date || "", b.handler])),
+  ].sort((a, b) => b[0].localeCompare(a[0]));
+  return hits[0]?.[1] || "";
+}
+function suggestHandler(placeId, handlerId) {
+  const h = document.getElementById(handlerId), pl = document.getElementById(placeId);
+  if (!h || !pl || h.dataset.touched || h.value.trim()) return;
+  const name = lastHandler(pl.value);
+  if (name) { h.value = name; h.classList.add("auto-filled"); }
+}
+document.addEventListener("input", (ev) => { if (["ef-handler", "bk-handler"].includes(ev.target.id) && ev.isTrusted) ev.target.dataset.touched = "1"; });
+document.addEventListener("change", (ev) => {
+  if (["ef-workshop", "ef-place"].includes(ev.target.id)) suggestHandler(ev.target.id, "ef-handler");
+  if (ev.target.id === "bk-place") suggestHandler("bk-place", "bk-handler");
+});
+
 function placeField(name, id, value, kind, example) {
   return field("Var", geoInput(name, id, value, kind, `Till exempel ${example}`));
 }
@@ -4011,9 +4060,9 @@ async function appleNearby(kind, lat, lon) {
 }
 
 // En rad i "Det här gjordes": namnet, vad som gjordes och var på bilen (menyer), och ett kryss för att ta bort raden.
-function posOptions(itemId, chosen) {
+function posOptions(itemId, chosen, kind = itemId === "torkare" ? "fb" : "corners") {
   const val = (a) => a.join("|");
-  const opts = itemId === "torkare"
+  const opts = kind === "fb"
     ? [["Fram", ["Fram"]], ["Bak", ["Bak"]], ["Fram och bak", ["Fram", "Bak"]]]
     : [["Fram", ["Vänster fram", "Höger fram"]], ["Bak", ["Vänster bak", "Höger bak"]], ["Alla fyra", CORNERS], ...CORNERS.map((x) => [x, [x]])];
   const cur = val([...chosen].sort());
@@ -4022,13 +4071,16 @@ function posOptions(itemId, chosen) {
   return all.map(([l, a]) => `<option value="${esc(val(a))}"${val([...a].sort()) === cur ? " selected" : ""}>${esc(l)}</option>`).join("");
 }
 function workRowHtml(r, w) {
-  const showPos = !(r.itemId && NO_POSITION.includes(r.itemId));
+  const kind = posKind(r.itemId, r.name);
+  const sides = sidesOf(w);
+  const showPos = !!kind || sides.length > 0;
   const action = w?.action || "bytt";
   return `<div class="work-row" data-key="${esc(r.key)}" data-item="${esc(r.itemId || "")}" data-name="${esc(r.name)}">
     <input type="checkbox" class="w-on vh" checked tabindex="-1" aria-hidden="true">
     <span class="w-name">${esc(r.name)}</span>
     <span class="w-sel"><select class="w-action" aria-label="Vad gjordes med ${esc(r.name.toLowerCase())}">${Object.entries(WORK_ACTIONS).map(([k, l]) => `<option value="${k}"${action === k ? " selected" : ""}>${l}</option>`).join("")}</select>
-    ${showPos ? `<select class="w-pos" aria-label="Var på bilen">${posOptions(r.itemId, sidesOf(w))}</select>` : ""}</span>
+    <select class="w-pos" aria-label="Var på bilen"${showPos ? "" : " hidden"}>${posOptions(r.itemId, sides, kind || (sides.some((x) => x === "Fram" || x === "Bak") ? "fb" : "corners"))}</select>
+    ${showPos || (r.itemId && NO_POSITION.includes(r.itemId)) ? "" : `<button class="link w-posbtn" type="button" data-act="w-pos-show">Var på bilen?</button>`}</span>
     <button class="w-del" type="button" data-act="w-remove" aria-label="Ta bort ${esc(r.name)}">${icon("close", 14)}</button>
   </div>`;
 }
@@ -4120,6 +4172,7 @@ async function saveEntry(form) {
   if (data.loc?.name && typedPlace && typedPlace !== data.loc.name) data.loc = null;
   data.odometer = num(fd.get("odometer"));
   if (fd.has("amount")) data.amount = num(fd.get("amount"));
+  if (fd.has("handler")) data.handler = str("handler") || null;
 
   if (data.odometer != null && (data.odometer < 0 || data.odometer > 200000)) return formError("Mätarställningen ser fel ut. Ange den i mil, till exempel 21 480.");
   // Varna om mätarställningen är lägre än den senaste (vanligt när man tappar en siffra).
@@ -4338,6 +4391,7 @@ function openEntry(id, { fromCat = null } = {}) {
     e.pricePerL != null ? ["Pris", `${fmt(e.pricePerL, 2)} kr per enhet`] : null,
     e.type === "tank" ? ["Fulltankad", e.full ? "Ja" : "Nej"] : null,
     e.station || e.place || e.workshop ? ["Plats", e.station || e.place || e.workshop] : null,
+    e.handler ? ["Handläggare", e.handler] : null,
     e.type === "parkering" && e.fine ? ["Typ", "P-bot eller felparkeringsavgift"] : null,
     hasStreet(e.loc?.addr) ? ["Adress", e.loc.addr] : null,
     e.category && e.type === "kostnad" ? ["Typ", e.category] : null,
@@ -4782,6 +4836,7 @@ const ACTIONS = {
       set(d.kind, d.name);
       const lat = num(d.lat), lon = num(d.lon);
       set("ef-loc", lat != null && lon != null ? JSON.stringify(clean({ name: d.name, addr: d.addr || null, lat, lon, pid: d.pid || null })) : "");
+      suggestHandler(d.kind, "ef-handler");
       hideAll();
       return;
     }
@@ -4793,6 +4848,7 @@ const ACTIONS = {
     set("bk-pid", el.dataset.pid || "");
     set("bk-src", el.dataset.src || "");
     if (el.dataset.tel && !$("#bk-phone")?.value.trim()) set("bk-phone", el.dataset.tel);
+    if (el.dataset.kind === "poi") suggestHandler("bk-place", "bk-handler");
     showBookingMap();
     Object.values(PLACE_FIELDS).forEach((x) => {
       const b = document.getElementById(x.box); if (b) b.hidden = true;
@@ -4805,6 +4861,11 @@ const ACTIONS = {
   "map-choice-close"() {
     document.getElementById("map-choice")?.remove();
     document.getElementById("map-choice-scrim")?.remove();
+  },
+  "w-pos-show"(el) {
+    const sel = el.closest(".work-row")?.querySelector(".w-pos");
+    if (sel) { sel.hidden = false; sel.focus(); }
+    el.remove();
   },
   "toggle-koll"() { S.kollAll = !S.kollAll; render(); nudgeFixed(); },
   "toggle-maint"() { S.maintAll = !S.maintAll; render(); },
@@ -4861,11 +4922,11 @@ const ACTIONS = {
     switch (b.kind) {
       case "service":
       case "reparation":
-        return entryForm("service", { date, workshop: b.place, note, loc, title: b.kind === "reparation" ? "Reparation" : null }, { bookingId: b.id });
+        return entryForm("service", { date, workshop: b.place, note, loc, handler: b.handler || null, title: b.kind === "reparation" ? "Reparation" : null }, { bookingId: b.id });
       case "dack":
         return entryForm("dack", { date, place: b.place || null, note, loc }, { bookingId: b.id });
       case "besiktning":
-        return entryForm("kostnad", { date, category: "Besiktning", title: b.place ? `Besiktning hos ${b.place}` : "Besiktning", note, loc }, { bookingId: b.id });
+        return entryForm("kostnad", { date, category: "Besiktning", title: b.place ? `Besiktning hos ${b.place}` : "Besiktning", note, loc, handler: b.handler || null }, { bookingId: b.id });
       default:
         removeBooking(c.id, b.id);
         closeSheet();
@@ -5393,6 +5454,7 @@ async function saveNewCar(form) {
   const full = {
     ...clean(data),
     items: defaultItems(data),
+    itemsV: 2,
     specsText: SPEC_TEMPLATE,
     tiresOn: new Date().getMonth() >= 11 || new Date().getMonth() <= 2 ? "vinter" : "sommar",
     tires: [],
@@ -5707,6 +5769,7 @@ function subscribe(hid) {
       const saved = pref.get("car");
       S.carId = S.cars.find((c) => c.id === saved)?.id || S.cars[0]?.id || null;
     }
+    addNewItems(S.cars);
     checkFuelChanges(S.cars, !S.loaded.cars);
     checkNewBookings(S.cars, !S.loaded.cars);
     S.loaded.cars = true;
