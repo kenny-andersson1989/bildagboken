@@ -3037,19 +3037,25 @@ window.visualViewport?.addEventListener("resize", () => setTimeout(nudgeFixed, 6
 function fitSheet() {
   const vv = window.visualViewport;
   if (!vv || sheet.hidden) return;
+  // iPhone skjuter undan hela sidan för att visa fältet. Sidan bakom är låst, så den förskjutningen tas bort.
+  if (lockedY != null && window.scrollY !== 0) window.scrollTo(0, 0);
   const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
-  if (kb < 80) { sheet.style.bottom = ""; sheet.style.maxHeight = ""; sheet.classList.remove("kb"); return; }
-  sheet.style.bottom = kb + "px";
-  sheet.style.maxHeight = `calc(${Math.round(vv.height)}px - env(safe-area-inset-top, 0px) - 8px)`;
-  sheet.classList.add("kb");
+  const typing = sheet.contains(document.activeElement) && document.activeElement.matches("input:not([type=checkbox]):not([type=radio]):not([type=file]), textarea");
+  sheet.style.bottom = kb > 0 ? kb + "px" : "";
+  // Aldrig högre än den synliga ytan, minus klockraden överst.
+  sheet.style.maxHeight = `min(90vh, calc(${Math.round(vv.height)}px - env(safe-area-inset-top, 0px) - 8px))`;
+  sheet.classList.toggle("kb", typing && vv.height < window.screen.height * 0.75);
 }
 window.visualViewport?.addEventListener("resize", fitSheet);
 window.visualViewport?.addEventListener("scroll", fitSheet);
 // Fältet man skriver i flyttas fram i rutan när tangentbordet har kommit upp.
 sheet.addEventListener("focusin", (ev) => {
   if (!ev.target.matches?.("input, textarea, select")) return;
-  setTimeout(() => { fitSheet(); ev.target.scrollIntoView({ block: "center", behavior: "smooth" }); }, 350);
+  fitSheet();
+  setTimeout(fitSheet, 150);
+  setTimeout(() => { fitSheet(); ev.target.scrollIntoView({ block: "center", behavior: "smooth" }); }, 400);
 });
+sheet.addEventListener("focusout", () => setTimeout(fitSheet, 150));
 window.addEventListener("pageshow", nudgeFixed);
 
 // Sidan bakom rutan ska stå still. På iPhone räcker inte overflow: hidden, så sidan låses på sin plats.
@@ -3969,8 +3975,32 @@ async function reverseAddress(lat, lon) {
 function currentPosition() {
   return new Promise((resolve, reject) => {
     if (!("geolocation" in navigator)) return reject({ code: "unsupported" });
-    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+    // En position från de senaste två minuterna duger, så att svaret kommer direkt.
+    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 8000, maximumAge: 120000 });
   });
+}
+const fmtDist = (m) => (m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0).replace(".", ",")} km`);
+
+// De närmaste ställena av ett slag från Apple Maps, närmast först, med namn, adress och plats.
+async function appleNearby(kind, lat, lon) {
+  const mk = await loadMapKit();
+  const word = { fuel: "bensinstation", parking: "parkering", car_wash: "biltvätt", car_repair: "bilverkstad", tyres: "däckverkstad", vehicle_inspection: "bilbesiktning" }[kind] || "bilverkstad";
+  const cat = { fuel: "GasStation", parking: "Parking", car_repair: "AutomotiveRepair", car_wash: "CarWash" }[kind];
+  const opts = { language: "sv-SE", region: new mk.CoordinateRegion(new mk.Coordinate(lat, lon), new mk.CoordinateSpan(0.05, 0.09)) };
+  const c = cat && mk.PointOfInterestCategory?.[cat];
+  if (c && mk.PointOfInterestFilter?.including) opts.pointOfInterestFilter = mk.PointOfInterestFilter.including([c]);
+  const search = new mk.Search(opts);
+  const places = await new Promise((resolve) => {
+    const t = setTimeout(() => resolve([]), 8000);
+    try { search.search(word, (err, d) => { clearTimeout(t); resolve(err ? [] : d?.places || []); }, { limitToCountries: "SE" }); } catch { clearTimeout(t); resolve([]); }
+  });
+  const seen = new Set();
+  return places.filter((pl) => pl.name && pl.coordinate).map((pl) => ({
+    name: pl.name,
+    addr: stripCountry(pl.formattedAddress) || "",
+    lat: pl.coordinate.latitude, lon: pl.coordinate.longitude, pid: pl.id || "",
+    d: distM({ lat, lon }, { lat: pl.coordinate.latitude, lon: pl.coordinate.longitude }),
+  })).filter((x) => x.d < 15000 && !seen.has(x.name + x.addr) && seen.add(x.name + x.addr)).sort((a, b) => a.d - b.d);
 }
 
 // En rad i "Det här gjordes": namnet, vad som gjordes och var på bilen (menyer), och ett kryss för att ta bort raden.
@@ -4691,47 +4721,44 @@ const ACTIONS = {
     addToCalendar(deadlineEvent(x, c));
   },
   async "geo-fill"(el) {
-    const input = document.getElementById(el.dataset.target);
-    const picks = document.getElementById(el.dataset.target + "-picks");
+    const id = el.dataset.target, kind = el.dataset.kind;
+    const input = document.getElementById(id);
+    const box = document.getElementById(id + "-suggest");
     if (!input || el.disabled) return;
-    const what = { fuel: "mack", parking: "parkering", vehicle_inspection: "besiktningsstation", car_repair: "verkstad", tyres: "däckverkstad" }[el.dataset.kind] || "biltvätt";
+    const what = { fuel: "mackar", parking: "parkeringar", vehicle_inspection: "besiktningsstationer", car_repair: "verkstäder", tyres: "däckverkstäder" }[kind] || "biltvättar";
     el.disabled = true;
     el.classList.add("busy");
+    document.getElementById(id + "-picks")?.setAttribute("hidden", "");
+    // Visa direkt att något händer.
+    if (box) { box.innerHTML = `<p class="hint">Söker närmaste ${what} …</p>`; box.hidden = false; }
     try {
       let pos;
       try {
         pos = await currentPosition();
       } catch (err) {
-        const msg = err.code === 1 ? "Appen fick inte använda din plats. Tillåt plats för den här sidan i telefonens inställningar och försök igen."
+        if (box) box.hidden = true;
+        const msg = err.code === 1 ? "Appen fick inte använda din plats. Tillåt plats för Bildagboken i telefonens inställningar och försök igen."
           : err.code === "unsupported" ? "Den här webbläsaren kan inte ange plats."
           : "Kunde inte hitta din position. Försök igen, gärna utomhus.";
         return showToast(msg, 7000);
       }
-      const { latitude: lat, longitude: lon, accuracy } = pos.coords;
-      // Sök lite längre bort om positionen är osäker, men aldrig mer än en kilometer.
-      const base = { fuel: 250, parking: 150 }[el.dataset.kind] || 300;
-      const radius = Math.round(Math.min(1000, Math.max(base, (accuracy || 0) + 100)));
-      // Hittas inget nära söks det stegvis längre bort, upp till fem kilometer.
-      let names = [];
-      for (const r of [radius, 1500, 5000]) {
-        names = await nearbyPlaces(el.dataset.kind, lat, lon, r).catch(() => []);
-        if (names.length) break;
-      }
-      if (names.length) {
-        input.value = names[0];
-        if (picks) {
-          picks.innerHTML = names.length > 1 ? names.slice(0, 5).map((n) => `<button type="button" class="chip-btn" data-act="geo-pick" data-target="${esc(el.dataset.target)}" data-v="${esc(n)}">${esc(n)}</button>`).join("") : "";
-          picks.hidden = names.length < 2;
+      const { latitude: lat, longitude: lon } = pos.coords;
+      searchCenterCache = { lat, lon, at: Date.now(), gps: true };
+      // Apple Maps först (snabbast och bäst på svenska företag), OpenStreetMap om Apple inte svarar.
+      let list = await appleNearby(kind, lat, lon).catch(() => []);
+      if (!list.length) list = (await nearbyPlaces(kind, lat, lon, 2000).catch(() => [])).map((n) => ({ name: n }));
+      if (list.length) {
+        if (box) {
+          box.innerHTML = list.slice(0, 6).map((x) => `<button type="button" role="option" data-act="place-pick" data-kind="${esc(id)}" data-name="${esc(x.name)}" data-addr="${esc(x.addr || "")}" data-lat="${x.lat ?? ""}" data-lon="${x.lon ?? ""}" data-pid="${esc(x.pid || "")}"><b>${esc(x.name)}</b><span>${esc([x.d != null ? fmtDist(x.d) : "", x.addr || ""].filter(Boolean).join(" · "))}</span></button>`).join("");
+          box.hidden = false;
         }
-        showToast(names.length > 1 ? `Hittade ${names.length} ställen i närheten. Tryck på rätt om det inte är det första.` : `Närmaste ${what}: ${names[0]}`, 5000);
-      } else {
-        const addr = await reverseAddress(lat, lon).catch(() => "");
-        if (!addr) return showToast("Hittade ingen plats just nu. Skriv in den själv.", 5000);
-        input.value = addr;
-        if (picks) picks.hidden = true;
-        showToast(`Ingen ${what} med namn hittades precis här, så adressen är ifylld. Ändra om det behövs.`, 6000);
+        return;
       }
-      input.dispatchEvent(new Event("input", { bubbles: true }));
+      if (box) box.hidden = true;
+      const addr = await reverseAddress(lat, lon).catch(() => "");
+      if (!addr) return showToast(`Hittade inga ${what} i närheten. Skriv in stället själv.`, 5000);
+      input.value = addr;
+      showToast(`Hittade inga ${what} i närheten, så gatan är ifylld. Ändra om det behövs.`, 6000);
     } finally {
       el.disabled = false;
       el.classList.remove("busy");
