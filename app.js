@@ -3111,7 +3111,10 @@ function unlockScroll() {
   Object.assign(document.body.style, { position: "", top: "", left: "", right: "", width: "", overflow: "" });
   window.scrollTo(0, y);
 }
+let reloadWhenClosed = false;
 function closeSheet(fromBack = false) {
+  // Vänta en stund, så att det som just sparades hinner skrivas innan sidan laddas om.
+  if (reloadWhenClosed) { reloadWhenClosed = false; setTimeout(() => location.reload(), 900); }
   if (sheetHistory) {
     if (!fromBack && history.state?.bdSheet) { ignorePops++; history.back(); }
     sheetHistory = null;
@@ -6021,8 +6024,9 @@ if ("serviceWorker" in navigator && (location.protocol === "https:" || location.
   }).catch(() => {});
   let reloaded = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    // En ny version har tagit över: ladda om en gång, men inte mitt i ett formulär.
-    if (!hadController || reloaded || !sheet.hidden) return;
+    // En ny version har tagit över: ladda om en gång. Är en ruta öppen väntar omladdningen tills den stängs.
+    if (!hadController || reloaded) return;
+    if (!sheet.hidden) { reloadWhenClosed = true; return; }
     reloaded = true;
     location.reload();
   });
