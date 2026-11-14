@@ -1507,14 +1507,18 @@ function saveTodo(form) {
 // Foton av försäkringsbrev, registreringsbevis, garantier och liknande. Sparas som bilderna i loggen.
 // Alla bilder från loggen i datumordning. Hämtas först när man vill se dem, eftersom varje bild är stor.
 const gridPhotos = new Map();
+// En post kan ha flera bilder (photoIds). Äldre poster har bara photoId.
+const photosOf = (e) => (Array.isArray(e?.photoIds) && e.photoIds.length ? e.photoIds : e?.photoId ? [e.photoId] : []);
+// Varje bild i loggen för bilen, nyast först: [post, bildens id].
+const carPhotoList = (c) => S.entries.filter((e) => e.carId === c.id && photosOf(e).length).sort((a, b) => (b.date || "").localeCompare(a.date || "")).flatMap((e) => photosOf(e).map((pid) => [e, pid]));
 function photosCard(c) {
-  const ents = S.entries.filter((e) => e.carId === c.id && e.photoId).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const ents = carPhotoList(c);
   if (!ents.length) return "";
   const shown = ents.slice(0, 24);
   return `<div class="photos-part">
     <p class="label" style="margin:0 0 8px">Bilder från loggen</p>
-    ${S.showPhotos ? `<div class="photo-grid">${shown.map((e) => `<button type="button" class="pg" data-act="open-entry" data-id="${esc(e.id)}" aria-label="${esc(entryTitle(e))}, ${esc(fmtDateShort(e.date))}">
-        ${gridPhotos.get(e.photoId) ? `<img src="${esc(gridPhotos.get(e.photoId))}" alt="">` : `<span class="pg-wait"></span>`}<span class="pg-d"><b>${esc(photoLabel(e))}</b>${esc(fmtDateShort(e.date))}</span></button>`).join("")}</div>
+    ${S.showPhotos ? `<div class="photo-grid">${shown.map(([e, pid]) => `<button type="button" class="pg" data-act="open-entry" data-id="${esc(e.id)}" aria-label="${esc(entryTitle(e))}, ${esc(fmtDateShort(e.date))}">
+        ${gridPhotos.get(pid) ? `<img src="${esc(gridPhotos.get(pid))}" alt="">` : `<span class="pg-wait"></span>`}<span class="pg-d"><b>${esc(photoLabel(e))}</b>${esc(fmtDateShort(e.date))}</span></button>`).join("")}</div>
       ${ents.length > shown.length ? `<p class="hint" style="margin-top:8px">De ${shown.length} senaste av ${ents.length} bilder.</p>` : ""}
       <button class="link" type="button" data-act="hide-photos" style="margin-top:10px">Dölj bilderna</button>`
       : `<p class="muted">Kvitton och foton från loggen, i datumordning. ${ents.length === 1 ? "1 bild" : `${ents.length} bilder`}.</p>
@@ -1528,7 +1532,7 @@ function photoLabel(e) {
 }
 async function loadPhotoGrid() {
   const c = car();
-  const ids = S.entries.filter((e) => e.carId === c.id && e.photoId).sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 24).map((e) => e.photoId).filter((id) => !gridPhotos.has(id));
+  const ids = carPhotoList(c).slice(0, 24).map(([, pid]) => pid).filter((id) => !gridPhotos.has(id));
   await Promise.all(ids.map((id) => getDoc(ref("photos", id)).then((snap) => { if (snap.exists()) gridPhotos.set(id, snap.data().data); }).catch(() => {})));
   render();
 }
@@ -2413,7 +2417,7 @@ function entryRow(e, fromCat = null) {
   const mine = e.createdBy === uid();
   const d = entryDetail(e);
   // Namnet syns bara när någon annan har loggat.
-  const extra = [e.odometer != null && e.type !== "matare" ? `${fmt(e.odometer)} mil` : "", e.photoId ? "bild" : ""].filter(Boolean).join(" · ");
+  const extra = [e.odometer != null && e.type !== "matare" ? `${fmt(e.odometer)} mil` : "", photosOf(e).length > 1 ? `${photosOf(e).length} bilder` : photosOf(e).length ? "bild" : ""].filter(Boolean).join(" · ");
   const sub = [d, extra].filter(Boolean).join(" · ");
   return `<button class="entry log-row" type="button" data-act="open-entry" data-id="${esc(e.id)}"${fromCat ? ` data-cat="${esc(fromCat)}"` : ""}>
     ${logTile(e.date)}
@@ -3565,12 +3569,16 @@ function entryForm(type, e = {}, opts = {}) {
   const odo = (required = false) => field("Mätarställning (mil)", `<input name="odometer" id="ef-odometer" inputmode="numeric" ${required ? "required" : ""} placeholder="${odoOf(c) != null ? `Senast ${fmt(odoOf(c))}` : "Till exempel 21 480"}" value="${e.odometer ?? ""}">`);
   const amount = (example, label = "Kostnad (kr)", extra = "", hint = "") => field(label, `<input name="amount" id="ef-amount" inputmode="decimal"${extra} value="${e.amount ?? ""}" placeholder="Till exempel ${example}">`, hint);
   const note = field("Anteckning", `<textarea name="note" id="ef-note" rows="2">${v("note")}</textarea>`);
-  const photo = `<label class="photo-in">${icon("image", 22)}<span id="photo-label">${e.photoId ? "Bild bifogad. Välj en ny för att byta." : "Lägg till kvitto eller bild"}</span><input type="file" name="photo" id="ef-photo" accept="image/*"></label>`;
+  // Bilder: flera går att lägga till, en i taget eller många på en gång, och var och en går att ta bort.
+  pendingPhotos = [];
+  const photo = `<div class="photo-multi" id="ef-photos" data-keep="${esc(photosOf(e).join(","))}"></div>
+    <label class="photo-in">${icon("image", 22)}<span id="photo-label">${photosOf(e).length ? "Lägg till fler bilder" : "Lägg till kvitto eller bild"}</span><input type="file" id="ef-photo" accept="image/*" multiple></label>
+    <input type="hidden" name="keepPhotos" id="ef-keep" value="${esc(photosOf(e).join(","))}">`;
   // "Det här gjordes": underhållspunkterna (som förut) och egna delar. Ikryssad rad visar åtgärd och, där det passar, position.
   const workSection = ["service", "eget"].includes(type) ? workFormHtml(c, workOf(e, c)) : "";
   const items = workSection, parts = "";
   // Anteckning och bild ligger under "Fler detaljer" i alla formulär, öppet om något redan är ifyllt.
-  const more = (extra = "", open = false) => `<details class="more"${open || e.note || e.photoId ? " open" : ""}>
+  const more = (extra = "", open = false) => `<details class="more"${open || e.note || photosOf(e).length ? " open" : ""}>
           <summary>Fler detaljer (valfritt)</summary>
           <div class="form">${extra}${note}${photo}</div>
         </details>`;
@@ -3659,6 +3667,7 @@ function entryForm(type, e = {}, opts = {}) {
   if (opts.recurringId) { const lab = $("#ef-date")?.closest("label")?.querySelector("span"); if (lab) lab.textContent = "Första betalningen"; }
   const ef = $('form[data-form="entry"]');
   if (ef) attachSuggestions(ef, type);
+  renderPhotoThumbs();
   // Sätt markören i första fältet bara på dator. På telefon öppnar det tangentbordet direkt och döljer formuläret.
   if (!window.matchMedia("(pointer: coarse)").matches) {
     if (type === "tank" && !isEdit) $("#ef-amount")?.focus({ preventScroll: true });
@@ -4138,6 +4147,27 @@ function formError(msg) {
   if (el) { el.textContent = msg; el.hidden = false; }
 }
 
+// Bilder som väntar på att sparas med posten, och miniatyrerna i formuläret.
+const MAX_PHOTOS = 10;
+let pendingPhotos = [];
+const thumbUrls = new Map();
+function renderPhotoThumbs() {
+  const box = $("#ef-photos"), keepIn = $("#ef-keep"), lab = $("#photo-label");
+  if (!box || !keepIn) return;
+  const keep = keepIn.value.split(",").filter(Boolean);
+  const urlOf = (f) => { if (!thumbUrls.has(f)) thumbUrls.set(f, URL.createObjectURL(f)); return thumbUrls.get(f); };
+  box.innerHTML = [
+    ...keep.map((pid) => `<span class="pm-t" data-pid="${esc(pid)}">${gridPhotos.get(pid) ? `<img src="${esc(gridPhotos.get(pid))}" alt="">` : `<span class="pg-wait"></span>`}<button type="button" class="pm-x" data-act="photo-rm" data-pid="${esc(pid)}" aria-label="Ta bort bilden">${icon("close", 12)}</button></span>`),
+    ...pendingPhotos.map((f, i) => `<span class="pm-t"><img src="${esc(urlOf(f))}" alt=""><button type="button" class="pm-x" data-act="photo-rm" data-i="${i}" aria-label="Ta bort bilden">${icon("close", 12)}</button></span>`),
+  ].join("");
+  box.hidden = !box.innerHTML;
+  const n = keep.length + pendingPhotos.length;
+  if (lab) lab.textContent = n ? `${n} ${n === 1 ? "bild" : "bilder"} · Lägg till fler` : "Lägg till kvitto eller bild";
+  // Sparade bilder hämtas för miniatyrerna.
+  const missing = keep.filter((pid) => !gridPhotos.has(pid));
+  if (missing.length) Promise.all(missing.map((pid) => getDoc(ref("photos", pid)).then((s) => { if (s.exists()) gridPhotos.set(pid, s.data().data); }).catch(() => {}))).then(() => { if ($("#ef-photos")) renderPhotoThumbs(); });
+}
+
 async function compressImage(file) {
   const url = URL.createObjectURL(file);
   try {
@@ -4269,20 +4299,26 @@ async function saveEntry(form) {
   const btn = form.querySelector('button[type="submit"]');
   if (btn) { btn.disabled = true; btn.textContent = "Sparar …"; }
 
-  const file = fd.get("photo");
-  if (file && file.size) {
-    try {
+  // Bilder: de som fanns och inte togs bort, och de nya. Borttagna raderas.
+  const keep = str("keepPhotos").split(",").filter(Boolean);
+  const newIds = [];
+  try {
+    for (const file of pendingPhotos) {
       const dataUrl = await compressImage(file);
       if (!dataUrl) throw new Error("för stor");
       const pRef = doc(col("photos"));
       setDoc(pRef, { data: dataUrl, carId: data.carId, createdBy: uid(), createdAt: serverTimestamp() }).catch(onWriteError);
-      if (existing?.photoId) deleteDoc(ref("photos", existing.photoId)).catch(() => {});
-      data.photoId = pRef.id;
-    } catch (err) {
-      if (btn) { btn.disabled = false; btn.textContent = "Spara"; }
-      return formError("Bilden gick inte att läsa in. Prova en annan bild eller ta ett nytt foto.");
+      newIds.push(pRef.id);
     }
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = "Spara"; }
+    return formError("En bild gick inte att läsa in. Prova en annan bild eller ta ett nytt foto.");
   }
+  for (const old of photosOf(existing)) if (!keep.includes(old)) deleteDoc(ref("photos", old)).catch(() => {});
+  const allPhotos = [...keep, ...newIds];
+  data.photoIds = allPhotos.length ? allPhotos : null;
+  data.photoId = allPhotos[0] || null;
+  pendingPhotos = [];
 
   const payload = clean(data);
   if (existing) {
@@ -4406,19 +4442,22 @@ function openEntry(id, { fromCat = null } = {}) {
       <div class="bk-map-inner" id="en-map-inner"></div>
       <button class="bk-map-open" type="button" data-act="entry-map" data-id="${esc(e.id)}" aria-label="Öppna platsen i en kartapp"><span>${icon("pin", 14)} Öppna i kartan</span></button>
     </div>` : ""}
-    ${e.photoId ? `<div id="photo-box" style="margin-top:14px"><p class="hint">Hämtar bilden …</p></div>` : ""}
+    ${photosOf(e).length ? `<div id="photo-box" style="margin-top:14px"><p class="hint">Hämtar ${photosOf(e).length > 1 ? "bilderna" : "bilden"} …</p></div>` : ""}
     <div class="btn-row" style="margin-top:18px">
       <button class="btn primary" type="button" data-act="edit-entry" data-id="${esc(e.id)}">Ändra</button>
       <button class="btn danger" type="button" data-act="delete-entry" data-id="${esc(e.id)}">Ta bort</button>
     </div>
 `, fromCat?.startsWith("item:") ? { back: "edit-item", backId: fromCat.slice(5) } : fromCat?.startsWith("part:") ? { back: "open-part", backId: fromCat.slice(5) } : fromCat ? { back: "open-cat", backId: fromCat } : {});
   if (entryPlaceName(e)) showEntryMap(e);
-  if (e.photoId) {
-    getDoc(ref("photos", e.photoId)).then((s) => {
+  if (photosOf(e).length) {
+    Promise.all(photosOf(e).map((pid) => getDoc(ref("photos", pid)).then((s) => (s.exists() ? s.data().data : null)).catch(() => null))).then((list) => {
       const box = $("#photo-box");
       if (!box) return;
-      box.innerHTML = s.exists() ? `<button class="photo-zoom" type="button" data-act="photo-zoom" aria-label="Visa bilden större"><img class="photo" src="${esc(s.data().data)}" alt="Bifogad bild för ${esc(entryTitle(e))}"></button>` : `<p class="hint">Bilden finns inte längre.</p>`;
-    }).catch(() => { const box = $("#photo-box"); if (box) box.innerHTML = `<p class="hint">Bilden gick inte att hämta just nu.</p>`; });
+      const ok = list.filter(Boolean);
+      box.innerHTML = ok.length
+        ? `<div class="${ok.length > 1 ? "photo-stack" : ""}">${ok.map((d, i) => `<button class="photo-zoom" type="button" data-act="photo-zoom" aria-label="Visa bild ${i + 1} större"><img class="photo" src="${esc(d)}" alt="Bild ${i + 1} för ${esc(entryTitle(e))}"></button>`).join("")}</div>`
+        : `<p class="hint">${list.length > 1 ? "Bilderna finns" : "Bilden finns"} inte längre.</p>`;
+    });
   }
 }
 
@@ -4547,7 +4586,7 @@ function carSheet(edit, sections = ["basic"]) {
 async function deleteCar(carId) {
   const ents = S.entries.filter((e) => e.carId === carId);
   const carPhoto = S.cars.find((x) => x.id === carId)?.photoId;
-  const ops = [ref("cars", carId), ...ents.map((e) => ref("entries", e.id)), ...ents.filter((e) => e.photoId).map((e) => ref("photos", e.photoId))];
+  const ops = [ref("cars", carId), ...ents.map((e) => ref("entries", e.id)), ...ents.flatMap((e) => photosOf(e).map((pid) => ref("photos", pid)))];
   if (carPhoto) ops.push(ref("photos", carPhoto));
   for (let i = 0; i < ops.length; i += 400) {
     const b = writeBatch(db);
@@ -4949,6 +4988,11 @@ const ACTIONS = {
     });
   },
   // Ny post med samma uppgifter som en tidigare, till exempel samma tvätt eller parkering. Datum, mätarställning och bild är nya.
+  "photo-rm"(el) {
+    if (el.dataset.pid) { const k = $("#ef-keep"); if (k) k.value = k.value.split(",").filter((x) => x && x !== el.dataset.pid).join(","); }
+    else pendingPhotos.splice(Number(el.dataset.i), 1);
+    renderPhotoThumbs();
+  },
   "photo-zoom"(el) { openLightbox(el.querySelector("img")?.src, el.querySelector("img")?.alt); },
   "lightbox-close"() { $("#lightbox")?.remove(); },
   "entry-map"(el) {
@@ -5060,7 +5104,7 @@ const ACTIONS = {
     const { id, ...data } = e;
     deleteDoc(ref("entries", id)).catch(onWriteError);
     // Bilden tas bort först när det inte längre går att ångra.
-    const photoTimer = e.photoId ? setTimeout(() => deleteDoc(ref("photos", e.photoId)).catch(() => {}), 8000) : null;
+    const photoTimer = photosOf(e).length ? setTimeout(() => photosOf(e).forEach((pid) => deleteDoc(ref("photos", pid)).catch(() => {})), 8000) : null;
     closeSheet();
     showToast(`${TYPE[e.type]?.label || "Posten"} är borttagen`, 6000, () => {
       clearTimeout(photoTimer);
@@ -5630,10 +5674,23 @@ function onChange(ev) {
     if (f) changeHeroPhoto(f);
     return;
   }
-  if (ev.target.id === "ef-photo" || ev.target.id === "cf-carPhoto") {
+  if (ev.target.id === "ef-photo" && !$("#ef-photos")) {
+    // Dokument: en bild.
     const f = ev.target.files?.[0];
     const lab = $("#photo-label");
-    if (lab) lab.textContent = f ? `Vald bild: ${f.name}` : "Lägg till kvitto eller bild";
+    if (lab) lab.textContent = f ? `Vald bild: ${f.name}` : "Fota eller välj en bild";
+  } else if (ev.target.id === "ef-photo") {
+    const files = [...(ev.target.files || [])].filter((f) => f.type.startsWith("image/") || /\.(heic|heif|jpe?g|png|webp)$/i.test(f.name));
+    const room = MAX_PHOTOS - pendingPhotos.length - ($("#ef-keep")?.value.split(",").filter(Boolean).length || 0);
+    if (files.length > room) showToast(`Högst ${MAX_PHOTOS} bilder per post.`);
+    pendingPhotos.push(...files.slice(0, Math.max(0, room)));
+    ev.target.value = "";
+    renderPhotoThumbs();
+  }
+  if (ev.target.id === "cf-carPhoto") {
+    const f = ev.target.files?.[0];
+    const lab = $("#photo-label");
+    if (lab) lab.textContent = f ? `Vald bild: ${f.name}` : "Ta eller välj ett eget foto på bilen";
   }
 }
 
