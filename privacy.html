@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy – Bildagboken</title>
+<meta name="theme-color" content="#E9E4DF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171514" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="icons/logo-symbol.svg?v=3" type="image/svg+xml">
+<style>
+  :root { --bg: #E9E4DF; --card: #FBF9F7; --ink: #211D1A; --ink-2: #5B544E; --accent: #D9662B; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #171514; --card: #221F1D; --ink: #F1ECE7; --ink-2: #B5ADA5; --accent: #F08A52; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: calc(24px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom)); }
+  article { background: var(--card); border-radius: 20px; padding: 20px; margin-top: 14px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 8px 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 6px; }
+  p, li { color: var(--ink-2); margin: 6px 0; }
+  ul { padding-left: 20px; margin: 6px 0; }
+  a { color: var(--accent); }
+  .back { font-weight: 600; text-decoration: none; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">‹ To Bildagboken</a> · <a href="integritet.html" lang="sv">På svenska</a>
+  <h1>How your data is handled</h1>
+  <p>Bildagboken is a private app for keeping track of a car together. It has no ads, does not sell any data and does not track what you do.</p>
+
+  <article>
+    <h2>What is stored</h2>
+    <ul>
+      <li><b>Your account:</b> the name you enter, your email address and how you sign in (Apple or Google).</li>
+      <li><b>The car and the log:</b> what you enter yourselves, for example fill-ups, service, odometer readings, costs, places, bookings, the to-do list, photos and documents.</li>
+      <li><b>Notifications:</b> if you turn on notifications, an address for your phone is stored so that reminders can be sent to it.</li>
+    </ul>
+    <p>Everything is stored in Google's cloud service Firebase. Only the people who share the car can see it. Settings such as appearance and the order of the cards are stored only on your phone.</p>
+  </article>
+
+  <article>
+    <h2>Services the app uses</h2>
+    <ul>
+      <li><b>Google Firebase</b> for sign-in, storage and notifications.</li>
+      <li><b>Apple Maps</b> to search for garages and places and to show maps. What you search for is sent to Apple.</li>
+      <li><b>OpenStreetMap and Photon</b> as a fallback when Apple Maps cannot find an address or a place.</li>
+      <li><b>Wikipedia</b> for a picture of the car model, if you have not added your own.</li>
+    </ul>
+    <p>Receipts are read on your phone. The image is not sent anywhere to be read.</p>
+    <p>The app asks for your location only when you tap the pin button, to suggest the nearest petrol station or garage. Your location is not stored in your account.</p>
+  </article>
+
+  <article>
+    <h2>Shared service book</h2>
+    <p>If you share the service book with a buyer, anyone with the link can see it: the car's details and the history of service and maintenance. You can close the link at any time under Car.</p>
+  </article>
+
+  <article>
+    <h2>Help and support</h2>
+    <p>The person who runs Bildagboken can see the data in order to help if something has gone wrong, and to see how many people use the app and which features are used. Nothing is changed unless you have asked for it.</p>
+    <p>If you have questions about your data, or want something removed or corrected, email <a href="mailto:kontakt@bildagboken.com">kontakt@bildagboken.com</a>. You can also delete your account yourself, see below.</p>
+  </article>
+
+  <article>
+    <h2>Delete your data</h2>
+    <p>Under <b>Settings → Account → Delete my account</b> your account is deleted right away. If you are alone in the household, the cars and the whole log are deleted too. If there are more of you, what you have logged remains for the others.</p>
+    <p>You can also download everything as a file under Settings → Your data.</p>
+  </article>
+</main>
+</body>
+</html>
