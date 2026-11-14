@@ -1144,7 +1144,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
   parts.dates = `
     <div class="row2">
       ${inp("besiktning", "Sista dag för besiktning", c.besiktning, 'type="date"')}
-      ${inp("besiktningPlats", "Besiktningsstation", c.besiktningPlats, 'placeholder="Till exempel Bilprovningen Kungsbacka"')}
+      ${inp("besiktningPlats", "Besiktningsstation", c.besiktningPlats, 'placeholder="Till exempel Bilprovningen"')}
     </div>
     <div class="row2">
       ${inp("forsakringBolag", "Försäkringsbolag", c.forsakringBolag, 'placeholder="Till exempel If eller Folksam"')}
@@ -3211,9 +3211,9 @@ function bookingForm(b = {}) {
             </div>
             <input type="hidden" name="time" id="bk-time" value="${esc(t || (b.id ? "" : "09:00"))}"></div>`;
       })()}
-      ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Till exempel Mölndals däckservice" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-suggest" aria-expanded="false">
+      ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Till exempel Däckcentrum" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-suggest" aria-expanded="false">
         <span class="suggest" id="bk-suggest" role="listbox" hidden></span>`)}
-      ${field("Adress", `<input name="placeAddr" id="bk-addr" value="${esc(b.addr || "")}" placeholder="Till exempel Kråketorpsgatan 20, Mölndal" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-addr-suggest" aria-expanded="false">
+      ${field("Adress", `<input name="placeAddr" id="bk-addr" value="${esc(b.addr || "")}" placeholder="Till exempel Storgatan 20, Uppsala" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-addr-suggest" aria-expanded="false">
         <input type="hidden" name="placeLat" id="bk-lat" value="${b.lat ?? ""}">
         <input type="hidden" name="placeLon" id="bk-lon" value="${b.lon ?? ""}">
         <input type="hidden" name="placeId" id="bk-pid" value="${esc(b.placeId || "")}">
@@ -3562,7 +3562,7 @@ function entryForm(type, e = {}, opts = {}) {
           return last.length ? `<div class="date-quick">${last.map((a) => `<button type="button" class="chip-btn" data-act="amount-quick" data-v="${esc(fmtKr(a))}">${esc(fmtKr(a))} kr</button>`).join("")}</div>` : "";
         })() : ""}
         <label class="check"><input type="checkbox" name="full" id="ef-full"${e.full === false ? "" : " checked"}> Tankade fullt</label>
-        ${placeField("station", "ef-station", e.station, "fuel", "Circle K Mölndal")}
+        ${placeField("station", "ef-station", e.station, "fuel", "Circle K")}
         ${odo(false)}
         ${date}
         ${more(field("Drivmedel", `<select name="fuel" id="ef-fuel">${fuels.map((f) => `<option${(e.fuel || pref.get("fuel." + c.id) || fuels[0]) === f ? " selected" : ""}>${esc(f)}</option>`).join("")}</select>`))}`;
@@ -3574,7 +3574,7 @@ function entryForm(type, e = {}, opts = {}) {
     // Samma ordning i alla formulär: vad → belopp → mätarställning → datum → detaljer.
     case "service":
       body = `${items}${parts}
-        ${placeField("workshop", "ef-workshop", e.workshop, "car_repair", "Mekonomen Mölndal")}
+        ${placeField("workshop", "ef-workshop", e.workshop, "car_repair", "Mekonomen")}
         ${amount("2 500")}${odo(false)}${date}${more()}`;
       break;
     case "eget":
@@ -3588,17 +3588,17 @@ function entryForm(type, e = {}, opts = {}) {
           <div id="ef-tirekind-box"${isSwap(actDefault) ? " hidden" : ""}>${field("Vilka däck?", `<select name="tireKind" id="ef-tireKind"><option value="">Välj</option><option value="sommar"${e.tireKind === "sommar" ? " selected" : ""}>Sommardäck</option><option value="vinter"${e.tireKind === "vinter" ? " selected" : ""}>Vinterdäck</option></select>`)}</div>
           ${field("Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}" placeholder="Valfritt">`)}
         </div>
-        ${placeField("place", "ef-place", e.place, "tyres", "Däckia Mölndal")}
+        ${placeField("place", "ef-place", e.place, "tyres", "Däckia")}
         ${amount("800")}${odo(false)}${date}${more()}`;
       break;
     }
     case "tvatt":
-      body = `${placeField("place", "ef-place", e.place ?? (e.id ? "" : pref.get("wash." + c.id) || ""), "car_wash", "Circle K Mölndal")}
+      body = `${placeField("place", "ef-place", e.place ?? (e.id ? "" : pref.get("wash." + c.id) || ""), "car_wash", "Circle K")}
         ${amount("149")}
         ${date}${more()}`;
       break;
     case "parkering":
-      body = `${placeField("place", "ef-place", e.place, "parking", "Kungsgatan, Göteborg")}
+      body = `${placeField("place", "ef-place", e.place, "parking", "Kungsgatan")}
         ${amount("45")}
         <label class="check"><input type="checkbox" name="fine" id="ef-fine"${e.fine ? " checked" : ""}> P-bot eller felparkeringsavgift</label>
         ${!e.id ? `<label class="check"><input type="checkbox" name="recurring" id="ef-recurring"${opts.recurringId ? " checked" : ""}> Återkommande (hyrd plats)</label>
@@ -3617,7 +3617,7 @@ function entryForm(type, e = {}, opts = {}) {
         ? `<input type="hidden" name="category" id="ef-category" value="Besiktning">`
         : field("Typ", `<select name="category" id="ef-category">${COST_CATS.filter((k) => !["Tvätt", "Parkering", "Besiktning"].includes(k) || e.category === k).map((k) => `<option${e.category === k ? " selected" : ""}>${k}</option>`).join("")}</select>`)}
         ${e.category === "Besiktning"
-          ? `${placeField("place", "ef-place", e.place || (e.title || "").replace(/^Besiktning hos /, "") || "", "vehicle_inspection", "Bilprovningen Mölndal")}
+          ? `${placeField("place", "ef-place", e.place || (e.title || "").replace(/^Besiktning hos /, "") || "", "vehicle_inspection", "Bilprovningen")}
              <input type="hidden" name="title" value="${v("title")}">`
           : field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
         ${amount(e.category === "Besiktning" ? "520" : "3 200")}${date}
@@ -4317,7 +4317,7 @@ async function showEntryMap(e) {
         if (!hit) dd?.parentElement.remove();
         if (note) {
           note.hidden = !!hit;
-          if (!hit) note.textContent = `Hittade ingen adress för ”${name}”. Tryck Ändra och skriv med orten, till exempel ”${name} Mölndal”.`;
+          if (!hit) note.textContent = `Hittade ingen adress för ”${name}”. Tryck Ändra och skriv med orten, till exempel ”${name} Uppsala”.`;
         }
       } catch {
         if (note) note.textContent = "Kunde inte leta upp adressen just nu. Öppna posten igen om en stund.";
