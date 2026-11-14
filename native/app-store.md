@@ -65,4 +65,4 @@ Data som samlas in: **Ja**. Inget används för spårning, och inget säljs.
 **Integritetspolicy-URL:** https://bildagboken.com/integritet.html
 
 ## Skärmbilder
-iPhone 6,9" (1320 × 2868), i mappen `app-store-bilder`. Ladda upp dem i ordning 1–6.
+iPhone 6,9" (1320 × 2868), i mappen `app-store-bilder`. Ladda upp dem i ordning 1–6. Påhittade namn och platser (Sara, Erik, Familjen Berg).
