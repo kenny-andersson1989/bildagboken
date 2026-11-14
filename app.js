@@ -2987,7 +2987,7 @@ function openSheet(title, body, { back = null, backId = null } = {}) {
   sheet.hidden = false;
   scrim.hidden = false;
   sheet.scrollTop = 0;
-  document.body.style.overflow = "hidden";
+  lockScroll();
   // Flytta fokus in i rutan, så att tangentbord och skärmläsare hamnar rätt. Fält som fokuseras senare går före.
   setTimeout(() => {
     if (sheet.hidden || sheet.contains(document.activeElement)) return;
@@ -3033,6 +3033,20 @@ document.addEventListener("focusout", (ev) => { if (ev.target.matches?.("input, 
 window.visualViewport?.addEventListener("resize", () => setTimeout(nudgeFixed, 60));
 window.addEventListener("pageshow", nudgeFixed);
 
+// Sidan bakom rutan ska stå still. På iPhone räcker inte overflow: hidden, så sidan låses på sin plats.
+let lockedY = null;
+function lockScroll() {
+  if (lockedY != null) return;
+  lockedY = window.scrollY;
+  Object.assign(document.body.style, { position: "fixed", top: `-${lockedY}px`, left: "0", right: "0", width: "100%", overflow: "hidden" });
+}
+function unlockScroll() {
+  if (lockedY == null) return;
+  const y = lockedY;
+  lockedY = null;
+  Object.assign(document.body.style, { position: "", top: "", left: "", right: "", width: "", overflow: "" });
+  window.scrollTo(0, y);
+}
 function closeSheet(fromBack = false) {
   if (sheetHistory) {
     if (!fromBack && history.state?.bdSheet) { ignorePops++; history.back(); }
@@ -3041,7 +3055,7 @@ function closeSheet(fromBack = false) {
   sheet.hidden = true;
   scrim.hidden = true;
   sheet.innerHTML = "";
-  document.body.style.overflow = "";
+  unlockScroll();
   setTimeout(nudgeFixed, 30);
   const back = sheetReturnFocus;
   sheetReturnFocus = null;
@@ -3924,8 +3938,8 @@ async function reverseAddress(lat, lon) {
   const a = j.address || {};
   const road = a.road || a.pedestrian || a.neighbourhood || "";
   const area = a.town || a.city || a.village || a.suburb || a.municipality || "";
-  const named = j.name && j.name !== road ? j.name : "";
-  return [named || road, area].filter(Boolean).join(", ");
+  // Bara gata och ort: närmaste namngivna ställe kan vara en butik, och det blir fel som mack eller verkstad.
+  return [road, area].filter(Boolean).join(", ");
 }
 
 function currentPosition() {
@@ -4673,7 +4687,12 @@ const ACTIONS = {
       // Sök lite längre bort om positionen är osäker, men aldrig mer än en kilometer.
       const base = { fuel: 250, parking: 150 }[el.dataset.kind] || 300;
       const radius = Math.round(Math.min(1000, Math.max(base, (accuracy || 0) + 100)));
-      const names = await nearbyPlaces(el.dataset.kind, lat, lon, radius).catch(() => []);
+      // Hittas inget nära söks det stegvis längre bort, upp till fem kilometer.
+      let names = [];
+      for (const r of [radius, 1500, 5000]) {
+        names = await nearbyPlaces(el.dataset.kind, lat, lon, r).catch(() => []);
+        if (names.length) break;
+      }
       if (names.length) {
         input.value = names[0];
         if (picks) {
