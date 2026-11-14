@@ -618,7 +618,6 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 .geo-btn { flex: none; width: 48px; border-radius: 14px; border: 1px solid var(--line); background: var(--accent-soft); color: var(--accent-text); display: grid; place-items: center; cursor: pointer; padding: 0; }
 .geo-btn.busy svg { animation: geo-pulse 1s ease-in-out infinite; }
 @keyframes geo-pulse { 50% { opacity: .35; } }
-.geo-picks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip-btn { border: 1px solid var(--line); background: var(--input); color: var(--ink); font: 500 13px var(--f-body); padding: 7px 12px; border-radius: var(--r-chip); cursor: pointer; }
 .ask .btn-soft { max-width: 100%; }
 
