@@ -941,10 +941,7 @@ function setFuelDraft(p) {
   const bar = $("#fuel-v");
   if (!bar) return p;
   bar.classList.remove("unset");
-  bar.querySelector("i").style.clipPath = `inset(0 ${100 - p}% 0 0 round 10px)`;
-  bar.querySelector(".fuel-thumb").style.left = p + "%";
-  const t = $("#fuel-pct");
-  if (t) { t.textContent = `${p} %`; t.className = `fuel-pct ${pctClass(p)}`; }
+  bar.innerHTML = fuelBarInner(p);
   bar.setAttribute("aria-valuenow", p);
   bar.setAttribute("aria-valuetext", pctText(p));
   return p;
@@ -1294,18 +1291,32 @@ function carVisual(c) {
 const fuelPct = (f) => (f ? (typeof f.pct === "number" ? f.pct : typeof f.level === "number" ? f.level * 12.5 : null) : null);
 const pctText = (p) => (p <= 0 ? "Tom tank" : p >= 100 ? "Full tank" : `${Math.round(p)} %`);
 const pctClass = (p) => (p <= 25 ? "low" : p <= 50 ? "mid" : "ok");
-// Bränsleruta: stor siffra och en liggande stapel att dra i, från Tom till Full.
+// Färgen på bränslet: röd när tanken är tom, gul vid halv tank och grön när den är full, steglöst däremellan.
+function fuelColor(p) {
+  const stops = [[0, 9, 66, 47], [50, 38, 68, 46], [100, 138, 38, 39]];
+  const [a, b] = p <= 50 ? [stops[0], stops[1]] : [stops[1], stops[2]];
+  const t = (Math.max(0, Math.min(100, p)) - a[0]) / (b[0] - a[0]);
+  const mix = (i) => Math.round(a[i] + (b[i] - a[i]) * t);
+  return `hsl(${mix(1)} ${mix(2)}% ${mix(3)}%)`;
+}
+// Bränsleruta: en liggande stapel med procenten i, att dra i från tom till full.
+function fuelBarInner(p) {
+  const v = Math.round(p ?? 0);
+  // Stapeln är alltid minst en rund prick med pumpen i, så att även nästan tom tank syns.
+  const w = `calc(34px + (100% - 34px) * ${v / 100})`;
+  const inside = p != null && v >= 45;
+  return `<i style="width:${p == null ? 0 : w};background:${fuelColor(v)}"></i>
+    <span class="fuel-ic">${icon("fuel", 15)}</span>
+    <b class="fuel-val${inside ? "" : " out"}"${p != null && !inside ? ` style="left:calc(${w} + 7px)"` : ""} id="fuel-pct">${p == null ? "Dra för att ange" : `${v} %`}</b>
+    ${inside && v <= 62 ? "<em>Full</em>" : ""}`;
+}
 function fuelGauge(c) {
   const f = c.fuelLevel;
   const draft = S.fuelDraft && S.fuelDraft.carId === c.id ? S.fuelDraft.pct : null;
   const p = draft ?? fuelPct(f);
-  const v = p ?? 0;
-  return `<div class="hero-tile">
-    <div class="tile-top"><span class="label">Bränsle</span><span class="fuel-pct ${p == null ? "" : pctClass(v)}" id="fuel-pct">${p == null ? "–" : `${Math.round(v)} %`}</span></div>
-    <div class="fuel-h${p == null ? " unset" : ""}" id="fuel-v" role="slider" tabindex="0" aria-label="Bränsle kvar i tanken" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(v)}" aria-valuetext="${esc(p == null ? "Inte angivet" : pctText(v))}">
-      <i style="clip-path:inset(0 ${100 - v}% 0 0 round 10px)"></i><span class="fuel-thumb" style="left:${v}%"></span>
-    </div>
-    <div class="fuel-ends"><span>Tom</span><span>Full</span></div>
+  return `<div class="hero-tile fuel-tile">
+    <span class="label">Bränsle</span>
+    <div class="fuel-e${p == null ? " unset" : ""}" id="fuel-v" role="slider" tabindex="0" aria-label="Bränsle kvar i tanken" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(p ?? 0)}" aria-valuetext="${esc(p == null ? "Inte angivet" : pctText(p))}">${fuelBarInner(p)}</div>
   </div>`;
 }
 // Bokningar visas i flödet som poster av typen "bokning", så att de kan sorteras ihop med loggarna.
