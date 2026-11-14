@@ -3031,6 +3031,25 @@ function nudgeFixed() {
 }
 document.addEventListener("focusout", (ev) => { if (ev.target.matches?.("input, textarea, select")) setTimeout(nudgeFixed, 60); });
 window.visualViewport?.addEventListener("resize", () => setTimeout(nudgeFixed, 60));
+
+// Rutan ska alltid få plats ovanför tangentbordet och under klockan, så att både krysset och
+// det understa fältet går att nå. iPhone krymper bara den synliga ytan när tangentbordet visas.
+function fitSheet() {
+  const vv = window.visualViewport;
+  if (!vv || sheet.hidden) return;
+  const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+  if (kb < 80) { sheet.style.bottom = ""; sheet.style.maxHeight = ""; sheet.classList.remove("kb"); return; }
+  sheet.style.bottom = kb + "px";
+  sheet.style.maxHeight = `calc(${Math.round(vv.height)}px - env(safe-area-inset-top, 0px) - 8px)`;
+  sheet.classList.add("kb");
+}
+window.visualViewport?.addEventListener("resize", fitSheet);
+window.visualViewport?.addEventListener("scroll", fitSheet);
+// Fältet man skriver i flyttas fram i rutan när tangentbordet har kommit upp.
+sheet.addEventListener("focusin", (ev) => {
+  if (!ev.target.matches?.("input, textarea, select")) return;
+  setTimeout(() => { fitSheet(); ev.target.scrollIntoView({ block: "center", behavior: "smooth" }); }, 350);
+});
 window.addEventListener("pageshow", nudgeFixed);
 
 // Sidan bakom rutan ska stå still. På iPhone räcker inte overflow: hidden, så sidan låses på sin plats.
@@ -3055,6 +3074,7 @@ function closeSheet(fromBack = false) {
   sheet.hidden = true;
   scrim.hidden = true;
   sheet.innerHTML = "";
+  sheet.style.bottom = ""; sheet.style.maxHeight = ""; sheet.classList.remove("kb");
   unlockScroll();
   setTimeout(nudgeFixed, 30);
   const back = sheetReturnFocus;
@@ -5460,7 +5480,7 @@ function onInput(ev) {
   }
   if (ev.target.id === "w-search") workSuggest(ev.target.value);
   if (ev.target.id === "bk-place") placeSearchSoon("poi");
-  if (["ef-station", "ef-place", "ef-workshop"].includes(ev.target.id)) placeSearchSoon(ev.target.id);
+  if (ev.isTrusted && ["ef-station", "ef-place", "ef-workshop"].includes(ev.target.id)) placeSearchSoon(ev.target.id);
   if (ev.target.id === "bk-addr") {
     // Egen adress: positionen från ett tidigare förslag gäller inte längre.
     ["bk-lat", "bk-lon", "bk-pid", "bk-src"].forEach((id) => { const x = document.getElementById(id); if (x) x.value = ""; });
