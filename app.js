@@ -1624,7 +1624,7 @@ function serviceBookData(c) {
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const what = (e) => {
     if (e.type === "kostnad") return ["Besiktning", e.title].filter(Boolean).join(" · ");
-    if (e.type === "dack") return [TIRE_ACTIONS[e.tireAction] || "Däck", e.depth != null ? `${fmt(e.depth, 1)} mm` : ""].filter(Boolean).join(" · ");
+    if (e.type === "dack") return [TIRE_ACTIONS[e.tireAction] || "Däck", e.tireBrand, e.tireSize, e.depth != null ? `${fmt(e.depth, 1)} mm` : ""].filter(Boolean).join(" · ");
     const w = workOf(e, c).map(workText).join(", ");
     return [e.type === "eget" ? e.title || "Eget jobb" : "Service", w].filter(Boolean).join(": ");
   };
@@ -3615,6 +3615,16 @@ function entryForm(type, e = {}, opts = {}) {
           <div id="ef-tirekind-box"${isSwap(actDefault) ? " hidden" : ""}>${field("Vilka däck?", `<select name="tireKind" id="ef-tireKind"><option value="">Välj</option><option value="sommar"${e.tireKind === "sommar" ? " selected" : ""}>Sommardäck</option><option value="vinter"${e.tireKind === "vinter" ? " selected" : ""}>Vinterdäck</option></select>`)}</div>
           ${field("Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}" placeholder="Valfritt">`)}
         </div>
+        <div id="ef-newtire-box"${actDefault === "nya" ? "" : " hidden"}>
+          <div class="row2">
+            ${field("Märke", `<input name="tireBrand" id="ef-tireBrand" value="${v("tireBrand")}" placeholder="Till exempel Michelin" autocomplete="off">`)}
+            ${field("Dimension", `<input name="tireSize" id="ef-tireSize" value="${v("tireSize")}" placeholder="Till exempel 205/55 R16" autocomplete="off">`)}
+          </div>
+          <div class="row2">
+            ${field("Tillverkningsår", `<input name="tireYear" id="ef-tireYear" inputmode="numeric" value="${v("tireYear")}" placeholder="Till exempel ${new Date().getFullYear()}" autocomplete="off">`, "Står efter DOT på däckets sida, till exempel 2425 = vecka 24 år 2025.")}
+            <div id="ef-studded-box"${e.tireKind === "vinter" ? "" : " hidden"} style="align-self:center"><label class="check"><input type="checkbox" name="studded" id="ef-studded"${e.studded ? " checked" : ""}> Dubbade</label></div>
+          </div>
+        </div>
         ${placeField("place", "ef-place", e.place, "tyres", "Däckia")}
         ${amount("800")}${odo(false)}${date}${more()}`;
       break;
@@ -4264,6 +4274,22 @@ async function saveEntry(form) {
       data.depth = num(fd.get("depth"));
       data.tireKind = data.tireAction === "till_vinter" ? "vinter" : data.tireAction === "till_sommar" ? "sommar" : str("tireKind") || null;
       data.place = str("place") || null;
+      // Köpte nya däck: däckens uppgifter sparas på posten och på bilen.
+      if (data.tireAction === "nya") {
+        if (!data.tireKind) return formError("Välj om det är sommar- eller vinterdäck.");
+        // Årtal (2025), DOT-kod med vecka och år (2425 = vecka 24 år 2025) eller bara två siffror (25).
+        const yr = str("tireYear").replace(/\D/g, "");
+        const now = new Date().getFullYear();
+        const tireYear = yr.length === 4 && +yr >= 1990 && +yr <= now + 1 ? yr
+          : yr.length === 4 ? `20${yr.slice(2)}`
+          : yr.length === 2 ? `20${yr}` : null;
+        if (tireYear && (+tireYear < 1990 || +tireYear > now + 1)) return formError("Tillverkningsåret ser fel ut. Skriv till exempel 2025, eller DOT-koden 2425.");
+        Object.assign(data, {
+          tireBrand: str("tireBrand") || null, tireSize: str("tireSize") || null,
+          tireYear,
+          studded: data.tireKind === "vinter" ? fd.get("studded") === "on" : null,
+        });
+      }
       break;
     case "tvatt":
       data.place = str("place") || null;
@@ -4338,7 +4364,15 @@ async function saveEntry(form) {
     if (data.tireAction === "till_vinter") carUpdate.tiresOn = "vinter";
     if (data.tireAction === "till_sommar") carUpdate.tiresOn = "sommar";
   }
-  if (type === "dack" && data.depth != null && data.tireKind) {
+  if (type === "dack" && data.tireAction === "nya" && data.tireKind) {
+    // Nya däck ersätter den gamla uppsättningen. Lufttrycket hör till bilen och behålls.
+    const tires = [...(carTarget.tires || [])];
+    const i = tires.findIndex((t) => t.kind === data.tireKind);
+    const old = i >= 0 ? tires[i] : {};
+    const fresh = clean({ kind: data.tireKind, brand: data.tireBrand, size: data.tireSize || old.size || null, year: data.tireYear, depth: data.depth, studded: data.tireKind === "vinter" ? !!data.studded : null, pressureFront: old.pressureFront ?? null, pressureRear: old.pressureRear ?? null });
+    if (i >= 0) tires[i] = fresh; else tires.push(fresh);
+    carUpdate.tires = tires;
+  } else if (type === "dack" && data.depth != null && data.tireKind) {
     const tires = [...(carTarget.tires || [])];
     const i = tires.findIndex((t) => t.kind === data.tireKind);
     if (i >= 0) tires[i] = { ...tires[i], depth: data.depth };
@@ -4435,6 +4469,10 @@ function openEntry(id, { fromCat = null } = {}) {
     e.type === "parkering" && e.fine ? ["Typ", "P-bot eller felparkeringsavgift"] : null,
     hasStreet(e.loc?.addr) ? ["Adress", e.loc.addr] : null,
     e.category && e.type === "kostnad" ? ["Typ", e.category] : null,
+    e.tireBrand ? ["Märke", e.tireBrand] : null,
+    e.tireSize ? ["Dimension", e.tireSize] : null,
+    e.tireYear ? ["Tillverkningsår", e.tireYear] : null,
+    e.type === "dack" && e.tireKind === "vinter" && e.studded != null ? ["Dubbade", e.studded ? "Ja" : "Nej"] : null,
     e.depth != null ? ["Mönsterdjup", `${fmt(e.depth, 1)} mm`] : null,
     ["service", "eget"].includes(e.type) && workOf(e, c).length ? ["Gjordes", workOf(e, c).map(workText).join(", ")] : null,
     e.note ? ["Anteckning", e.note] : null,
@@ -5668,7 +5706,11 @@ function onChange(ev) {
     if (!ev.target.checked) requestAnimationFrame(() => setWheel("09:00"));
   }
   if (ev.target.dataset?.pushKind) { setPushPref(ev.target.dataset.pushKind, ev.target.checked); return; }
-  if (ev.target.id === "ef-tireAction") { const box = $("#ef-tirekind-box"); if (box) box.hidden = isSwap(ev.target.value); }
+  if (ev.target.id === "ef-tireAction") {
+    const box = $("#ef-tirekind-box"); if (box) box.hidden = isSwap(ev.target.value);
+    const nb = $("#ef-newtire-box"); if (nb) nb.hidden = ev.target.value !== "nya";
+  }
+  if (ev.target.id === "ef-tireKind") { const sb = $("#ef-studded-box"); if (sb) sb.hidden = ev.target.value !== "vinter"; }
   if (ev.target.id === "ef-scan") { scanReceipt(ev.target.files?.[0]); ev.target.value = ""; }
   if (ev.target.id === "bk-addr") geocodeBookingAddress();
   if ((ev.target.id === "ef-date" || ev.target.id === "ef-category") && $("#ef-nextBesiktning")) updateNextInspection();
