@@ -3648,7 +3648,7 @@ function entryForm(type, e = {}, opts = {}) {
              ${handlerField(e.handler ?? (e.id ? "" : lastHandler(e.place || (e.title || "").replace(/^Besiktning hos /, ""))))}
              <input type="hidden" name="title" value="${v("title")}">`
           : field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
-        ${amount(e.category === "Besiktning" ? "520" : "3 200")}${date}
+        ${amount(e.category === "Besiktning" ? "520" : "3 200")}${e.category === "Besiktning" ? odo(false) : ""}${date}
         ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast (valfritt)", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(suggestNextInspection(e.date || todayStr(), c)) : ""}">`, "Uträknat från besiktningens datum. Kontrollera mot protokollet.")}</div>
         <p class="hint" id="ef-old-besikt" hidden>Det här är en äldre besiktning, så nästa datum behövs inte. Den sparas bara i loggen.</p>` : ""}
         ${more()}`;
