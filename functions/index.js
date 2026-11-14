@@ -55,6 +55,14 @@ function reminders(c, today) {
         { title: `Inspection in ${d === 1 ? "1 day" : `${d} days`}`, body: `${name} must be inspected by ${shortDate(c.besiktning, "en")}.` });
     }
   }
+  if (c.efterkontroll?.by) {
+    const d = daysBetween(today, c.efterkontroll.by);
+    if ([7, 1].includes(d)) {
+      add(`efterkontroll-${d}`,
+        { title: `Efterkontroll om ${d === 1 ? "1 dag" : `${d} dagar`}`, body: `${name} ska efterkontrolleras senast ${shortDate(c.efterkontroll.by, "sv")}.` },
+        { title: `Re-inspection in ${d === 1 ? "1 day" : `${d} days`}`, body: `${name} must be re-inspected by ${shortDate(c.efterkontroll.by, "en")}.` });
+    }
+  }
   if (c.forsakringDatum && daysBetween(today, c.forsakringDatum) === 14) {
     add("forsakring",
       { title: "Försäkringen förnyas om 14 dagar", body: `Bra tillfälle att jämföra priser för ${name}.` },
