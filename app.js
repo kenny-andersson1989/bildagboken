@@ -1093,6 +1093,60 @@ function renderOnboarding(error = "") {
   if (join && !window.matchMedia("(pointer: coarse)").matches) $("#ob-code")?.focus();
 }
 
+// Chassinummer (VIN): 17 tecken utan I, O och Q. Tillverkaren står i de tre första tecknen och årsmodellen i det tionde.
+const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/;
+const cleanVin = (v) => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const VIN_MAKERS = {
+  YV1: "Volvo", YV4: "Volvo", YV2: "Volvo", LYV: "Volvo", "7JR": "Volvo", "7JD": "Volvo", YS3: "Saab", YS2: "Scania",
+  WVW: "Volkswagen", WV1: "Volkswagen", WV2: "Volkswagen", WVG: "Volkswagen", WAU: "Audi", WUA: "Audi", WBA: "BMW", WBS: "BMW", WBY: "BMW",
+  WDB: "Mercedes-Benz", WDD: "Mercedes-Benz", WDC: "Mercedes-Benz", W1K: "Mercedes-Benz", W1N: "Mercedes-Benz", W1V: "Mercedes-Benz", WMW: "Mini",
+  WP0: "Porsche", WP1: "Porsche", TMB: "Skoda", VSS: "Seat", VSE: "Seat", VF1: "Renault", VF3: "Peugeot", VF7: "Citroën", VR3: "Peugeot", VR7: "Citroën", UU1: "Dacia",
+  ZFA: "Fiat", ZAR: "Alfa Romeo", WF0: "Ford", WF1: "Ford", W0L: "Opel", W0V: "Opel", SAL: "Land Rover", SAJ: "Jaguar", SCC: "Lotus",
+  JTD: "Toyota", JTE: "Toyota", JTN: "Toyota", JTM: "Toyota", SB1: "Toyota", NMT: "Toyota", VNK: "Toyota", JTH: "Lexus", JN1: "Nissan", SJN: "Nissan", VSK: "Nissan",
+  JHM: "Honda", SHH: "Honda", SHS: "Honda", JMZ: "Mazda", JM1: "Mazda", JF1: "Subaru", JF2: "Subaru", JS2: "Suzuki", TSM: "Suzuki", JMB: "Mitsubishi", JMY: "Mitsubishi",
+  KNA: "Kia", KNE: "Kia", KND: "Kia", U5Y: "Kia", U6Y: "Kia", KMH: "Hyundai", TMA: "Hyundai", NLH: "Hyundai", "5YJ": "Tesla", "7SA": "Tesla", XP7: "Tesla", LRW: "Tesla",
+  LPS: "Polestar", L6T: "Lynk & Co", LGX: "BYD", LC0: "BYD", SDB: "MG", LSJ: "MG", LVV: "Chery", LB3: "Geely",
+};
+function vinMake(vin) { const v = cleanVin(vin); return VIN_MAKERS[v.slice(0, 3)] || null; }
+// Årsmodell: tecknet går runt var 30:e år, så det senaste året som inte ligger i framtiden väljs.
+function vinYear(vin) {
+  const ch = cleanVin(vin)[9];
+  const codes = "ABCDEFGHJKLMNPRSTVWXY123456789";
+  const i = codes.indexOf(ch);
+  if (i < 0) return null;
+  const max = new Date().getFullYear() + 1;
+  let y = 1980 + i;
+  while (y + 30 <= max) y += 30;
+  return y;
+}
+function vinInfo(vin) {
+  const v = cleanVin(vin);
+  if (!v) return "";
+  if (v.length !== 17) return `${v.length} av 17 tecken`;
+  if (!VIN_RE.test(v)) return "Innehåller I, O eller Q, som inte används i chassinummer. Kontrollera 0 (noll) och 1 (ett).";
+  return [vinMake(v), vinYear(v) ? `årsmodell ${vinYear(v)}` : ""].filter(Boolean).join(" · ");
+}
+// Hitta ett chassinummer i text från kameran. Bokstäver som kameran ofta läser fel rättas (O → 0, I → 1, Q → 0).
+function findVin(text) {
+  const t = String(text || "").toUpperCase();
+  const chunks = [...t.matchAll(/[A-Z0-9][A-Z0-9 ]{15,22}[A-Z0-9]/g)].map((m) => m[0].replace(/ /g, "")).concat(t.replace(/[^A-Z0-9]/g, " ").split(/\s+/));
+  const fix = (x) => x.replace(/O/g, "0").replace(/I/g, "1").replace(/Q/g, "0");
+  // Först: ett nummer som börjar med en känd tillverkarkod, var som helst i texten.
+  for (const ch of chunks) {
+    for (let i = 0; i + 17 <= ch.length; i++) {
+      const cand = ch.slice(i, i + 17);
+      const fixed = cand.slice(0, 3) + fix(cand.slice(3));
+      if (VIN_RE.test(fixed) && vinMake(fixed)) return fixed;
+    }
+  }
+  // Annars: ett ord som är exakt 17 tecken med både siffror och bokstäver.
+  for (const w of t.split(/[^A-Z0-9]+/)) {
+    const fixed = fix(w);
+    if (w.length === 17 && VIN_RE.test(fixed) && /\d/.test(fixed) && /[A-Z]/.test(fixed) && vinYear(fixed)) return fixed;
+  }
+  return null;
+}
+
 // Förslag på märke och modell. Märken och modeller som redan finns i hushållet kommer först.
 const findMake = (m) => Object.keys(CAR_MODELS).find((k) => k.toLowerCase() === String(m || "").trim().toLowerCase()) || null;
 const modelList = (make) => (CAR_MODELS[findMake(make)] || []).map((x) => { const [name, fuel] = x.split(":"); return { name, fuel: fuel || null }; });
@@ -1106,6 +1160,38 @@ function modelOptions(make) {
   return list.map((m) => `<option value="${esc(m)}"></option>`).join("");
 }
 // När märke eller modell ändras: uppdatera modellförslagen och föreslå El för rena elbilar.
+// Chassinummer: visa vad numret säger, och fyll i märke och årsmodell om de är tomma.
+function applyVin(vin, fromScan = false) {
+  const v = cleanVin(vin);
+  const info = $("#cf-vin-info");
+  if (info) { info.textContent = v ? vinInfo(v) : "Står längst ner i vindrutan på förarsidan och i registreringsbeviset. Tryck på kameran för att läsa av det."; info.classList.toggle("warn", !!v && !VIN_RE.test(v)); }
+  if (!VIN_RE.test(v)) return;
+  const mk = $("#cf-make"), yr = $("#cf-year");
+  if (mk && !mk.value.trim() && vinMake(v)) { mk.value = vinMake(v); mk.classList.add("auto-filled"); mk.dispatchEvent(new Event("change", { bubbles: true })); }
+  if (yr && !yr.value.trim() && vinYear(v)) { yr.value = vinYear(v); yr.classList.add("auto-filled"); }
+  if (fromScan) showToast(`Chassinumret är avläst: ${v}. Kontrollera att det stämmer.`, 6000);
+}
+document.addEventListener("input", (ev) => { if (ev.target.id === "cf-vin") applyVin(ev.target.value); });
+document.addEventListener("change", async (ev) => {
+  if (ev.target.id !== "cf-vin-file") return;
+  const file = ev.target.files?.[0];
+  ev.target.value = "";
+  if (!file) return;
+  const btn = $("#cf-vin-scan"), info = $("#cf-vin-info");
+  btn?.classList.add("busy");
+  if (info) info.textContent = "Läser av …";
+  try {
+    const text = await readReceiptText(file, (p) => { if ($("#cf-vin-info")) $("#cf-vin-info").textContent = `Läser av … ${Math.round(p * 100)} %`; });
+    const vin = findVin(text);
+    if (!vin) { if ($("#cf-vin-info")) $("#cf-vin-info").textContent = "Hittade inget chassinummer i bilden. Ta en ny bild närmare och rakt framifrån, eller skriv in det."; return; }
+    const input = $("#cf-vin");
+    if (input) input.value = vin;
+    applyVin(vin, true);
+  } catch {
+    if ($("#cf-vin-info")) $("#cf-vin-info").textContent = "Det gick inte att läsa av bilden just nu. Skriv in numret i stället.";
+  } finally { btn?.classList.remove("busy"); }
+});
+
 function onCarNameInput(ev) {
   if (ev.target.id === "cf-make") {
     const dl = $("#dl-model");
@@ -1157,6 +1243,11 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       ${inp("color", "Färg", c.color, 'placeholder="Till exempel svart"')}
       ${inp("plate", "Registreringsnummer", c.plate, 'placeholder="Till exempel ABC 123" autocapitalize="characters"')}
     </div>
+    <label class="field"><span>Chassinummer (VIN)</span>
+      <span class="geo-row"><input name="vin" id="cf-vin" value="${esc(c.vin || "")}" placeholder="17 tecken, valfritt" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="24">
+      <label class="geo-btn" id="cf-vin-scan" aria-label="Läs av chassinumret med kameran" title="Läs av med kameran">${icon("camera", 20)}<input type="file" id="cf-vin-file" accept="image/*" class="vh"></label></span>
+      <small id="cf-vin-info">${esc(c.vin ? vinInfo(c.vin) : "Står längst ner i vindrutan på förarsidan och i registreringsbeviset. Tryck på kameran för att läsa av det.")}</small></label>
+    <label class="check"><input type="checkbox" name="vinShare" id="cf-vinShare"${c.vinShare ? " checked" : ""}> Visa chassinumret i serviceboken som delas med en köpare</label>
     ${isNew
       ? inp("odometer", "Mätarställning (mil)", "", 'inputmode="numeric" placeholder="Till exempel 21 480"') + `
         <div class="field">
@@ -1629,7 +1720,7 @@ function docSheet(id) {
 
 // Servicebok att skriva ut eller spara som PDF: bilen, underhållet och alla jobb med datum, mil och kostnad.
 // Serviceboken som vanlig text i tabeller. Samma innehåll används för utskrift och för länken till en köpare.
-function serviceBookData(c) {
+function serviceBookData(c, { share = false } = {}) {
   const ents = carEntries().filter((e) => ["service", "eget", "dack"].includes(e.type) || (e.type === "kostnad" && e.category === "Besiktning"))
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const what = (e) => {
@@ -1641,7 +1732,7 @@ function serviceBookData(c) {
   const st = allItemStatus(c).filter((x) => !x.unknown || x.lastDate);
   return {
     car: carName(c), plate: c.plate ? String(c.plate).toUpperCase() : "", made: todayStr(),
-    facts: [["Registreringsnummer", c.plate ? String(c.plate).toUpperCase() : ""], ["Årsmodell", c.year ? String(c.year) : ""], ["Motor", c.engine], ["Drivmedel", c.fuel], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", c.besiktning ? fmtDate(c.besiktning) : ""]].filter(([, v]) => v),
+    facts: [["Registreringsnummer", c.plate ? String(c.plate).toUpperCase() : ""], ["Chassinummer", c.vin && (!share || c.vinShare) ? c.vin : ""], ["Årsmodell", c.year ? String(c.year) : ""], ["Motor", c.engine], ["Drivmedel", c.fuel], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", c.besiktning ? fmtDate(c.besiktning) : ""]].filter(([, v]) => v),
     items: st.map((x) => [x.item.name, intervalText(x.item).replace(/^var /, ""), x.lastDate ? `${fmtDate(x.lastDate)}${x.lastMil != null ? `, ${fmt(x.lastMil)} mil` : ""}` : "–", x.unknown ? "–" : dueText(x) || "–"]),
     rows: ents.map((e) => [fmtDate(e.date), e.odometer != null ? `${fmt(e.odometer)} mil` : "–", what(e), e.note || "", e.workshop || e.place || "", e.amount != null ? `${fmtKr(e.amount)} kr` : ""]),
     total: `${fmtKr(ents.reduce((a, e) => a + (e.amount || 0), 0))} kr`,
@@ -1688,7 +1779,7 @@ function serviceBookHtml(d) {
 async function shareServiceBook() {
   const c = car();
   const token = c.shareToken || randomId(10) + randomId(10);
-  await setDoc(doc(db, "shares", token), { householdId: S.hid, carId: c.id, createdBy: uid(), updatedAt: Date.now(), data: serviceBookToStore(serviceBookData(c)) });
+  await setDoc(doc(db, "shares", token), { householdId: S.hid, carId: c.id, createdBy: uid(), updatedAt: Date.now(), data: serviceBookToStore(serviceBookData(c, { share: true })) });
   if (!c.shareToken) { c.shareToken = token; await updateDoc(ref("cars", c.id), { shareToken: token }); }
   render();
   return token;
@@ -2725,6 +2816,7 @@ function viewCar() {
     </div>
     <!--card:upp--><div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
+        ${c.vin ? `<div><dt>Chassinummer</dt><dd class="vin-dd"><span data-notr>${esc(c.vin)}</span><button class="link" type="button" data-act="copy-vin">Kopiera</button></dd></div>` : ""}
         ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkringsbolag", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
@@ -4725,6 +4817,7 @@ function readCarForm(form) {
     Object.assign(data, {
       make: str("make"), model: str("model"), year: str("year") || null, engine: str("engine") || null,
       fuel: str("fuel"), color: str("color") || null, plate: str("plate").toUpperCase() || null,
+      vin: cleanVin(str("vin")) || null, vinShare: fd.get("vinShare") === "on" || null,
     });
   }
   // Bara för en ny bil: blir bilens första loggpost.
@@ -5191,6 +5284,7 @@ const ACTIONS = {
     });
   },
   "print-book"() { printServiceBook(); },
+  async "copy-vin"() { const v = car()?.vin; if (!v) return; const ok = await copyText(v); showToast(ok ? "Chassinumret är kopierat" : v, ok ? 3000 : 8000); },
   async "copy-shortcut"(el) {
     const ok = await copyText(shortcutUrl(el.dataset.id));
     showToast(ok ? "Länken är kopierad" : shortcutUrl(el.dataset.id), ok ? 3500 : 9000);

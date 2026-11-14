@@ -1329,3 +1329,6 @@ div.koll-main { cursor: default; }
 .res-seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .detail-list dd { white-space: pre-line; }
 .todo-src { font-style: normal; font-size: 11px; font-weight: 600; color: #B4541C; background: var(--accent-soft); border-radius: 999px; padding: 2px 8px; margin-left: 6px; align-self: center; flex: none; }
+.vin-dd { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-variant-numeric: tabular-nums; letter-spacing: .3px; word-break: break-all; }
+#cf-vin { text-transform: uppercase; letter-spacing: .5px; }
+#cf-vin-info.warn { color: var(--warn, #A86B0C); }
