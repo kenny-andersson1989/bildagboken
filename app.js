@@ -398,7 +398,7 @@ function recurringEntries(c) {
 }
 // Gratisversionens gränser. Avstängda tills Plus går att köpa: sätt då `from` till startdagen, till exempel "2027-03-01".
 // Hushåll som skapades före den dagen, och hushåll med Plus, har inga gränser.
-const FREE = { from: null, cars: 1, members: 3, photos: 100 };
+const FREE = { from: null, cars: 1, members: 3, photos: 50 };
 const hasPlus = (h = S.house) => tsMs(h?.plus?.until) > Date.now();
 function limited(h = S.house) {
   if (!FREE.from || !h || hasPlus(h)) return false;
