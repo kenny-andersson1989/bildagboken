@@ -1349,3 +1349,8 @@ div.koll-main { cursor: default; }
 .plus-t th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); padding: 0 0 8px; }
 .plus-t td { padding: 10px 0; border-top: 1px solid var(--line); }
 .trip-live { color: var(--accent-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.auto-box { margin-top: 14px; padding: 12px 14px; border-radius: var(--r-chip); background: var(--ground); display: grid; gap: 6px; justify-items: start; }
+.auto-box p { margin: 0; }
+.warn-t { color: var(--danger); }
+.review-btns { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.review-row { align-items: flex-start; }
