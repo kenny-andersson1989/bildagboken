@@ -1,6 +1,7 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Glömde du avsluta resan?": "Did you forget to finish the trip?",
   "Ort, adress eller företag": "Town, address or business",
   "Senaste målen": "Recent destinations",
   "Vägen som Apple Kartor föreslår från där resan startade. Har du kört en annan väg eller tur och retur, läs av mätaren": "The route Apple Maps suggests from where the trip started. If you drove another way or a round trip, read the odometer",
@@ -1129,6 +1130,9 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Pågår sedan (\S+(?: \S+)?)(?: · mot (.+))?$/, (m, w, to) => `In progress since ${w}${to ? ` · to ${to}` : ""}`],
+  [/^Startade (\d\d:\d\d|\d+ \S+) · mot (.+)$/, "Started $1 · to $2"],
+  [/(^|· )[Ää]ndrad (\d+ \S+) av (.+?)(, (\d+) gånger)?\.?$/, (m, pre, d, w, x, n) => `${pre}${pre ? "changed" : "Changed"} ${d} by ${w === "dig" ? "you" : w}${n ? `, ${n} times` : ""}${m.endsWith(".") ? "." : ""}`],
   [/^Enligt kartan ([\d\s ,]+) mil\. Använd ([\d\s ,]+)$/, "By the map $1 mil. Use $2"],
   [/^Gratis: gränserna \((\d+) bil, (\d+) personer, (\d+) bilder\) och tipsen om Plus är påslagna\. Plus: allt som ingår i Plus, utan gränser\.?$/, "Free: the limits ($1 car, $2 people, $3 photos) and the Plus tips are on. Plus: everything in Plus, without limits."],
   [/^I tjänsten i (\S+)$/, "Business in $1"],

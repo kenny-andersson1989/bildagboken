@@ -1,6 +1,7 @@
 // Pushnotiser för Bildagboken.
 // 1) Varje morgon kl 08: påminnelser om bokade tider, besiktning, försäkring, dokument, skatt och däckbyte.
 // 2) När någon loggar något: en notis till de andra i hushållet.
+// 3) En resa i körjournalen som inte har avslutats efter fyra timmar.
 // Telefonernas adresser för notiser sparas av appen i households/{hid}/tokens/{token}.
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
@@ -181,6 +182,31 @@ exports.nyLogg = onDocumentCreated("households/{hid}/entries/{eid}", async (even
     sv: { title: "Bildagboken", body: `${who} ${LOGGED.sv[e.type] || "loggade något"}${amount}${odo}` },
     en: { title: "Bildagboken", body: `${who === "Någon" ? "Someone" : who} ${LOGGED.en[e.type] || "logged something"}${amount}${odo}` },
   });
+});
+
+// 3) Körjournalen: en resa som har pågått i fyra timmar utan att avslutas. Påminnelse en gång, till föraren.
+exports.glomdResa = onSchedule({ schedule: "every 60 minutes", timeZone: TZ }, async () => {
+  const limit = Date.now() - 4 * 36e5;
+  const houses = await db.collection("households").get();
+  let sent = 0;
+  for (const h of houses.docs) {
+    const open = await db.collection(`households/${h.id}/trips`).where("odoEnd", "==", null).get();
+    for (const d of open.docs) {
+      const t = d.data();
+      if (t.remindedAt || !t.startedAt || t.startedAt > limit) continue;
+      await d.ref.update({ remindedAt: Date.now() });
+      const who = t.driver || t.createdBy;
+      const tokens = (await tokensOf(h.id)).filter((x) => x.uid === who);
+      const to = t.to ? ` mot ${t.to}` : "";
+      await send(h.id, tokens, {
+        tag: `trip-${d.id}`, url: "./#bilen",
+        sv: { title: "Glömde du avsluta resan?", body: `Resan${to} startade för mer än fyra timmar sedan. Fyll i mätarställningen.` },
+        en: { title: "Did you forget to finish the trip?", body: `The trip${t.to ? ` to ${t.to}` : ""} started more than four hours ago. Fill in the odometer.` },
+      });
+      sent++;
+    }
+  }
+  if (sent) logger.info(`Påminnelser om resor: ${sent}`);
 });
 
 // För test: reminders() kan provas lokalt utan Firebase.
