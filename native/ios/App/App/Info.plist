@@ -86,6 +86,7 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>location</string>
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
@@ -94,7 +95,9 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Bilder väljs för att spara kvitton, dokument och foton på bilen.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Platsen används för att föreslå närmaste verkstad, station eller tvätt.</string>
+	<string>Platsen används för att föreslå närmaste verkstad, station eller tvätt, och för körjournalen.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Med automatisk körjournal mäter appen dina bilresor även när den är stängd, så att de hamnar i körjournalen utan att du behöver trycka. Du kan stänga av det under Bilen.</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 </dict>

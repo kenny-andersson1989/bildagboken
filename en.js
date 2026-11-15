@@ -1,6 +1,26 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Automatisk körjournal": "Automatic driving log",
+  "Appen känner av när bilen körs och mäter vägen, även när den är stängd. Du väljer bara tjänsteresa eller privat efteråt": "The app detects when the car is driven and measures the route, even when it is closed. You just choose business or private afterwards",
+  "Slå på": "Turn on",
+  "På. Resorna mäts i bakgrunden": "On. Trips are measured in the background",
+  "Välj Alltid för platsen i telefonens Inställningar → Bildagboken → Plats, annars mäts bara resor när appen är öppen": "Choose Always for location in the phone's Settings → Bildagboken → Location, otherwise trips are only measured while the app is open",
+  "Appen får inte använda platsen. Tillåt det i telefonens Inställningar → Bildagboken → Plats → Alltid": "The app is not allowed to use location. Allow it in the phone's Settings → Bildagboken → Location → Always",
+  "Stäng av": "Turn off",
+  "Automatisk körjournal, som känner av resorna själv, finns i iPhone-appen": "Automatic driving log, which detects trips by itself, is available in the iPhone app",
+  "Välj tjänsteresa eller privat": "Choose business or private",
+  "Gå igenom": "Review",
+  "Resor att gå igenom": "Trips to review",
+  "Resorna har mätts med GPS. Mätarställningen är beräknad från den senast kända och sträckan": "The trips were measured with GPS. The odometer is estimated from the last known reading and the distance",
+  "Tjänst": "Business",
+  "Mer": "More",
+  "Alla resor är genomgångna": "All trips are reviewed",
+  "Ej genomgången": "Not reviewed",
+  "Stänga av automatisk körjournal?": "Turn off automatic driving log?",
+  "Resor som redan är mätta finns kvar. Nya resor mäts inte förrän du slår på den igen": "Trips already measured are kept. New trips are not measured until you turn it on again",
+  "Automatisk körjournal är på. Välj Alltid när telefonen frågar om platsen": "Automatic driving log is on. Choose Always when the phone asks about location",
+  "Den automatiska körjournalen finns i iPhone-appen från version 1.2": "The automatic driving log is in the iPhone app from version 1.2",
   "Läs av mätaren i bilen": "Read the odometer in the car",
   "Stämmer mätarställningen?": "Is the odometer right?",
   "Ja, spara": "Yes, save",
@@ -1134,6 +1154,8 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^(\d+) (resa|resor) att gå igenom$/, (m, n) => `${n} ${n === "1" ? "trip" : "trips"} to review`],
+  [/^Kör nu(?: · ([\d\s ,]+) km)?$/, (m, k) => `Driving now${k ? ` · ${k} km` : ""}`],
   [/^Senast ([\d\s ,]+)$/, "Last $1"],
   [/^Läs av mätaren i bilen\. Senast kända är ([\d\s ,]+) mil\.$/, "Read the odometer in the car. The last known is $1 mil."],
   [/^Enligt kartan ca ([\d\s ,]+) mil från start, alltså runt ([\d\s ,]+) på mätaren\.$/, "By the map about $1 mil from start, so around $2 on the odometer."],

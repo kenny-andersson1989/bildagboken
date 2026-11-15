@@ -24,6 +24,7 @@ public class WidgetDataPlugin: CAPPlugin, CAPBridgedPlugin {
 class BridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(WidgetDataPlugin())
+        bridge?.registerPluginInstance(TripTrackerPlugin())
     }
 }
 

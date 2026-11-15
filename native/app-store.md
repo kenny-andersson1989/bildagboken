@@ -84,3 +84,11 @@ Gör detta en gång hos Apple innan bygget (developer.apple.com → Certificates
 2. Öppna `se.bildagboken.app`, bocka i **App Groups** → **Configure** → välj `group.se.bildagboken.app` → Continue → **Save** (Confirm).
 3. **+** → **App IDs** → **App** → Continue. Description `Bildagboken Widget`, Bundle ID **Explicit** `se.bildagboken.app.widget`.
    Bocka i **App Groups** → **Configure** → välj `group.se.bildagboken.app` → Continue → **Register**.
+
+## Version 1.2: automatisk körjournal
+Inga nya steg hos Apple behövs. Starta bygget i Codemagic från main som vanligt.
+
+**Notes till Apples granskare** (lägg till i App Review Information):
+> Version 1.2 adds an optional automatic driving log for Bildagboken Plus. It is off by default and is turned on by the user under Car → Driving log → Automatic driving log. When on, the app uses significant location changes and, only while the car is moving, standard location updates in the background to detect car trips and measure their distance, so that business trips can be reported for mileage allowance. Location data stays on the device until the app is opened; then each trip (start and end point, distance and times) is saved to the user's own household log. The user can turn it off at any time.
+
+**Nyheter i den här versionen:** Automatisk körjournal: appen känner av när bilen körs och mäter resan med GPS. Välj tjänsteresa eller privat efteråt.
