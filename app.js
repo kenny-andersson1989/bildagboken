@@ -2162,7 +2162,7 @@ async function aiReadDocument(file) {
   } catch (e) {
     console.warn("AI-läsningen misslyckades", e);
     const code = String(e?.code || e?.message || "").replace(/^functions\//, "");
-    const msg = /resource-exhausted|permission-denied/.test(code) ? e.message : !navigator.onLine ? "Läsningen med AI behöver nät."
+    const msg = /resource-exhausted|permission-denied|failed-precondition|unavailable/.test(code) ? e.message : !navigator.onLine ? "Läsningen med AI behöver nät."
       : `Dokumentet gick inte att läsa (${code || "okänt fel"}). Fyll i själv.`;
     if (label()) label().textContent = msg;
     return;
