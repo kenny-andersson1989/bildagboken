@@ -2160,7 +2160,10 @@ async function aiReadDocument(file) {
       res = (await httpsCallable(getFunctions(fb, "europe-west1"), "lasDokument", { timeout: 120000 })(payload)).data;
     }
   } catch (e) {
-    const msg = /resource-exhausted|permission-denied/.test(e?.code || "") ? e.message : navigator.onLine ? "Dokumentet gick inte att läsa. Fyll i själv." : "Läsningen med AI behöver nät.";
+    console.warn("AI-läsningen misslyckades", e);
+    const code = String(e?.code || e?.message || "").replace(/^functions\//, "");
+    const msg = /resource-exhausted|permission-denied/.test(code) ? e.message : !navigator.onLine ? "Läsningen med AI behöver nät."
+      : `Dokumentet gick inte att läsa (${code || "okänt fel"}). Fyll i själv.`;
     if (label()) label().textContent = msg;
     return;
   }
