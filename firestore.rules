@@ -64,9 +64,10 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.members == [request.auth.uid];
 
       // Bilar, loggar och bilder: bara hushållets medlemmar.
-      match /{document=**} {
+      // Räknaren för AI-anrop (ai/{månad}) skrivs bara av servern.
+      match /{coll}/{document=**} {
         allow read: if memberOf(hid) || isAdmin();
-        allow write: if memberOf(hid);
+        allow write: if memberOf(hid) && coll != "ai";
       }
     }
   }

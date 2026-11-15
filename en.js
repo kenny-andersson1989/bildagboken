@@ -1,6 +1,13 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Läsning med AI": "Reading with AI",
+  "Läs av med AI": "Read with AI",
+  "AI läser dokumentet …": "AI is reading the document …",
+  "Dokumentet gick inte att läsa. Fyll i själv": "The document could not be read. Fill in yourself",
+  "Läsningen med AI behöver nät": "Reading with AI needs a connection",
+  "Hittade inget att fylla i. Fyll i själv": "Found nothing to fill in. Fill in yourself",
+  "Kontrollera det som fylldes i innan du sparar": "Check what was filled in before you save",
   "Resor": "Trips",
   "Senaste resorna": "Recent trips",
   "Inga resor än. Tryck på Starta resa när du åker": "No trips yet. Tap Start trip when you leave",
@@ -1174,6 +1181,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Ifyllt med AI: (.+)$/, "Filled in with AI: $1"],
   [/^Körjournal · (.+)$/, "Driving log · $1"],
   [/^Startade (\d\d:\d\d) vid ([\d\s ,]+) mil$/, "Started $1 at $2 mil"],
   [/^Mot (.+) · Startade (\d\d:\d\d) vid ([\d\s ,]+) mil$/, "To $1 · Started $2 at $3 mil"],

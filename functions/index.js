@@ -2,8 +2,13 @@
 // 1) Varje morgon kl 08: påminnelser om bokade tider, besiktning, försäkring, dokument, skatt och däckbyte.
 // 2) När någon loggar något: en notis till de andra i hushållet.
 // 3) En resa i körjournalen som inte har avslutats efter fyra timmar.
+// 4) Läsning med AI av servicefakturor, besiktningsprotokoll och kvitton (Plus).
 // Telefonernas adresser för notiser sparas av appen i households/{hid}/tokens/{token}.
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
+const AnthropicSdk = require("@anthropic-ai/sdk");
+const Anthropic = AnthropicSdk.default || AnthropicSdk;
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions, logger } = require("firebase-functions/v2");
 const admin = require("firebase-admin");
@@ -207,6 +212,84 @@ exports.glomdResa = onSchedule({ schedule: "every 60 minutes", timeZone: TZ }, a
     }
   }
   if (sent) logger.info(`Påminnelser om resor: ${sent}`);
+});
+
+// 4) AI (Plus): läser ett foto av en servicefaktura, ett besiktningsprotokoll eller ett kvitto och fyller i formuläret.
+// Nyckeln sparas som hemlighet: firebase functions:secrets:set ANTHROPIC_API_KEY. Den når aldrig appen.
+const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
+const ADMIN_UID = "mjQJQzsMCpVURkuVSyK5ctKVhG23";
+const AI_MONTHLY_LIMIT = 60;   // anrop per hushåll och månad
+
+const DOC_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["docType", "date", "amount", "odometerMil", "place", "work", "inspectionResult", "defects", "recheckBy", "nextInspection", "note"],
+  properties: {
+    docType: { type: "string", enum: ["service", "besiktning", "tankning", "kvitto", "annat"] },
+    date: { type: ["string", "null"], description: "Datum på dokumentet, YYYY-MM-DD" },
+    amount: { type: ["number", "null"], description: "Totalt att betala i kronor inklusive moms" },
+    odometerMil: { type: ["number", "null"], description: "Mätarställning i svenska mil (1 mil = 10 km). Står den i km, dela med 10." },
+    place: { type: ["string", "null"], description: "Verkstad, station, besiktningsföretag eller butik" },
+    work: {
+      type: "array",
+      description: "Det som gjordes på bilen, en rad per del eller åtgärd, med vanliga svenska namn (till exempel Motorolja och oljefilter, Bromsbelägg fram, Torkarblad)",
+      items: {
+        type: "object", additionalProperties: false, required: ["name", "action"],
+        properties: { name: { type: "string" }, action: { type: "string", enum: ["bytt", "kontrollerat", "lagat", "justerat"] } },
+      },
+    },
+    inspectionResult: { type: ["string", "null"], enum: ["godkand", "anmarkning", "efterkontroll", "korforbud", null] },
+    defects: { type: "array", items: { type: "string" }, description: "Brister från besiktningen, en per rad" },
+    recheckBy: { type: ["string", "null"], description: "Sista dag för efterkontroll, YYYY-MM-DD" },
+    nextInspection: { type: ["string", "null"], description: "Nästa besiktning senast, YYYY-MM-DD" },
+    note: { type: ["string", "null"], description: "Kort anteckning om något viktigt som inte passar i fälten, till exempel rekommenderade åtgärder" },
+  },
+};
+
+exports.lasDokument = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB", maxInstances: 2 }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
+  const { hid, image, mediaType = "image/jpeg", formType = "" } = req.data || {};
+  if (typeof hid !== "string" || typeof image !== "string" || image.length > 8e6) throw new HttpsError("invalid-argument", "Bilden saknas eller är för stor.");
+  if (!/^image\/(jpeg|png|webp)$/.test(mediaType)) throw new HttpsError("invalid-argument", "Fel bildformat.");
+  const houseRef = db.doc(`households/${hid}`);
+  const house = (await houseRef.get()).data();
+  if (!house || !(house.members || []).includes(uid)) throw new HttpsError("permission-denied", "Du hör inte till hushållet.");
+  const plus = (house.plus?.until?.toMillis?.() ?? house.plus?.until ?? 0) > Date.now();
+  if (!plus && uid !== ADMIN_UID) throw new HttpsError("permission-denied", "Läsning med AI ingår i Bildagboken Plus.");
+
+  // Tak per månad, så att ingen kan dra iväg kostnaden.
+  const month = todayStr().slice(0, 7);
+  const usageRef = db.doc(`households/${hid}/ai/${month}`);
+  const used = await db.runTransaction(async (tx) => {
+    const n = ((await tx.get(usageRef)).data()?.count || 0) + 1;
+    if (n > AI_MONTHLY_LIMIT) return n;
+    tx.set(usageRef, { count: n, updatedAt: Date.now() }, { merge: true });
+    return n;
+  });
+  if (used > AI_MONTHLY_LIMIT) throw new HttpsError("resource-exhausted", `Ni har använt AI ${AI_MONTHLY_LIMIT} gånger den här månaden. Det fylls på nästa månad.`);
+
+  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+  const res = await client.beta.messages.create({
+    model: "claude-opus-5-5",
+    max_tokens: 4000,
+    betas: ["server-side-fallback-2026-07-01"],
+    fallbacks: "default",
+    output_config: { format: { type: "json_schema", schema: DOC_SCHEMA } },
+    system: "Du läser av svenska dokument om bilar: servicefakturor, verkstadskvitton, besiktningsprotokoll och tankkvitton. Fyll bara i det som står i dokumentet. Gissa inte; använd null eller en tom lista när något saknas eller inte går att läsa. Svara på svenska.",
+    messages: [{ role: "user", content: [
+      { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
+      { type: "text", text: `Läs av dokumentet.${formType ? ` Användaren fyller i ett formulär för: ${formType}.` : ""} Dagens datum är ${todayStr()}.` },
+    ] }],
+  });
+  if (res.stop_reason === "refusal") throw new HttpsError("failed-precondition", "Dokumentet gick inte att läsa.");
+  const text = res.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+  try {
+    return { ok: true, doc: JSON.parse(text), left: AI_MONTHLY_LIMIT - used };
+  } catch (e) {
+    logger.warn("AI-svaret gick inte att tolka", text.slice(0, 200));
+    throw new HttpsError("internal", "Dokumentet gick inte att läsa.");
+  }
 });
 
 // För test: reminders() kan provas lokalt utan Firebase.

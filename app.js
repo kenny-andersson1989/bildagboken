@@ -480,6 +480,7 @@ function plusSheet() {
     ["Personer i hushållet", `${FREE.members}`, "Obegränsat"],
     ["Bilder", `${FREE.photos}`, "2 000"],
     ["Körjournal", "–", "Ingår"],
+    ["Läsning med AI", "–", "Ingår"],
   ];
   openSheet("Bildagboken Plus", `
     <p>${hasPlus() ? esc(`Ni har Plus till ${fmtDate(ymd(new Date(until)))}. Det gäller alla i hushållet.`) : "Ett köp gäller alla i hushållet. Allt ni har loggat finns kvar, vad ni än väljer."}</p>
@@ -2102,8 +2103,10 @@ function parseReceipt(text) {
 
 // Kvittoknappen i formulären: fota kvittot, läs av det och fyll i belopp, datum och ställe. Fotot sparas som bild på posten.
 const RECEIPT_TYPES = ["tank", "service", "eget", "dack", "tvatt", "parkering", "kostnad"];
+// Med Plus läses kvittot, servicefakturan eller besiktningsprotokollet av med AI (Cloud Function lasDokument).
+const aiOn = () => hasPlus() || (isAdmin() && !testMode());
 function receiptButton() {
-  return `<label class="btn ghost block receipt-btn" id="receipt-btn">${icon("camera", 18)} <span id="receipt-label">Läs av ett kvitto</span>
+  return `<label class="btn ghost block receipt-btn" id="receipt-btn">${icon(aiOn() ? "spark" : "camera", 18)} <span id="receipt-label">${aiOn() ? "Läs av med AI" : "Läs av ett kvitto"}</span>
     <input type="file" id="ef-scan" accept="image/*" class="vh"></label>`;
 }
 async function scanReceipt(file) {
@@ -2115,6 +2118,7 @@ async function scanReceipt(file) {
     try { const dt = new DataTransfer(); dt.items.add(file); photo.files = dt.files; photo.dispatchEvent(new Event("change", { bubbles: true })); } catch { /* går inte att flytta bilden i den här webbläsaren */ }
   }
   btn?.classList.add("busy");
+  if (aiOn()) return aiReadDocument(file).finally(() => btn?.classList.remove("busy"));
   label.textContent = "Läser kvittot …";
   try {
     const text = await readReceiptText(file, (p) => { if ($("#receipt-label")) $("#receipt-label").textContent = `Läser kvittot … ${Math.round(p * 100)} %`; });
@@ -2135,6 +2139,65 @@ async function scanReceipt(file) {
   } finally {
     btn?.classList.remove("busy");
   }
+}
+
+// Skickar fotot till servern, som låter Claude läsa det, och fyller i formuläret med svaret.
+async function aiReadDocument(file) {
+  const label = () => $("#receipt-label");
+  const form = $('form[data-form="entry"]');
+  if (!form) return;
+  const type = form.dataset.type;
+  const cat = $("#ef-category")?.value || "";
+  if (label()) label().textContent = "AI läser dokumentet …";
+  let res;
+  try {
+    const data = await compressImage(file);
+    if (!data) throw new Error("bild");
+    const payload = { hid: S.hid, image: data.split(",")[1], mediaType: "image/jpeg", formType: cat === "Besiktning" ? "besiktning" : TYPE[type]?.label || type };
+    if (window.__aiMock) res = await window.__aiMock(payload);
+    else {
+      const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-functions.js");
+      res = (await httpsCallable(getFunctions(fb, "europe-west1"), "lasDokument", { timeout: 120000 })(payload)).data;
+    }
+  } catch (e) {
+    const msg = /resource-exhausted|permission-denied/.test(e?.code || "") ? e.message : navigator.onLine ? "Dokumentet gick inte att läsa. Fyll i själv." : "Läsningen med AI behöver nät.";
+    if (label()) label().textContent = msg;
+    return;
+  }
+  if (!document.contains(form)) return;
+  const d = res?.doc || {};
+  const filled = [];
+  const set = (id, v) => { const x = document.getElementById(id); if (!x || v == null || v === "") return false; x.value = v; x.classList.add("from-receipt"); x.dispatchEvent(new Event("input", { bubbles: true })); x.dispatchEvent(new Event("change", { bubbles: true })); return true; };
+  if (d.amount != null && set("ef-amount", String(d.amount).replace(".", ","))) filled.push(`${fmtKr(d.amount)} kr`);
+  if (d.date && d.date <= todayStr() && set("ef-date", d.date)) filled.push(fmtDateShort(d.date));
+  if (d.odometerMil != null && set("ef-odometer", String(Math.round(d.odometerMil)))) filled.push(`${fmt(d.odometerMil)} mil`);
+  if (d.place) {
+    const id = ["ef-workshop", "ef-station", "ef-place"].find((x) => document.getElementById(x));
+    if (id && set(id, d.place)) filled.push(d.place);
+  }
+  // Det som gjordes: kopplas till bilens underhållspunkter när namnet stämmer, annars läggs det till som en egen del.
+  if (Array.isArray(d.work) && d.work.length && $("#work-rows")) {
+    const items = car()?.items || [];
+    for (const w of d.work.slice(0, 12)) {
+      const n = normWord(w.name);
+      const item = items.find((i) => { const m = normWord(i.name); return m === n || m.includes(n) || n.includes(m); });
+      ACTIONS["w-add"]({ dataset: { item: item?.id || "", name: item?.name || w.name } });
+      const key = item ? `item:${item.id}` : normWord(w.name);
+      const sel = $(`#work-rows .work-row[data-key="${CSS.escape(key)}"] .w-action`);
+      if (sel && w.action && WORK_ACTIONS[w.action]) sel.value = w.action;
+    }
+    filled.push(`${d.work.length} ${d.work.length === 1 ? "åtgärd" : "åtgärder"}`);
+  }
+  if (d.inspectionResult && document.querySelector(`input[name="result"][value="${d.inspectionResult}"]`)) {
+    document.querySelector(`input[name="result"][value="${d.inspectionResult}"]`).click();
+    filled.push(INSP_RESULTS[d.inspectionResult]);
+  }
+  if (Array.isArray(d.defects) && d.defects.length && set("ef-defects", d.defects.join("\n"))) filled.push(`${d.defects.length} ${d.defects.length === 1 ? "brist" : "brister"}`);
+  set("ef-recheckBy", d.recheckBy);
+  set("ef-nextBesiktning", d.nextInspection);
+  if (d.note && !$("#ef-note")?.value.trim() && set("ef-note", d.note)) document.querySelector("#sheet details.more")?.setAttribute("open", "");
+  if (label()) label().textContent = filled.length ? `Ifyllt med AI: ${filled.join(", ")}` : "Hittade inget att fylla i. Fyll i själv.";
+  if (filled.length) showToast("Kontrollera det som fylldes i innan du sparar.");
 }
 
 /* ------------------------------------------------------------- genvägar */
