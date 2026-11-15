@@ -1,6 +1,10 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Läs av mätaren i bilen": "Read the odometer in the car",
+  "Stämmer mätarställningen?": "Is the odometer right?",
+  "Ja, spara": "Yes, save",
+  "Ändrad i efterhand": "Changed afterwards",
   "Glömde du avsluta resan?": "Did you forget to finish the trip?",
   "Ort, adress eller företag": "Town, address or business",
   "Senaste målen": "Recent destinations",
@@ -1130,6 +1134,11 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Senast ([\d\s ,]+)$/, "Last $1"],
+  [/^Läs av mätaren i bilen\. Senast kända är ([\d\s ,]+) mil\.$/, "Read the odometer in the car. The last known is $1 mil."],
+  [/^Enligt kartan ca ([\d\s ,]+) mil från start, alltså runt ([\d\s ,]+) på mätaren\.$/, "By the map about $1 mil from start, so around $2 on the odometer."],
+  [/^([\d\s ,]+) mil är lägre än senast kända, ([\d\s ,]+) mil\.$/, "$1 mil is lower than the last known, $2 mil."],
+  [/^(\d+ \S+) av (.+?): (.+)$/, (m, d, w, ch) => { const F = { "mätare start": "odometer start", "mätare slut": "odometer end", datum: "date", "från": "from", vart: "to", "ärende": "purpose", typ: "type", "förare": "driver" }; return `${d} by ${w === "dig" ? "you" : w}: ${ch.split(", ").map((c) => { const k = Object.keys(F).find((f) => c.startsWith(f + " ")); return k ? F[k] + c.slice(k.length) : c; }).join(", ")}`; }],
   [/^Pågått (\d+) (?:tim (\d+) )?min(?: · ca ([\d\s ,]+) mil från start)?$/, (m, a, b, est) => `Running ${b != null ? `${a} h ${b} min` : `${a} min`}${est ? ` · about ${est} mil from start` : ""}`],
   [/^Pågår sedan (\S+(?: \S+)?)(?: · mot (.+))?$/, (m, w, to) => `In progress since ${w}${to ? ` · to ${to}` : ""}`],
   [/^Startade (\d\d:\d\d|\d+ \S+) · mot (.+)$/, "Started $1 · to $2"],
