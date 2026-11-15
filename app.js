@@ -439,8 +439,12 @@ function recurringEntries(c) {
 // Gratisversionens gränser. Avstängda tills Plus går att köpa: sätt då `from` till startdagen, till exempel "2027-03-01".
 // Hushåll som skapades före den dagen, och hushåll med Plus, har inga gränser.
 const FREE = { from: null, cars: 1, members: 3, photos: 50 };
-const hasPlus = (h = S.house) => tsMs(h?.plus?.until) > Date.now();
+// Testläge för administratören: visa appen som gratisversionen (med gränserna) eller som Plus.
+// Gäller bara på den här enheten och bara för det egna hushållet. Inget sparas i databasen.
+const testMode = () => (S.user && isAdmin() ? pref.get("testMode") || "" : "");
+const hasPlus = (h = S.house) => (h === S.house && testMode() ? testMode() === "plus" : tsMs(h?.plus?.until) > Date.now());
 function limited(h = S.house) {
+  if (h === S.house && testMode()) return testMode() === "free";
   if (!FREE.from || !h || hasPlus(h)) return false;
   const made = tsMs(h.createdAt);
   return !made || made >= Date.parse(FREE.from);
@@ -3027,7 +3031,7 @@ function viewSettings() {
       </div>`}
       ${membersFull() ? "" : `<p class="hint" style="margin-top:8px">Den som har koden kan gå med. Byt kod om den har kommit på villovägar, då slutar den gamla att fungera.</p>`}
     </div>
-    ${FREE.from ? `<div class="card"><h2>Bildagboken Plus</h2>
+    ${FREE.from || testMode() ? `<div class="card"><h2>Bildagboken Plus</h2>
       <div class="rows"><button class="dl as-btn" type="button" data-act="plus"><div class="dl-ic">${icon("spark", 20)}</div><div><div class="dl-t">${hasPlus() ? "Ni har Plus" : limited() ? "Gratisversionen" : "Ingen gräns för ert hushåll"}</div><div class="dl-s">${hasPlus() ? "Inga gränser för bilar, personer och bilder" : "Se vad som ingår i Plus"}</div></div></button></div></div>` : ""}
     <div class="card">
       <h2>Bilar</h2>
@@ -3081,6 +3085,9 @@ function viewSettings() {
       <div class="ask"><button class="btn ghost block" type="button" data-act="logout">Logga ut</button></div>
       <div class="ask"><button class="link danger" type="button" data-act="delete-account">Radera mitt konto</button></div>
     </div>
+    ${isAdmin() ? `<div class="card"><h2>Testläge</h2><p class="muted">Visa appen som en vanlig användare ser den. Gäller bara på den här enheten, och inget ändras för andra.</p>
+      <div class="checks" role="radiogroup" aria-label="Visa appen som" style="margin-top:12px">${[["", "Som vanligt"], ["free", "Gratis"], ["plus", "Plus"]].map(([k, l]) => `<label class="check"><input type="radio" name="testMode" value="${k}" data-act="test-mode"${testMode() === k ? " checked" : ""}> ${l}</label>`).join("")}</div>
+      <p class="hint" style="margin-top:8px">Gratis: gränserna (${FREE.cars} bil, ${FREE.members} personer, ${FREE.photos} bilder) och tipsen om Plus är påslagna. Plus: allt som ingår i Plus, utan gränser.</p></div>` : ""}
     ${isAdmin() ? `<div class="card"><h2>Användare</h2><p class="muted">Alla hushåll och användare, och vilka funktioner de använder. Bara du ser det här.</p><div class="ask"><button class="btn-soft" type="button" data-act="open-admin">Visa översikten</button></div></div>` : ""}
     <p class="hint" style="text-align:center">Bildagboken ${VERSION} · <span>Frågor eller idéer?</span> <a class="link" href="mailto:kontakt@bildagboken.com" data-notr>kontakt@bildagboken.com</a></p>`;
 }
@@ -3634,7 +3641,7 @@ function saveBooking(form, wantCalendar = false) {
 // Milersättning för egen bil enligt Skatteverkets schablon: 25 kr per mil skattefritt.
 const MIL_RATE = 25;
 const TRIP_KINDS = { tjanst: "Tjänsteresa", privat: "Privat" };
-function tripsOn() { return hasPlus() || isAdmin(); }
+function tripsOn() { return hasPlus() || (isAdmin() && !testMode()); }
 const carTrips = (cid = S.carId) => S.trips.filter((t) => t.carId === cid)
   .sort((a, b) => (b.date || "").localeCompare(a.date || "") || tsMs(b.startedAt || b.createdAt) - tsMs(a.startedAt || a.createdAt));
 const tripMil = (t) => (t.odoEnd != null && t.odoStart != null ? Math.max(0, Math.round((t.odoEnd - t.odoStart) * 10) / 10) : null);
@@ -5684,6 +5691,12 @@ const ACTIONS = {
     carSheet(true, sections.length ? sections : ["basic"]);
   },
   plus() { plusSheet(); },
+  "test-mode"(el) {
+    pref.set("testMode", el.value);
+    pref.set("plusTip." + S.hid, "");
+    render();
+    showToast(el.value === "free" ? "Testläge: gratisversionen" : el.value === "plus" ? "Testläge: Plus" : "Testläget är avstängt");
+  },
   "new-trip"() { tripForm(); },
   "start-trip"() { const o = openTrip(); tripForm(o || {}, o ? "end" : "start"); },
   "edit-trip"(el) { const t = S.trips.find((x) => x.id === el.dataset.id); if (t) tripForm(t, t.odoEnd == null ? "end" : "new"); },
