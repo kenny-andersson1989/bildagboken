@@ -58,7 +58,10 @@ npx cap sync ios
 
 echo "▶ Signering"
 keychain initialize
-app-store-connect fetch-signing-files "$BUNDLE" --type IOS_APP_STORE --create --certificate-key "$CERTIFICATE_PRIVATE_KEY"
+# Appen och widgeten har var sin profil. Widgetens id och App Group skapas först hos Apple (se app-store.md).
+for ID in "$BUNDLE" "$BUNDLE.widget"; do
+  app-store-connect fetch-signing-files "$ID" --type IOS_APP_STORE --create --certificate-key "$CERTIFICATE_PRIVATE_KEY"
+done
 keychain add-certificates
 xcode-project use-profiles --project "$APP/App.xcodeproj"
 

@@ -77,3 +77,10 @@ Nytt i 1.1: ny ikon, och länkar till bildagboken.com (inbjudan, delad servicebo
 
 **Kampanjtext "Nyheter i den här versionen":**
 Ny ikon. Inbjudningar och länkar från Bildagboken öppnas nu direkt i appen.
+
+### Widgeten (också i 1.1)
+Gör detta en gång hos Apple innan bygget (developer.apple.com → Certificates, Identifiers & Profiles → Identifiers):
+1. **+** → **App Groups** → Continue. Description `Bildagboken`, Identifier `group.se.bildagboken.app` → Continue → Register.
+2. Öppna `se.bildagboken.app`, bocka i **App Groups** → **Configure** → välj `group.se.bildagboken.app` → Continue → **Save** (Confirm).
+3. **+** → **App IDs** → **App** → Continue. Description `Bildagboken Widget`, Bundle ID **Explicit** `se.bildagboken.app.widget`.
+   Bocka i **App Groups** → **Configure** → välj `group.se.bildagboken.app` → Continue → **Register**.

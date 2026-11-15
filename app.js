@@ -1109,6 +1109,25 @@ document.addEventListener("keydown", (ev) => {
   window.__fuelKeyTimer = setTimeout(() => { saveFuel(); $("#fuel-v")?.focus(); }, 700);
 });
 
+// Widgeten på hemskärmen (iPhone-appen från 1.1): bilens namn, bränslet och det som är på gång.
+// Skickas bara när något har ändrats. I äldre versioner av appen finns inte tillägget, och då händer inget.
+let widgetSent = "";
+function updateWidget() {
+  if (!NATIVE || ANDROID) return;
+  const c = car();
+  if (!c) return;
+  const iso = (d) => (typeof d === "string" ? d : d instanceof Date ? ymd(d) : null);
+  const rows = [...bookingRows(c).filter((b) => b.days >= 0).map((b) => ({ t: b.kollTitle, d: b.tileDate })),
+    ...docReminders(c).filter((x) => x.days >= 0).map((x) => ({ t: x.title, d: x.tileDate })),
+    ...deadlines(c).filter((x) => x.days >= 0 && x.date).map((x) => ({ t: x.title, d: iso(x.date) }))]
+    .filter((x) => x.d).sort((a, b) => a.d.localeCompare(b.d)).slice(0, 5);
+  const pct = fuelPct(c.fuelLevel);
+  const json = JSON.stringify({ lang: EN ? "en" : "sv", car: carName(c), fuel: pct == null ? null : Math.round(pct), items: rows.map((x) => ({ t: tr(x.t), d: x.d })) });
+  if (json === widgetSent) return;
+  widgetSent = json;
+  try { Promise.resolve(nativePlugin("WidgetData")?.set({ json })).catch(() => {}); } catch { /* finns inte i den här versionen */ }
+}
+
 function render() {
   if (!S.user) return renderLogin();
   if (!S.hid) return;
@@ -1128,6 +1147,7 @@ function render() {
     bell.setAttribute("aria-label", `Aviseringar${n ? `, ${n} nya` : ""}`);
   }
   ensureCarImage(car());
+  updateWidget();
   // Under Bilen hämtas PDF-verktyget i förväg, så att serviceboken kan delas direkt med ett tryck.
   if (S.view === "bilen" && !pdfReady()) setTimeout(() => loadPdfLibs().catch(() => {}), 800);
   runLaunchAction();
