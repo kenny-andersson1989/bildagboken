@@ -3686,18 +3686,21 @@ function tripForm(t = {}, mode = "new") {
   const members = S.house?.members || [uid()];
   const count = (k) => { const m = new Map(); for (const x of S.trips) { const v = String(x[k] || "").trim(); if (v) m.set(v, (m.get(v) || 0) + 1); } return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([v]) => v); };
   const list = (id, vals) => `<datalist id="${id}">${vals.map((v) => `<option value="${esc(v)}"></option>`).join("")}</datalist>`;
-  const odoStart = t.odoStart ?? odoOf(c);
+  // Mätarställningen läses av i bilen varje gång. Senast kända står som ledtext, så att man ser om något verkar fel.
+  const odoStart = t.odoStart;
+  const lastOdo = odoOf(c);
   const kind = t.kind || prev?.kind || "tjanst";
   const title = mode === "start" ? "Starta resa" : mode === "end" ? "Avsluta resan" : t.id ? "Ändra resa" : "Resa";
   openSheet(title, `
     <form class="form" data-form="trip" data-mode="${mode}" data-start="${odoStart ?? ""}"${t.id ? ` data-id="${esc(t.id)}"` : ""} novalidate>
       ${mode === "end" ? `<p class="muted" style="margin-top:0">${esc(`Startade ${clock(tsMs(t.startedAt))} vid ${fmt(t.odoStart, 1)} mil.`)}</p>` : ""}
-      ${t.edits?.length ? `<p class="hint" style="margin-top:0">${esc(editedText(t))}${t.edits.length > 1 ? esc(`, ${t.edits.length} gånger`) : ""}.</p>` : ""}
+      ${t.edits?.length ? `<div class="hint" style="margin-top:0"><b>Ändrad i efterhand</b>${t.edits.slice(-5).reverse().map((e) => `<br>${esc(editLine(e))}`).join("")}</div>` : ""}
       ${mode === "end" ? "" : `<div class="row2">
         ${field("Datum", `<input type="date" name="date" id="tr-date" value="${esc(t.date || todayStr())}">`)}
-        ${field("Mätare vid start (mil)", `<input name="odoStart" id="tr-odoStart" inputmode="decimal" value="${odoStart != null ? esc(String(odoStart).replace(".", ",")) : ""}" placeholder="Till exempel 21 480,6">`)}
-      </div>`}
-      ${mode === "start" ? "" : field("Mätare vid slut (mil)", `<input name="odoEnd" id="tr-odoEnd" inputmode="decimal" value="${t.odoEnd != null ? esc(String(t.odoEnd).replace(".", ",")) : ""}" placeholder="${odoStart != null ? esc(`Till exempel ${fmt(odoStart + 1.2, 1)}`) : "Till exempel 21 482,4"}">`, `<span id="tr-dist">${t.odoEnd != null ? esc(`${fmt(tripMil(t), 1)} mil`) : "Mil med en decimal. 1,2 mil är 12 km."}</span>`)}
+        ${field("Mätare vid start (mil)", `<input name="odoStart" id="tr-odoStart" inputmode="decimal" value="${odoStart != null ? esc(String(odoStart).replace(".", ",")) : ""}" placeholder="${lastOdo != null ? esc(`Senast ${fmt(lastOdo, 1)}`) : "Till exempel 21 480,6"}">`)}
+      </div>
+      ${t.id ? "" : `<p class="hint" style="margin-top:-6px">Läs av mätaren i bilen${lastOdo != null ? esc(`. Senast kända är ${fmt(lastOdo, 1)} mil`) : ""}.</p>`}`}
+      ${mode === "start" ? "" : field("Mätare vid slut (mil)", `<input name="odoEnd" id="tr-odoEnd" inputmode="decimal" value="${t.odoEnd != null ? esc(String(t.odoEnd).replace(".", ",")) : ""}" placeholder="Läs av mätaren i bilen">`, `<span id="tr-dist">${t.odoEnd != null ? esc(`${fmt(tripMil(t), 1)} mil`) : "Mil med en decimal. 1,2 mil är 12 km."}</span>`)}
       ${mode === "end" ? `<div id="tr-route" hidden></div>` : ""}
       ${field("Från", `<span class="geo-row"><input name="from" id="tr-from" value="${esc(t.from ?? (mode === "new" && !t.id ? prev?.to || "" : ""))}" placeholder="Ort, adress eller företag" autocomplete="off"><button class="geo-btn" type="button" data-act="trip-here" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span><span class="suggest" id="tr-from-suggest" role="listbox" hidden></span><input type="hidden" name="fromLoc" id="tr-fromLoc" value="${t.fromLoc ? esc(JSON.stringify(t.fromLoc)) : ""}">`)}
       ${field("Vart", `<input name="to" id="tr-to" value="${esc(t.to || "")}" placeholder="Ort, adress eller företag" autocomplete="off"><span class="suggest" id="tr-to-suggest" role="listbox" hidden></span><input type="hidden" name="toLoc" id="tr-toLoc" value="${t.toLoc ? esc(JSON.stringify(t.toLoc)) : ""}">`)}
@@ -3797,13 +3800,21 @@ async function suggestTripDistance(t) {
     const mil = await routeMil(t.startLoc, end);
     if (mil == null || mil < 0.1 || !document.contains(box)) return;
     const odo = Math.round((t.odoStart + mil) * 10) / 10;
-    box.innerHTML = `<button class="chip-btn" type="button" data-act="trip-use-route" data-odo="${odo}">${icon("pin", 14)} ${esc(`Enligt kartan ${fmt(mil, 1)} mil. Använd ${fmt(odo, 1)}`)}</button>
-      <p class="hint" style="margin-top:6px">Vägen som Apple Kartor föreslår från där resan startade. Har du kört en annan väg eller tur och retur, läs av mätaren.</p>`;
+    // Bara en kontroll: mätaren i bilen gäller, men kartan visar om siffran verkar rimlig.
+    box.innerHTML = `<p class="hint">${icon("pin", 14)} ${esc(`Enligt kartan ca ${fmt(mil, 1)} mil från start, alltså runt ${fmt(odo, 1)} på mätaren.`)}</p>`;
     box.hidden = false;
   } catch { /* utan karta får man läsa av mätaren */ }
 }
 
-function saveTrip(form) {
+// Vad som ändrades i en avslutad resa, för att det ska synas om körjournalen har rättats i efterhand.
+const TRIP_FIELDS = { date: "datum", odoStart: "mätare start", odoEnd: "mätare slut", from: "från", to: "vart", purpose: "ärende", kind: "typ", driver: "förare" };
+function tripChanges(a, b) {
+  const show = (k, v) => (v == null || v === "" ? "–" : k.startsWith("odo") ? fmt(v, 1) : k === "kind" ? TRIP_KINDS[v] || v : k === "driver" ? memberName(v) : k === "date" ? fmtDateShort(v) : String(v));
+  return Object.keys(TRIP_FIELDS).filter((k) => (a[k] ?? null) !== (b[k] ?? null)).map((k) => `${TRIP_FIELDS[k]} ${show(k, a[k])} → ${show(k, b[k])}`);
+}
+const editLine = (e) => `${fmtDateShort(ymd(new Date(tsMs(e.at))))} av ${whoName(e.by).replace(/^Du$/, "dig")}${e.changes?.length ? `: ${e.changes.join(", ")}` : ""}`;
+
+async function saveTrip(form) {
   const c = car();
   const fd = new FormData(form);
   const mode = form.dataset.mode;
@@ -3815,6 +3826,12 @@ function saveTrip(form) {
   if (mode !== "start" && odoEnd == null) return formError("Fyll i mätarställningen vid slut.");
   if (odoEnd != null && odoEnd < odoStart) return formError("Mätarställningen vid slut ska vara högre än vid start.");
   if (odoEnd != null && odoEnd - odoStart > 300) return formError("Sträckan ser för lång ut. Mätarställningen anges i mil, till exempel 21 480,6.");
+  // En ny resa som startar lägre än senast kända mätarställning: fråga, det är oftast en felskrivning.
+  const lastOdo = odoOf(c);
+  if (!old && lastOdo != null && odoStart < lastOdo - 0.05) {
+    const ok = await confirmDialog({ title: "Stämmer mätarställningen?", lines: [`${fmt(odoStart, 1)} mil är lägre än senast kända, ${fmt(lastOdo, 1)} mil.`], okLabel: "Ja, spara", warn: "" });
+    if (!ok) return;
+  }
   const data = clean({
     carId: old?.carId || c.id,
     date: mode === "end" ? old.date : str("date") || todayStr(),
@@ -3829,8 +3846,13 @@ function saveTrip(form) {
     endedAt: odoEnd != null ? old?.endedAt || Date.now() : null,
     createdBy: old?.createdBy || uid(), createdAt: old?.createdAt || Date.now(),
     // Ändringar i en avslutad resa sparas (vem och när), så att det syns om körjournalen har ändrats i efterhand.
-    edits: old?.odoEnd != null ? [...(old.edits || []), { at: Date.now(), by: uid() }].slice(-20) : old?.edits || null,
+    edits: old?.edits || null,
   });
+  // Ändringar i en avslutad resa sparas: vem, när och vad som ändrades.
+  if (old?.odoEnd != null) {
+    const changes = tripChanges(old, data);
+    if (changes.length) data.edits = [...(old.edits || []), { at: Date.now(), by: uid(), changes }].slice(-20);
+  }
   const id = old?.id || "t" + randomId(10);
   setDoc(doc(col("trips"), id), data).catch(onWriteError);
   S.trips = [...S.trips.filter((x) => x.id !== id), { id, ...data }];
@@ -3877,7 +3899,7 @@ function exportTrips() {
   const head = ["Datum", "Bil", "Reg.nr", "Mätare start (mil)", "Mätare slut (mil)", "Sträcka (mil)", "Sträcka (km)", "Från", "Vart", "Ärende", "Typ", "Förare", "Milersättning (kr)", "Ändrad i efterhand"];
   const rows = list.map((t) => {
     const mil = tripMil(t);
-    return [t.date, carName(c), c.plate, t.odoStart, t.odoEnd, mil, mil != null ? Math.round(mil * 10) : null, t.from, t.to, t.purpose, TRIP_KINDS[t.kind], memberName(t.driver), t.kind === "tjanst" && mil != null ? Math.round(mil * MIL_RATE) : null, t.edits?.length ? editedText(t) : ""].map(cell).join(";");
+    return [t.date, carName(c), c.plate, t.odoStart, t.odoEnd, mil, mil != null ? Math.round(mil * 10) : null, t.from, t.to, t.purpose, TRIP_KINDS[t.kind], memberName(t.driver), t.kind === "tjanst" && mil != null ? Math.round(mil * MIL_RATE) : null, t.edits?.length ? t.edits.map(editLine).join("; ") : ""].map(cell).join(";");
   });
   downloadFile(`Körjournal ${carName(c)} ${todayStr()}.csv`, "\ufeff" + [head.join(";"), ...rows].join("\r\n"), "text/csv;charset=utf-8");
   showToast(`Körjournalen är nedladdad (${list.length} ${list.length === 1 ? "resa" : "resor"}).`);
@@ -5824,12 +5846,6 @@ const ACTIONS = {
   },
   "new-trip"() { tripForm(); },
   "trip-here"() { fillTripFrom(true); },
-  "trip-use-route"(el) {
-    const i = $("#tr-odoEnd");
-    if (!i) return;
-    i.value = String(el.dataset.odo).replace(".", ",");
-    i.dispatchEvent(new Event("input", { bubbles: true }));
-  },
   "trip-nav"() {
     const t = openTrip();
     if (t) openMapChooser({ name: t.toLoc?.name || t.to, addr: t.toLoc?.addr, lat: t.toLoc?.lat, lon: t.toLoc?.lon, pid: t.toLoc?.pid, directions: true });
