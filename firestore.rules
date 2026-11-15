@@ -44,10 +44,12 @@ service cloud.firestore {
 
     match /households/{hid} {
       allow read: if (signedIn() && request.auth.uid in resource.data.members) || isAdmin();
-      allow create: if signedIn() && request.resource.data.members == [request.auth.uid];
+      allow create: if signedIn() && request.resource.data.members == [request.auth.uid] && !('plus' in request.resource.data);
       allow update: if signedIn() && (
         // Medlemmar får ändra hushållet.
-        (request.auth.uid in resource.data.members && request.resource.data.members.size() > 0)
+        // Plus skrivs bara av servern när någon har betalat.
+        (request.auth.uid in resource.data.members && request.resource.data.members.size() > 0
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plus']))
         // Den som inte är medlem får bara lägga till sig själv, och bara med en giltig inbjudningskod.
         || (
           !(request.auth.uid in resource.data.members)

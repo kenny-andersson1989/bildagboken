@@ -396,6 +396,24 @@ function recurringEntries(c) {
   }
   return out;
 }
+// Gratisversionens gränser. Avstängda tills Plus går att köpa: sätt då `from` till startdagen, till exempel "2027-03-01".
+// Hushåll som skapades före den dagen, och hushåll med Plus, har inga gränser.
+const FREE = { from: null, cars: 1, members: 3, photos: 100 };
+const hasPlus = (h = S.house) => tsMs(h?.plus?.until) > Date.now();
+function limited(h = S.house) {
+  if (!FREE.from || !h || hasPlus(h)) return false;
+  const made = tsMs(h.createdAt);
+  return !made || made >= Date.parse(FREE.from);
+}
+const photoCount = () => S.entries.reduce((a, e) => a + photosOf(e).length, 0);
+function limitSheet(kind) {
+  const text = {
+    cars: `Gratisversionen har plats för ${FREE.cars} bil. Med Bildagboken Plus kan ni lägga till fler bilar.`,
+    members: `Gratisversionen har plats för ${FREE.members} personer i hushållet. Med Bildagboken Plus kan fler gå med.`,
+    photos: `Gratisversionen har plats för ${FREE.photos} bilder. Alla bilder finns kvar, men för att lägga till nya behöver ni ta bort några eller skaffa Bildagboken Plus.`,
+  }[kind];
+  openSheet("Bildagboken Plus", `<p>${esc(text)}</p>`);
+}
 const memberName = (u) => S.house?.memberInfo?.[u]?.name || "Någon";
 const whoName = (u) => (u === uid() ? "Du" : memberName(u));
 const myName = () => memberName(uid());
@@ -1070,7 +1088,7 @@ function renderLogin(error = "") {
   // Välkomstsidan: logotyp, rubrik, tre fördelar och inloggning längst ner.
   setScreen("login", `
     <section class="login-a">
-      <h1 class="la-brand"><img class="logo-l" src="icons/logo.svg?v=3" alt="Bildagboken" width="936" height="200"><img class="logo-d" src="icons/logo-dark.svg?v=3" alt="" aria-hidden="true" width="936" height="200"></h1>
+      <h1 class="la-brand"><img class="logo-l" src="icons/logo.svg?v=4" alt="Bildagboken" width="936" height="200"><img class="logo-d" src="icons/logo-dark.svg?v=4" alt="" aria-hidden="true" width="936" height="200"></h1>
       <h2 class="la-title">Håll koll på bilen, tillsammans.</h2>
       <p class="la-sub">Bildagboken samlar allt om er bil på ett ställe, och alla ni som delar bilen ser samma sak.</p>
       <div class="la-feats">
@@ -2074,8 +2092,8 @@ function viewOverview() {
     </div>
     <label class="car-pick" title="Byt bild på bilen">
       ${carVisual(c)}
-      <span class="cam" aria-hidden="true">${icon("camera", 19)}</span>
-      <input type="file" accept="image/*" id="hero-photo" class="vh" aria-label="Byt bild på bilen">
+      <span class="cam${c.photoId ? "" : " cam-txt"}" aria-hidden="true">${icon("camera", 19)}${c.photoId ? "" : "<span>Lägg till foto</span>"}</span>
+      <input type="file" accept="image/*" id="hero-photo" class="vh" aria-label="${c.photoId ? "Byt bild på bilen" : "Lägg till ett foto på er bil"}">
     </label>
     <div class="hero-tiles">
       <button class="hero-tile odo-tile" type="button" data-act="new-entry" data-type="matare" aria-label="Mätarställning ${odoOf(c) != null ? fmt(odoOf(c)) : "saknas"} mil. Tryck för att uppdatera.">
@@ -5413,7 +5431,10 @@ const ACTIONS = {
     const sections = (el.dataset.section || "basic,photo,dates").split(",").filter((k) => CAR_SECTIONS[k]);
     carSheet(true, sections.length ? sections : ["basic"]);
   },
-  "add-car"() { carSheet(false); },
+  "add-car"() {
+    if (limited() && S.cars.length >= FREE.cars) return limitSheet("cars");
+    carSheet(false);
+  },
   async "odo-from-car"(el) {
     // Spara det man har ändrat om bilen innan mätarställningen öppnas, så att inget försvinner.
     const form = el.closest("form");
@@ -5798,12 +5819,22 @@ async function joinHouse(form) {
     [`memberInfo.${uid()}`]: { name, email: S.user.email || null, lastSeen: serverTimestamp() },
     joinedWith: code,
   });
+  if (FREE.from) {
+    // Fullt hushåll: gå ur igen direkt. Kontrolleras efter att man gått med, eftersom hushållet inte kan läsas innan dess.
+    const h = (await getDoc(doc(db, "households", hid)).catch(() => null))?.data();
+    if (h && limited(h) && (h.members || []).length > FREE.members) {
+      await updateDoc(doc(db, "households", hid), { members: h.members.filter((x) => x !== uid()), [`memberInfo.${uid()}`]: deleteField(), joinedWith: deleteField() }).catch(() => {});
+      btn.disabled = false;
+      return renderOnboarding(`${houseName || "Hushållet"} har redan ${FREE.members} personer, så det är fullt i gratisversionen. Med Bildagboken Plus kan fler gå med.`);
+    }
+  }
   history.replaceState(null, "", location.pathname + "#oversikt");
   S.justJoined = houseName || true;
   subscribe(hid);
 }
 
 async function saveNewCar(form) {
+  if (limited() && S.cars.length >= FREE.cars) return limitSheet("cars");
   const data = readCarForm(form);
   if (!data.make || !data.model) return formError("Fyll i märke och modell.") ?? showToast("Fyll i märke och modell.");
   const startOdo = data.odometer;
@@ -6015,8 +6046,13 @@ function onChange(ev) {
     if (lab) lab.textContent = f ? `Vald bild: ${f.name}` : "Fota eller välj en bild";
   } else if (ev.target.id === "ef-photo") {
     const files = [...(ev.target.files || [])].filter((f) => f.type.startsWith("image/") || /\.(heic|heif|jpe?g|png|webp)$/i.test(f.name));
-    const room = MAX_PHOTOS - pendingPhotos.length - ($("#ef-keep")?.value.split(",").filter(Boolean).length || 0);
-    if (files.length > room) showToast(`Högst ${MAX_PHOTOS} bilder per post.`);
+    const perPost = MAX_PHOTOS - pendingPhotos.length - ($("#ef-keep")?.value.split(",").filter(Boolean).length || 0);
+    const total = limited() ? FREE.photos - photoCount() - pendingPhotos.length : Infinity;
+    const room = Math.min(perPost, total);
+    if (files.length > room) {
+      if (total < perPost) { if (total <= 0) { ev.target.value = ""; return limitSheet("photos"); } showToast(`Det finns plats för ${total === 1 ? "1 bild" : `${total} bilder`} till i gratisversionen.`); }
+      else showToast(`Högst ${MAX_PHOTOS} bilder per post.`);
+    }
     pendingPhotos.push(...files.slice(0, Math.max(0, room)));
     ev.target.value = "";
     renderPhotoThumbs();

@@ -1,13 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 184" width="200" height="184"><g id="symbol" transform="translate(0,4)">
-  <path d="M10 40 V146 Q10 156 20 156 H74 Q90 156 100 168 Q110 156 126 156 H180 Q190 156 190 146 V40" fill="none" stroke="#E8711F" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M25 31 Q25 21 35 20 Q70 15 99 30 V148 Q68 135 35 140 Q25 141 25 132 Z" fill="#E8711F" stroke="#E8711F" stroke-width="5" stroke-linejoin="round"/>
-  <path d="M175 31 Q175 21 165 20 Q130 15 101 30 V148 Q132 135 165 140 Q175 141 175 132 Z" fill="#E8711F" stroke="#E8711F" stroke-width="5" stroke-linejoin="round"/>
-  <path d="M30 87 Q29 76 43 74 L62 71 Q75 61 89 57 Q96 55 106 55 H116 Q129 55 140 63 L151 71 L160 72 Q170 74 170 83 V87 Q170 93 164 93 H36 Q30 93 30 87 Z" fill="#fff" stroke="#fff" stroke-width="5" stroke-linejoin="round"/>
-  <path d="M74 70 Q82 63 91 61 Q95 60 100 60 V70 Z" fill="#E8711F" stroke="#E8711F" stroke-width="3" stroke-linejoin="round"/>
-  <path d="M106 70 V60 H116 Q125 60 131 65 L137 70 Z" fill="#E8711F" stroke="#E8711F" stroke-width="3" stroke-linejoin="round"/>
-  <circle cx="62" cy="93" r="12.5" fill="#fff" stroke="#E8711F" stroke-width="5"/>
-  <circle cx="140" cy="93" r="12.5" fill="#fff" stroke="#E8711F" stroke-width="5"/>
-  <g stroke="#fff" stroke-width="7" stroke-linecap="round">
-    <path d="M38 120 H88"/><path d="M38 133 H88"/><path d="M112 120 H162"/><path d="M112 133 H162"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200"><g id="symbol" fill="#EE6A12">
+  <!-- Bokens rygg och nederkant med sidorna -->
+  <path d="M46 14 C33 15 22 24 22 37 V164 C22 177 31 186 44 186 H86 V174 H46 C39 174 35 170 35 164 C35 158 39 154 46 154 H178 V164 C178 170 174 174 168 174 H138 V186 H160 C171 186 180 177 180 166 V146 H50 V14 Z"/>
+  <!-- Pärmen -->
+  <rect x="58" y="10" width="122" height="130" rx="15"/>
+  <!-- Bokmärket -->
+  <path d="M95 160 H129 V196 L112 182 L95 196 Z"/>
+  <g transform="translate(119 77) scale(1.2) translate(-119 -72)">
+  <!-- Bilen framifrån -->
+  <g fill="#FFF7EC">
+    <path d="M89 60 L97 47 Q100 42 106 42 H132 Q138 42 141 47 L149 60 Z"/>
+    <rect x="79" y="58" width="80" height="34" rx="11"/>
+    <rect x="70" y="56" width="13" height="8" rx="4"/>
+    <rect x="155" y="56" width="13" height="8" rx="4"/>
+    <rect x="84" y="88" width="15" height="13" rx="4"/>
+    <rect x="139" y="88" width="15" height="13" rx="4"/>
+  </g>
+  <path d="M96 58 L102 49 Q103.5 47 106 47 H132 Q134.5 47 136 49 L142 58 Z"/>
+  <path d="M86 68 Q95 67 104 73 Q99 77 94 76 L88 75 Q85 74 86 68 Z"/>
+  <path d="M152 68 Q143 67 134 73 Q139 77 144 76 L150 75 Q153 74 152 68 Z"/>
+  <rect x="107" y="78" width="24" height="7" rx="3.5"/>
   </g>
 </g></svg>
