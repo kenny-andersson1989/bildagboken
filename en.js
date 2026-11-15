@@ -1,6 +1,12 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Grön": "Green",
+  "Blå": "Blue",
+  "Lila": "Purple",
+  "Orange": "Orange",
+  "Ljust eller mörkt": "Light or dark",
+  "Automatiskt följer telefonen: ljust på dagen och mörkt när telefonen har mörkt läge påslaget": "Automatic follows the phone: light by day and dark when the phone has dark mode on",
   "Läsning med AI": "Reading with AI",
   "Läs av med AI": "Read with AI",
   "AI läser dokumentet …": "AI is reading the document …",

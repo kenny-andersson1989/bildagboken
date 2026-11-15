@@ -21,7 +21,15 @@
 <link rel="stylesheet" href="style.css">
 <script>
   // Sätt valt utseende innan sidan ritas, så att den inte blinkar.
-  try { var t = localStorage.getItem("bildagboken.theme"); if (/^(light|dark|gron|hav|natt)$/.test(t)) document.documentElement.dataset.theme = t; } catch (e) {}
+  // Färg och läge (samma uträkning som applyTheme i app.js), så att rätt tema syns direkt när sidan laddas.
+  try {
+    var ls = localStorage, old = ls.getItem("bildagboken.theme") || "auto";
+    var oldMap = { auto: ["orange", "auto"], light: ["orange", "light"], dark: ["orange", "dark"], gron: ["gron", "light"], hav: ["hav", "light"], natt: ["lila", "dark"] }[old] || ["orange", "auto"];
+    var c = ls.getItem("bildagboken.themeColor") || oldMap[0], m = ls.getItem("bildagboken.themeMode") || oldMap[1];
+    var dk = m === "dark" || (m === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+    var th = { orange: ["light", "dark"], gron: ["gron", "gron-dark"], hav: ["hav", "hav-dark"], lila: ["lila", "natt"] }[c] || ["light", "dark"];
+    document.documentElement.dataset.theme = th[dk ? 1 : 0];
+  } catch (e) {}
 </script>
 </head>
 <body>

@@ -3129,11 +3129,16 @@ function viewSettings() {
     </div>
     <div class="card">
       <h2>Utseende och språk</h2>
-      <div class="theme-grid" role="group" aria-label="Tema">
-        ${Object.entries(THEMES).map(([k, t]) => `<button class="theme-btn" type="button" data-act="theme" data-v="${k}" aria-pressed="${(pref.get("theme") || "auto") === k}">
-          <span class="theme-sw" style="background:${t.sw}" aria-hidden="true"><i style="background:${t.dot}"></i></span>${t.name}</button>`).join("")}
+      <p class="label" style="margin:12px 0 8px">Färg</p>
+      <div class="theme-grid colors" role="group" aria-label="Färg">
+        ${Object.entries(COLORS).map(([k, t]) => { const v = t[isDarkNow() ? "dark" : "light"]; return `<button class="theme-btn" type="button" data-act="theme-color" data-v="${k}" aria-pressed="${themePrefs().color === k}">
+          <span class="theme-sw" style="background:${v.sw}" aria-hidden="true"><i style="background:${v.dot}"></i></span>${t.name}</button>`; }).join("")}
       </div>
-      <p class="hint" style="margin-top:10px">Automatiskt följer telefonen: Ljust eller Mörkt beroende på om telefonen har mörkt läge påslaget.</p>
+      <p class="label" style="margin:16px 0 8px">Ljust eller mörkt</p>
+      <div class="seg" role="group" aria-label="Ljust eller mörkt">
+        ${Object.entries(MODES).map(([k, l]) => `<button type="button" data-act="theme-mode" data-v="${k}" aria-pressed="${themePrefs().mode === k}">${l}</button>`).join("")}
+      </div>
+      <p class="hint" style="margin-top:10px">Automatiskt följer telefonen: ljust på dagen och mörkt när telefonen har mörkt läge påslaget.</p>
       <p class="label" style="margin:16px 0 8px">Språk</p>
       <div class="seg" role="group" aria-label="Språk">
         ${[["sv", "Svenska"], ["en", "English"]].map(([k, l]) => `<button type="button" data-act="lang" data-v="${k}" aria-pressed="${LANG === k}" data-notr>${l}</button>`).join("")}
@@ -4619,7 +4624,7 @@ async function miniMap(inner, lat, lon, title = "") {
     const mk = await loadMapKit();
     if (!document.contains(inner)) return;
     const coord = new mk.Coordinate(lat, lon);
-    const dark = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+    const dark = DARK_THEMES.includes(document.documentElement.dataset.theme) || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
     bookingMap = new mk.Map(inner, {
       center: coord, isScrollEnabled: false, isZoomEnabled: false, isRotationEnabled: false,
       showsMapTypeControl: false, showsZoomControl: false, showsUserLocationControl: false,
@@ -5485,23 +5490,31 @@ async function deleteCar(carId) {
 }
 
 // Teman: bakgrundsfärgen (bar) används också för telefonens statusrad.
-const THEMES = {
-  auto: { name: "Automatiskt", sw: "linear-gradient(135deg, #E9E4DF 50%, #171514 50%)", dot: "#E77026" },
-  light: { name: "Ljust", sw: "#E9E4DF", dot: "#E77026", bar: "#E9E4DF" },
-  dark: { name: "Mörkt", sw: "#171514", dot: "#F08443", bar: "#171514" },
-  gron: { name: "Grönt", sw: "#E1E8DE", dot: "#2E7D4F", bar: "#E1E8DE" },
-  hav: { name: "Hav", sw: "#E0E7EF", dot: "#2563EB", bar: "#E0E7EF" },
-  natt: { name: "Natt", sw: "#12131C", dot: "#8B7CF6", bar: "#12131C" },
+// Utseende: en färg och ett läge (Automatiskt följer telefonen, Ljust eller Mörkt). Varje färg finns i ljust och mörkt.
+// Förr var det ett enda val (pref "theme"); det översätts till färg och läge första gången.
+const COLORS = {
+  orange: { name: "Orange", light: { theme: "light", sw: "#E9E4DF", dot: "#E77026" }, dark: { theme: "dark", sw: "#171514", dot: "#F08443" } },
+  gron: { name: "Grön", light: { theme: "gron", sw: "#E1E8DE", dot: "#2E7D4F" }, dark: { theme: "gron-dark", sw: "#121914", dot: "#4FBF7E" } },
+  hav: { name: "Blå", light: { theme: "hav", sw: "#E0E7EF", dot: "#2563EB" }, dark: { theme: "hav-dark", sw: "#10161F", dot: "#5B8DEF" } },
+  lila: { name: "Lila", light: { theme: "lila", sw: "#E8E6F3", dot: "#6D5BD8" }, dark: { theme: "natt", sw: "#12131C", dot: "#8B7CF6" } },
 };
-function applyTheme(mode) {
-  const root = document.documentElement;
-  const t = THEMES[mode];
-  if (t && mode !== "auto") root.dataset.theme = mode;
-  else delete root.dataset.theme;
-  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
-    m.content = t?.bar || (/dark/.test(m.media) ? "#171514" : "#E9E4DF");
-  });
+const MODES = { auto: "Automatiskt", light: "Ljust", dark: "Mörkt" };
+const DARK_THEMES = ["dark", "gron-dark", "hav-dark", "natt"];
+const darkMq = matchMedia("(prefers-color-scheme: dark)");
+function themePrefs() {
+  const old = { auto: ["orange", "auto"], light: ["orange", "light"], dark: ["orange", "dark"], gron: ["gron", "light"], hav: ["hav", "light"], natt: ["lila", "dark"] }[pref.get("theme") || "auto"] || ["orange", "auto"];
+  const c = pref.get("themeColor") || old[0], m = pref.get("themeMode") || old[1];
+  return { color: COLORS[c] ? c : "orange", mode: MODES[m] ? m : "auto" };
 }
+const isDarkNow = () => { const { mode } = themePrefs(); return mode === "dark" || (mode === "auto" && darkMq.matches); };
+function applyTheme() {
+  const { color } = themePrefs();
+  const v = COLORS[color][isDarkNow() ? "dark" : "light"];
+  document.documentElement.dataset.theme = v.theme;
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.content = v.sw; });
+}
+// Följer telefonen när den byter mellan ljust och mörkt (vid läget Automatiskt).
+darkMq.addEventListener?.("change", () => { applyTheme(); if (S.view === "installningar") render(); });
 
 // Läser bara de fält som finns i formuläret, så att en del aldrig skriver över en annan.
 function readCarForm(form) {
@@ -6198,12 +6211,8 @@ const ACTIONS = {
     pref.set("lang", v);
     location.reload();
   },
-  theme(el) {
-    const v = el.dataset.v;
-    pref.set("theme", v);
-    applyTheme(v);
-    el.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
-  },
+  "theme-color"(el) { pref.set("themeColor", el.dataset.v); applyTheme(); render(); },
+  "theme-mode"(el) { pref.set("themeMode", el.dataset.v); applyTheme(); render(); },
   async "copy-invite"() {
     if (membersFull()) return limitSheet("members");
     const link = `${location.origin}${location.pathname}?join=${S.house.inviteCode}`;
@@ -7009,7 +7018,7 @@ window.addEventListener("hashchange", () => {
   if (v && v !== S.view) { rememberPrev(v); S.view = v; render(); }
 });
 
-applyTheme(pref.get("theme") || "auto");
+applyTheme();
 const initial = location.hash.slice(1);
 if (initial) S.view = initial;
 
