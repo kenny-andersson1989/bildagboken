@@ -1,6 +1,12 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Glömde du avsluta?": "Forgot to finish?",
+  "Starta resa nu": "Start trip now",
+  "Tryck när du åker och avsluta när du kommer fram. Appen visar resan medan du kör": "Tap when you leave and finish when you arrive. The app shows the trip while you drive",
+  "Logga en resa i efterhand": "Log a trip afterwards",
+  "Om du glömde starta. Du fyller i allt på en gång": "If you forgot to start. You fill in everything at once",
+  "Med automatisk körjournal i iPhone-appen behöver du inte trycka alls": "With the automatic driving log in the iPhone app you don't need to tap at all",
   "Automatisk körjournal": "Automatic driving log",
   "Appen känner av när bilen körs och mäter vägen, även när den är stängd. Du väljer bara tjänsteresa eller privat efteråt": "The app detects when the car is driven and measures the route, even when it is closed. You just choose business or private afterwards",
   "Slå på": "Turn on",
@@ -1154,6 +1160,8 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Mot (.+)$/, "To $1"],
+  [/^(\d+:\d\d) · ca ([\d\s ,]+) mil$/, "$1 · about $2 mil"],
   [/^(\d+) (resa|resor) att gå igenom$/, (m, n) => `${n} ${n === "1" ? "trip" : "trips"} to review`],
   [/^Kör nu(?: · ([\d\s ,]+) km)?$/, (m, k) => `Driving now${k ? ` · ${k} km` : ""}`],
   [/^Senast ([\d\s ,]+)$/, "Last $1"],

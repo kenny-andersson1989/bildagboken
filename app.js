@@ -1174,6 +1174,7 @@ function render() {
   ensureCarImage(car());
   updateWidget();
   if (S.trips.some((t) => t.odoEnd == null)) setTimeout(updateTripEstimate, 500);
+  renderTripBar();
   if (autoAvailable() && !refreshAutoStatus.done) { refreshAutoStatus.done = true; refreshAutoStatus().then(render); }
   // Under Bilen hämtas PDF-verktyget i förväg, så att serviceboken kan delas direkt med ett tryck.
   if (S.view === "bilen" && !pdfReady()) setTimeout(() => loadPdfLibs().catch(() => {}), 800);
@@ -2202,7 +2203,6 @@ function viewOverview() {
   </article>`);
 
 
-  parts.push(openTripCard());
   parts.push(startCard(c));
   parts.push(plusTipCard());
 
@@ -3435,7 +3435,7 @@ function typePicker() {
   openSheet("Vad vill du logga?", LOG_GROUPS.map(([name, keys]) => `<p class="types-head">${name}</p><div class="types">
     ${keys.map((k) => `<button type="button" data-act="new-entry" data-type="${k === "besiktning" ? "kostnad" : k}"${k === "besiktning" ? ' data-cat="Besiktning"' : ""}>${icon(typeIcon(k), 26)}${typeLabel(k)}</button>`).join("")}
   </div>`).join("") + `
-  ${tripsOn() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="new-trip">${icon("car", 26)}Resa</button><button type="button" data-act="start-trip">${icon("gauge", 26)}${openTrip() ? "Avsluta resa" : "Starta resa"}</button></div>` : ""}
+  ${tripsOn() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="trip-menu">${icon("car", 26)}${openTrip() ? "Avsluta resa" : "Resa"}</button></div>` : ""}
   <p class="types-head">Boka</p><button class="btn primary block" type="button" data-act="new-booking">${icon("calendar", 18)} Lägg in bokad tid</button>
   <p class="hint" style="margin-top:14px">Det du sparar syns direkt för alla ni som delar bilen.</p>`);
 }
@@ -3662,13 +3662,12 @@ function tripCard(c) {
   const month = carTrips(c.id).filter((t) => (t.date || "").startsWith(m));
   const work = sumMil(month, "tjanst"), priv = sumMil(month, "privat");
   return `<div class="card"><h2>Körjournal <span class="pill none">Plus</span></h2>
-    ${open ? `<button class="dl as-btn trip-open" type="button" data-act="start-trip"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">Resa pågår</div><div class="dl-s">${esc([`Startade ${clock(tsMs(open.startedAt))}`, `${fmt(open.odoStart, 1)} mil`, open.to ? `mot ${open.to}` : ""].filter(Boolean).join(" · "))}</div><div class="dl-s trip-live" data-trip-live>${esc(tripLiveText(open))}</div></div><span class="pill soon">Avsluta</span></button>` : ""}
     <dl class="detail-list">
       <div><dt>${esc(`I tjänsten i ${MONTHS[new Date().getMonth()]}`)}</dt><dd>${esc(`${fmt(work, 1)} mil · ${fmtKr(work * MIL_RATE)} kr`)}</dd></div>
       <div><dt>Privat</dt><dd>${esc(`${fmt(priv, 1)} mil`)}</dd></div>
     </dl>
     ${toReview(c.id).length ? `<button class="dl as-btn" type="button" data-act="trips-review"><div class="dl-ic">${icon("check", 20)}</div><div><div class="dl-t">${esc(`${toReview(c.id).length} ${toReview(c.id).length === 1 ? "resa" : "resor"} att gå igenom`)}</div><div class="dl-s">Välj tjänsteresa eller privat</div></div><span class="pill soon">Gå igenom</span></button>` : ""}
-    <div class="ask">${open ? (open.to ? `<button class="btn-soft" type="button" data-act="trip-nav">${icon("pin", 16)} Vägbeskrivning</button>` : "") : `<button class="btn-soft" type="button" data-act="start-trip">${icon("gauge", 16)} Starta resa</button>`}<button class="btn-soft" type="button" data-act="new-trip">${icon("plus", 16)} Logga resa</button><button class="btn-soft" type="button" data-act="trips">Alla resor</button></div>
+    <div class="ask"><button class="btn-soft" type="button" data-act="trip-menu">${icon("car", 16)} ${open ? "Avsluta resan" : "Resa"}</button>${open?.to ? `<button class="btn-soft" type="button" data-act="trip-nav">${icon("pin", 16)} Vägbeskrivning</button>` : ""}<button class="btn-soft" type="button" data-act="trips">Alla resor</button></div>
     ${autoTripsHtml()}
   </div>`;
 }
@@ -3743,16 +3742,30 @@ function reviewSheet() {
       <div class="review-btns"><button class="btn-soft" type="button" data-act="trip-kind" data-id="${esc(t.id)}" data-kind="tjanst">Tjänst</button><button class="btn-soft" type="button" data-act="trip-kind" data-id="${esc(t.id)}" data-kind="privat">Privat</button><button class="link" type="button" data-act="edit-trip" data-id="${esc(t.id)}">Mer</button></div></div></div>`).join("")}</div>`);
 }
 
-// En pågående resa syns överst på Översikt. Efter fyra timmar frågar den om man glömde avsluta.
-function openTripCard() {
-  if (!tripsOn()) return "";
-  const o = openTrip();
-  if (!o) return "";
-  const hours = (Date.now() - tsMs(o.startedAt)) / 36e5;
-  const old = hours >= 4;
-  const when = hours < 20 ? clock(tsMs(o.startedAt)) : fmtDateShort(o.date);
-  return `<article class="card"><div class="rows"><button class="dl as-btn" type="button" data-act="start-trip"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${old ? "Glömde du avsluta resan?" : "Resa pågår"}</div><div class="dl-s">${esc([`Startade ${when}`, o.to ? `mot ${o.to}` : ""].filter(Boolean).join(" · "))}</div><div class="dl-s trip-live" data-trip-live>${esc(tripLiveText(o))}</div></div><span class="pill ${old ? "urgent" : "soon"}">Avsluta</span></button></div></article>`;
+// Raden för pågående resa (som i Spotify): syns ovanför menyn i hela appen så länge en resa pågår.
+// Efter fyra timmar frågar den om man glömde avsluta. Tid och ungefärlig sträcka uppdateras av tickTrip().
+const hmm = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 60)}:${pad(m % 60)}`; };
+function tripBarText(o) {
+  const est = S.tripEst?.id === o.id ? S.tripEst.mil : null;
+  return `${hmm(Date.now() - tsMs(o.startedAt))}${est != null ? ` · ca ${fmt(est, 1)} mil` : ""}`;
 }
+function renderTripBar() {
+  const o = S.user && S.hid && S.loaded.entries && tripsOn() ? openTrip() : null;
+  let bar = document.getElementById("tripbar");
+  document.body.classList.toggle("has-tripbar", !!o);
+  if (!o) { bar?.remove(); return; }
+  const old = Date.now() - tsMs(o.startedAt) >= 4 * 36e5;
+  const html = `<button class="tb-main" type="button" data-act="start-trip" aria-label="Pågående resa. Tryck för att avsluta.">
+      <span class="tb-ic">${icon("car", 22)}<span class="tb-dot"></span></span>
+      <span class="tb-txt"><span class="tb-k${old ? " old" : ""}">${old ? "Glömde du avsluta?" : "Resa pågår"}</span><span class="tb-t" data-trip-bar>${esc(tripBarText(o))}</span>${o.to ? `<span class="tb-s">${esc(`Mot ${o.to}`)}</span>` : ""}</span>
+    </button>
+    <button class="tb-stop" type="button" data-act="start-trip"><span class="tb-sq"></span>Avsluta</button>`;
+  if (!bar) { document.body.insertAdjacentHTML("beforeend", `<div class="tripbar" id="tripbar">${html}</div>`); bar = document.getElementById("tripbar"); }
+  else if (bar.dataset.key !== `${o.id}|${o.to}|${old}`) bar.innerHTML = html;
+  bar.dataset.key = `${o.id}|${o.to}|${old}`;
+  if (EN && typeof trTree === "function") trTree(bar);
+}
+
 
 // Mode: "new" (hela resan), "start" (bara början) eller "end" (avsluta en pågående resa).
 function tripForm(t = {}, mode = "new") {
@@ -3858,10 +3871,10 @@ async function updateTripEstimate() {
 }
 function tickTrip() {
   const o = tripsOn() && openTrip();
-  const els = document.querySelectorAll("[data-trip-live]");
-  if (!o || !els.length) return;
-  const text = tripLiveText(o);
-  els.forEach((el) => { el.textContent = EN ? tr(text) : text; });
+  if (!o) return;
+  const text = tripLiveText(o), bar = tripBarText(o);
+  document.querySelectorAll("[data-trip-live]").forEach((el) => { el.textContent = EN ? tr(text) : text; });
+  document.querySelectorAll("[data-trip-bar]").forEach((el) => { el.textContent = EN ? tr(bar) : bar; });
 }
 setInterval(() => { tickTrip(); updateTripEstimate(); }, 20000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { tickTrip(); updateTripEstimate(); } });
@@ -5925,6 +5938,17 @@ const ACTIONS = {
     showToast(el.value === "free" ? "Testläge: gratisversionen" : el.value === "plus" ? "Testläge: Plus" : "Testläget är avstängt");
   },
   "new-trip"() { tripForm(); },
+  // En knapp för resor: pågår en resa avslutas den, annars väljer man att starta nu eller logga i efterhand.
+  "trip-menu"() {
+    const o = openTrip();
+    if (o) return tripForm(o, "end");
+    openSheet("Resa", `<div class="choice">
+      <button class="primary-c" type="button" data-act="trip-start-now"><span class="c-ic">${icon("gauge", 24)}</span><span><b>Starta resa nu</b><span>Tryck när du åker och avsluta när du kommer fram. Appen visar resan medan du kör.</span></span></button>
+      <button type="button" data-act="new-trip"><span class="c-ic q">${icon("pen", 24)}</span><span><b>Logga en resa i efterhand</b><span>Om du glömde starta. Du fyller i allt på en gång.</span></span></button>
+    </div>
+    ${NATIVE && !ANDROID ? "" : `<p class="hint" style="margin-top:14px">Med automatisk körjournal i iPhone-appen behöver du inte trycka alls.</p>`}`);
+  },
+  "trip-start-now"() { tripForm({}, "start"); },
   "trips-review"() { reviewSheet(); },
   async "trip-kind"(el) {
     const t = S.trips.find((x) => x.id === el.dataset.id);
