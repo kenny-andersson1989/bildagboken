@@ -1,6 +1,20 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Resor": "Trips",
+  "Senaste resorna": "Recent trips",
+  "Inga resor än. Tryck på Starta resa när du åker": "No trips yet. Tap Start trip when you leave",
+  "Inställningar för körjournalen": "Driving log settings",
+  "Dölj fliken Resor": "Hide the Trips tab",
+  "I tjänsten": "Business",
+  "Ersättning": "Allowance",
+  "Logga resor i tjänsten och privat, med milersättning och export. Den finns under Resor i menyn": "Log business and private trips, with mileage allowance and export. It is under Trips in the menu",
+  "Öppna Resor": "Open Trips",
+  "Dölj fliken": "Hide the tab",
+  "Slå på körjournalen": "Turn on the driving log",
+  "Körjournalen är påslagen. Den finns under Resor i menyn": "The driving log is on. It is under Trips in the menu",
+  "Dölja fliken Resor?": "Hide the Trips tab?",
+  "Resorna finns kvar. Du kan slå på körjournalen igen under Inställningar": "The trips are kept. You can turn on the driving log again under Settings",
   "Glömde du avsluta?": "Forgot to finish?",
   "Starta resa nu": "Start trip now",
   "Tryck när du åker och avsluta när du kommer fram. Appen visar resan medan du kör": "Tap when you leave and finish when you arrive. The app shows the trip while you drive",
@@ -1160,6 +1174,10 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Körjournal · (.+)$/, "Driving log · $1"],
+  [/^Startade (\d\d:\d\d) vid ([\d\s ,]+) mil$/, "Started $1 at $2 mil"],
+  [/^Mot (.+) · Startade (\d\d:\d\d) vid ([\d\s ,]+) mil$/, "To $1 · Started $2 at $3 mil"],
+  [/^Ersättningen räknas med (\d+) kr per mil, Skatteverkets skattefria belopp för egen bil\.?$/, "The allowance uses $1 kr per mil, the Swedish Tax Agency's tax-free amount for your own car."],
   [/^Mot (.+)$/, "To $1"],
   [/^(\d+:\d\d) · ca ([\d\s ,]+) mil$/, "$1 · about $2 mil"],
   [/^(\d+) (resa|resor) att gå igenom$/, (m, n) => `${n} ${n === "1" ? "trip" : "trips"} to review`],
