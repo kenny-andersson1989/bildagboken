@@ -378,6 +378,8 @@ details.more > .form { margin-top: 12px; }
   background: var(--glass-strong); border: 1px solid var(--glass-edge); border-radius: 26px;
   backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: var(--shadow); padding: 6px;
 }
+/* Med körjournalen påslagen finns fliken Resor till höger om plusknappen. */
+.nav-inner.with-resor { grid-template-columns: 1fr 1fr 60px 1fr 1fr 1fr; }
 .tab { border: 0; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; font: 500 11px var(--f-body); color: var(--ink-3); padding: 6px 0; border-radius: 18px; }
 .tab[aria-current="page"] { color: var(--ink); }
 .tab[aria-current="page"] svg { color: var(--accent-text); }
@@ -1392,3 +1394,22 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 .choice .c-ic.q { background: var(--ground); color: var(--ink); }
 .choice b { display: block; font-size: 16px; color: var(--ink); }
 .choice span span { font-size: 13.5px; color: var(--ink-3); }
+
+/* Fliken Resor */
+.rz-hero { display: grid; gap: 10px; }
+.rz-start { width: 100%; border: 0; border-radius: 20px; padding: 18px; background: var(--accent); color: var(--accent-ink); font: 700 18px var(--f-body); display: flex; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 10px 24px -10px var(--accent); cursor: pointer; }
+.rz-link { justify-self: center; }
+.rz-live { border-radius: 20px; padding: 16px; background: var(--ink); color: var(--ground); display: grid; gap: 8px; }
+.rz-live .k { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #2FBF6B; }
+.rz-live .k.old { color: #F0843F; }
+.rz-live .big { font: 700 34px var(--f-display); font-variant-numeric: tabular-nums; line-height: 1.05; }
+.rz-live .s { opacity: .75; font-size: 14px; }
+.rz-live .row { display: flex; gap: 8px; margin-top: 4px; }
+.rz-live .row button { flex: 1; border-radius: 999px; padding: 12px; font: 700 15px var(--f-body); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.rz-stop { border: 0; background: var(--ground); color: var(--ink); }
+.rz-stop .tb-sq { width: 10px; height: 10px; border-radius: 2px; background: var(--danger); }
+.rz-ghost { background: transparent; color: var(--ground); border: 1px solid color-mix(in srgb, var(--ground) 35%, transparent); }
+.rz-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.rz-tile { background: var(--input); border-radius: 16px; padding: 12px; min-width: 0; }
+.rz-tile small { display: block; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.rz-tile b { font: 700 20px var(--f-display); }
