@@ -1348,3 +1348,4 @@ div.koll-main { cursor: default; }
 .plus-t { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 15px; }
 .plus-t th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); padding: 0 0 8px; }
 .plus-t td { padding: 10px 0; border-top: 1px solid var(--line); }
+.trip-live { color: var(--accent-text); font-weight: 600; font-variant-numeric: tabular-nums; }
