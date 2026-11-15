@@ -1130,6 +1130,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Pågått (\d+) (?:tim (\d+) )?min(?: · ca ([\d\s ,]+) mil från start)?$/, (m, a, b, est) => `Running ${b != null ? `${a} h ${b} min` : `${a} min`}${est ? ` · about ${est} mil from start` : ""}`],
   [/^Pågår sedan (\S+(?: \S+)?)(?: · mot (.+))?$/, (m, w, to) => `In progress since ${w}${to ? ` · to ${to}` : ""}`],
   [/^Startade (\d\d:\d\d|\d+ \S+) · mot (.+)$/, "Started $1 · to $2"],
   [/(^|· )[Ää]ndrad (\d+ \S+) av (.+?)(, (\d+) gånger)?\.?$/, (m, pre, d, w, x, n) => `${pre}${pre ? "changed" : "Changed"} ${d} by ${w === "dig" ? "you" : w}${n ? `, ${n} times` : ""}${m.endsWith(".") ? "." : ""}`],

@@ -1172,6 +1172,7 @@ function render() {
   }
   ensureCarImage(car());
   updateWidget();
+  if (S.trips.some((t) => t.odoEnd == null)) setTimeout(updateTripEstimate, 500);
   // Under Bilen hämtas PDF-verktyget i förväg, så att serviceboken kan delas direkt med ett tryck.
   if (S.view === "bilen" && !pdfReady()) setTimeout(() => loadPdfLibs().catch(() => {}), 800);
   runLaunchAction();
@@ -3658,7 +3659,7 @@ function tripCard(c) {
   const month = carTrips(c.id).filter((t) => (t.date || "").startsWith(m));
   const work = sumMil(month, "tjanst"), priv = sumMil(month, "privat");
   return `<div class="card"><h2>Körjournal <span class="pill none">Plus</span></h2>
-    ${open ? `<button class="dl as-btn trip-open" type="button" data-act="start-trip"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">Resa pågår</div><div class="dl-s">${esc([`Startade ${clock(tsMs(open.startedAt))}`, `${fmt(open.odoStart, 1)} mil`, open.to ? `mot ${open.to}` : ""].filter(Boolean).join(" · "))}</div></div><span class="pill soon">Avsluta</span></button>` : ""}
+    ${open ? `<button class="dl as-btn trip-open" type="button" data-act="start-trip"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">Resa pågår</div><div class="dl-s">${esc([`Startade ${clock(tsMs(open.startedAt))}`, `${fmt(open.odoStart, 1)} mil`, open.to ? `mot ${open.to}` : ""].filter(Boolean).join(" · "))}</div><div class="dl-s trip-live" data-trip-live>${esc(tripLiveText(open))}</div></div><span class="pill soon">Avsluta</span></button>` : ""}
     <dl class="detail-list">
       <div><dt>${esc(`I tjänsten i ${MONTHS[new Date().getMonth()]}`)}</dt><dd>${esc(`${fmt(work, 1)} mil · ${fmtKr(work * MIL_RATE)} kr`)}</dd></div>
       <div><dt>Privat</dt><dd>${esc(`${fmt(priv, 1)} mil`)}</dd></div>
@@ -3675,7 +3676,7 @@ function openTripCard() {
   const hours = (Date.now() - tsMs(o.startedAt)) / 36e5;
   const old = hours >= 4;
   const when = hours < 20 ? clock(tsMs(o.startedAt)) : fmtDateShort(o.date);
-  return `<article class="card"><div class="rows"><button class="dl as-btn" type="button" data-act="start-trip"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${old ? "Glömde du avsluta resan?" : "Resa pågår"}</div><div class="dl-s">${esc([old ? `Startade ${when}` : `Pågår sedan ${when}`, o.to ? `mot ${o.to}` : ""].filter(Boolean).join(" · "))}</div></div><span class="pill ${old ? "urgent" : "soon"}">Avsluta</span></button></div></article>`;
+  return `<article class="card"><div class="rows"><button class="dl as-btn" type="button" data-act="start-trip"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${old ? "Glömde du avsluta resan?" : "Resa pågår"}</div><div class="dl-s">${esc([`Startade ${when}`, o.to ? `mot ${o.to}` : ""].filter(Boolean).join(" · "))}</div><div class="dl-s trip-live" data-trip-live>${esc(tripLiveText(o))}</div></div><span class="pill ${old ? "urgent" : "soon"}">Avsluta</span></button></div></article>`;
 }
 
 // Mode: "new" (hela resan), "start" (bara början) eller "end" (avsluta en pågående resa).
@@ -3743,22 +3744,58 @@ const tripPosition = () => currentPosition().then((p) => ({ lat: p.coords.latitu
 
 // Förslag på mätarställning vid slut: körsträckan enligt Apple Kartor, från där resan startade till där man är nu
 // (eller till målet). Mätaren gäller alltid; förslaget går att trycka på för att fylla i.
+// Körsträckan med bil mellan två platser enligt Apple Kartor, i mil med en decimal.
+async function routeMil(from, to) {
+  const mk = await loadMapKit();
+  const route = await new Promise((resolve, reject) => {
+    new mk.Directions().route({
+      origin: new mk.Coordinate(from.lat, from.lon),
+      destination: new mk.Coordinate(to.lat, to.lon),
+      transportType: mk.Directions.Transport.Automobile,
+    }, (err, data) => (err ? reject(err) : resolve(data?.routes?.[0])));
+  });
+  return route?.distance ? Math.round(route.distance / 1000) / 10 : null;
+}
+
+// Medan en resa pågår: hur länge den har pågått, och ungefär hur långt det är från start till där man är nu.
+// Tiden uppdateras när appen är öppen. Sträckan räknas om högst varannan minut, bara när appen syns.
+const durText = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} tim ${m % 60} min`; };
+function tripLiveText(o) {
+  const est = S.tripEst?.id === o.id ? S.tripEst.mil : null;
+  return [`Pågått ${durText(Date.now() - tsMs(o.startedAt))}`, est != null ? `ca ${fmt(est, 1)} mil från start` : ""].filter(Boolean).join(" · ");
+}
+async function updateTripEstimate() {
+  const o = tripsOn() && openTrip();
+  if (!o?.startLoc || document.hidden || updateTripEstimate.busy) return;
+  if (S.tripEst?.id === o.id && Date.now() - S.tripEst.at < 120000) return;
+  updateTripEstimate.busy = true;
+  try {
+    const here = await tripPosition();
+    if (!here) return;
+    const near = distM(o.startLoc, here) < 300;
+    const mil = near ? 0 : await routeMil(o.startLoc, here).catch(() => null);
+    if (mil != null) S.tripEst = { id: o.id, mil, at: Date.now() };
+  } finally { updateTripEstimate.busy = false; }
+  tickTrip();
+}
+function tickTrip() {
+  const o = tripsOn() && openTrip();
+  const els = document.querySelectorAll("[data-trip-live]");
+  if (!o || !els.length) return;
+  const text = tripLiveText(o);
+  els.forEach((el) => { el.textContent = EN ? tr(text) : text; });
+}
+setInterval(() => { tickTrip(); updateTripEstimate(); }, 20000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { tickTrip(); updateTripEstimate(); } });
+
 async function suggestTripDistance(t) {
   const box = $("#tr-route");
   if (!box || !t.startLoc || t.odoStart == null) return;
   const end = (await tripPosition()) || t.toLoc;
   if (!end || !document.contains(box)) return;
   try {
-    const mk = await loadMapKit();
-    const route = await new Promise((resolve, reject) => {
-      new mk.Directions().route({
-        origin: new mk.Coordinate(t.startLoc.lat, t.startLoc.lon),
-        destination: new mk.Coordinate(end.lat, end.lon),
-        transportType: mk.Directions.Transport.Automobile,
-      }, (err, data) => (err ? reject(err) : resolve(data?.routes?.[0])));
-    });
-    if (!route?.distance || route.distance < 300 || !document.contains(box)) return;
-    const mil = Math.round(route.distance / 1000) / 10;
+    const mil = await routeMil(t.startLoc, end);
+    if (mil == null || mil < 0.1 || !document.contains(box)) return;
     const odo = Math.round((t.odoStart + mil) * 10) / 10;
     box.innerHTML = `<button class="chip-btn" type="button" data-act="trip-use-route" data-odo="${odo}">${icon("pin", 14)} ${esc(`Enligt kartan ${fmt(mil, 1)} mil. Använd ${fmt(odo, 1)}`)}</button>
       <p class="hint" style="margin-top:6px">Vägen som Apple Kartor föreslår från där resan startade. Har du kört en annan väg eller tur och retur, läs av mätaren.</p>`;
