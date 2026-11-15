@@ -1,6 +1,7 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Måste fyllas i": "Required",
   "Grön": "Green",
   "Blå": "Blue",
   "Lila": "Purple",

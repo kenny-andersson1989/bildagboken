@@ -1018,6 +1018,7 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   // Vilken vy som visas, så att datorlayouten kan ordna korten olika per vy.
   app.dataset.screen = key;
   app.innerHTML = html;
+  markRequired(app);
   arrangeColumns();
   addHideButtons();
   if (active) {
@@ -3365,6 +3366,7 @@ function openSheet(title, body, { back = null, backId = null } = {}) {
       <button class="icon-btn" type="button" data-act="close-sheet" aria-label="Stäng">${icon("close", 18)}</button>
     </div>${body}`;
   sheet.setAttribute("aria-labelledby", "sheet-title");
+  markRequired(sheet);
   sheet.hidden = false;
   scrim.hidden = false;
   sheet.scrollTop = 0;
@@ -3890,10 +3892,10 @@ function tripForm(t = {}, mode = "new") {
       ${t.edits?.length ? `<div class="hint" style="margin-top:0"><b>Ändrad i efterhand</b>${t.edits.slice(-5).reverse().map((e) => `<br>${esc(editLine(e))}`).join("")}</div>` : ""}
       ${mode === "end" ? "" : `<div class="row2">
         ${field("Datum", `<input type="date" name="date" id="tr-date" value="${esc(t.date || todayStr())}">`)}
-        ${field("Mätare vid start (mil)", `<input name="odoStart" id="tr-odoStart" inputmode="decimal" value="${odoStart != null ? esc(String(odoStart).replace(".", ",")) : ""}" placeholder="${lastOdo != null ? esc(`Senast ${fmt(lastOdo, 1)}`) : "Till exempel 21 480,6"}">`)}
+        ${field("Mätare vid start (mil)", `<input name="odoStart" id="tr-odoStart" inputmode="decimal" required value="${odoStart != null ? esc(String(odoStart).replace(".", ",")) : ""}" placeholder="${lastOdo != null ? esc(`Senast ${fmt(lastOdo, 1)}`) : "Till exempel 21 480,6"}">`)}
       </div>
       ${t.id ? "" : `<p class="hint" style="margin-top:-6px">Läs av mätaren i bilen${lastOdo != null ? esc(`. Senast kända är ${fmt(lastOdo, 1)} mil`) : ""}.</p>`}`}
-      ${mode === "start" ? "" : field("Mätare vid slut (mil)", `<input name="odoEnd" id="tr-odoEnd" inputmode="decimal" value="${t.odoEnd != null ? esc(String(t.odoEnd).replace(".", ",")) : ""}" placeholder="Läs av mätaren i bilen">`, `<span id="tr-dist">${t.odoEnd != null ? esc(`${fmt(tripMil(t), 1)} mil`) : "Mil med en decimal. 1,2 mil är 12 km."}</span>`)}
+      ${mode === "start" ? "" : field("Mätare vid slut (mil)", `<input name="odoEnd" id="tr-odoEnd" inputmode="decimal" required value="${t.odoEnd != null ? esc(String(t.odoEnd).replace(".", ",")) : ""}" placeholder="Läs av mätaren i bilen">`, `<span id="tr-dist">${t.odoEnd != null ? esc(`${fmt(tripMil(t), 1)} mil`) : "Mil med en decimal. 1,2 mil är 12 km."}</span>`)}
       ${mode === "end" ? `<div id="tr-route" hidden></div>` : ""}
       ${field("Från", `<span class="geo-row"><input name="from" id="tr-from" value="${esc(t.from ?? (mode === "new" && !t.id ? prev?.to || "" : ""))}" placeholder="Ort, adress eller företag" autocomplete="off"><button class="geo-btn" type="button" data-act="trip-here" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span><span class="suggest" id="tr-from-suggest" role="listbox" hidden></span><input type="hidden" name="fromLoc" id="tr-fromLoc" value="${t.fromLoc ? esc(JSON.stringify(t.fromLoc)) : ""}">`)}
       ${field("Vart", `<input name="to" id="tr-to" value="${esc(t.to || "")}" placeholder="Ort, adress eller företag" autocomplete="off"><span class="suggest" id="tr-to-suggest" role="listbox" hidden></span><input type="hidden" name="toLoc" id="tr-toLoc" value="${t.toLoc ? esc(JSON.stringify(t.toLoc)) : ""}">`)}
@@ -4349,7 +4351,7 @@ function entryForm(type, e = {}, opts = {}) {
       const actDefault = e.tireAction || ((c.tiresOn || "sommar") === "sommar" ? "till_vinter" : "till_sommar");
       body = `${field("Vad gjordes?", `<select name="tireAction" id="ef-tireAction">${Object.entries(TIRE_ACTIONS).map(([k, l]) => `<option value="${k}"${actDefault === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
         <div class="row2" id="ef-tire-row">
-          <div id="ef-tirekind-box"${isSwap(actDefault) ? " hidden" : ""}>${field("Vilka däck?", `<select name="tireKind" id="ef-tireKind"><option value="">Välj</option><option value="sommar"${e.tireKind === "sommar" ? " selected" : ""}>Sommardäck</option><option value="vinter"${e.tireKind === "vinter" ? " selected" : ""}>Vinterdäck</option></select>`)}</div>
+          <div id="ef-tirekind-box"${isSwap(actDefault) ? " hidden" : ""}>${field("Vilka däck?", `<select name="tireKind" id="ef-tireKind" required><option value="">Välj</option><option value="sommar"${e.tireKind === "sommar" ? " selected" : ""}>Sommardäck</option><option value="vinter"${e.tireKind === "vinter" ? " selected" : ""}>Vinterdäck</option></select>`)}</div>
           ${field("Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}" placeholder="Valfritt">`)}
         </div>
         <div id="ef-newtire-box"${actDefault === "nya" ? "" : " hidden"}>
@@ -4373,7 +4375,7 @@ function entryForm(type, e = {}, opts = {}) {
       break;
     case "parkering":
       body = `${placeField("place", "ef-place", e.place, "parking", "Kungsgatan")}
-        ${amount("45")}
+        ${amount("45", "Kostnad (kr)", opts.recurringId ? " required" : "")}
         <label class="check"><input type="checkbox" name="fine" id="ef-fine"${e.fine ? " checked" : ""}> P-bot eller felparkeringsavgift</label>
         ${!e.id ? `<label class="check"><input type="checkbox" name="recurring" id="ef-recurring"${opts.recurringId ? " checked" : ""}> Återkommande (hyrd plats)</label>
         <div id="ef-rec-box"${opts.recurringId ? "" : " hidden"}>
@@ -4396,7 +4398,7 @@ function entryForm(type, e = {}, opts = {}) {
              <input type="hidden" name="title" value="${v("title")}">
              ${inspectionFields(e, c)}`
           : field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
-        ${amount(e.category === "Besiktning" ? "520" : "3 200")}${e.category === "Besiktning" ? odo(false) : ""}${date}
+        ${amount(e.category === "Besiktning" ? "520" : "3 200", "Kostnad (kr)", e.category === "Besiktning" ? "" : " required")}${e.category === "Besiktning" ? odo(false) : ""}${date}
         ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast (valfritt)", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(suggestNextInspection(e.date || todayStr(), c)) : ""}">`, "Uträknat från besiktningens datum. Kontrollera mot protokollet.")}</div>
         <p class="hint" id="ef-old-besikt" hidden>Det här är en äldre besiktning, så nästa datum behövs inte. Den sparas bara i loggen.</p>` : ""}
         ${more()}`;
@@ -4913,6 +4915,30 @@ function workSuggest(q) {
 function formError(msg) {
   const el = $("#form-err");
   if (el) { el.textContent = msg; el.hidden = false; }
+  // Tomma fält som måste fyllas i blir röda, och det första visas.
+  const form = el?.closest("form");
+  if (!form) return;
+  form.querySelectorAll("[required]").forEach((x) => x.classList.toggle("invalid", !String(x.value || "").trim() && !!x.offsetParent));
+  form.querySelector(".invalid")?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+// Fält som måste fyllas i (attributet required) får en röd stjärna vid namnet, och formuläret en rad som förklarar den.
+// Körs när en ruta eller sida ritas, och när ett fält blir obligatoriskt eller frivilligt.
+function markRequired(root = document) {
+  root.querySelectorAll("label.field, div.field").forEach((f) => {
+    const req = f.querySelector("input[required], select[required], textarea[required]");
+    const span = f.querySelector(":scope > span");
+    if (!span) return;
+    const mark = span.querySelector(".req");
+    if (req && !mark) span.insertAdjacentHTML("beforeend", ' <em class="req" aria-hidden="true">*</em>');
+    if (!req && mark) mark.remove();
+  });
+  root.querySelectorAll("form").forEach((form) => {
+    const any = form.querySelector("[required]");
+    const note = form.querySelector(":scope > .req-note");
+    if (any && !note) form.insertAdjacentHTML("afterbegin", '<p class="req-note"><em class="req" aria-hidden="true">*</em> Måste fyllas i</p>');
+    if (!any && note) note.remove();
+  });
 }
 
 // Bilder som väntar på att sparas med posten, och miniatyrerna i formuläret.
@@ -5382,8 +5408,8 @@ function recPriceSheet(rid) {
   openSheet("Byt pris", `
     <form class="form" data-form="rec-price" data-id="${esc(r.id)}" novalidate>
       <p class="hint" style="margin-top:0">Nu: ${esc(`${fmtKr(r.amount)} kr, ${PERIODS[r.period]?.toLowerCase()}`)}</p>
-      ${field("Nytt pris per gång (kr)", `<input name="amount" id="rp-amount" inputmode="decimal" autocomplete="off" placeholder="${esc(fmtKr(r.amount))}">`)}
-      ${field("Gäller från", `<input type="date" name="from" id="rp-from" value="${esc(next)}" min="${esc(r.start)}">`, "Förslaget är nästa betalning. Betalningar före det datumet behåller det gamla priset.")}
+      ${field("Nytt pris per gång (kr)", `<input name="amount" id="rp-amount" inputmode="decimal" required autocomplete="off" placeholder="${esc(fmtKr(r.amount))}">`)}
+      ${field("Gäller från", `<input type="date" name="from" id="rp-from" required value="${esc(next)}" min="${esc(r.start)}">`, "Förslaget är nästa betalning. Betalningar före det datumet behåller det gamla priset.")}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara nytt pris</button>
     </form>`, { back: "open-rec", backId: rid });
@@ -6266,13 +6292,13 @@ const ACTIONS = {
   "export-all"() { exportAll(); },
   "rename-house"() {
     openSheet("Hushållets namn", `<form class="form" data-form="rename-one" data-what="house" novalidate>
-      ${field("Hushållets namn", `<input name="v" id="rn-v" maxlength="40" value="${esc(S.house?.name || "")}" autocomplete="off">`, "Syns för alla ni som delar och i inbjudan.")}
+      ${field("Hushållets namn", `<input name="v" id="rn-v" maxlength="40" required value="${esc(S.house?.name || "")}" autocomplete="off">`, "Syns för alla ni som delar och i inbjudan.")}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button></form>`);
   },
   "rename-me"() {
     openSheet("Ditt namn", `<form class="form" data-form="rename-one" data-what="me" novalidate>
-      ${field("Ditt namn", `<input name="v" id="rn-v" maxlength="30" value="${esc(myName())}" autocomplete="given-name">`, "Så ser de andra vem som har loggat.")}
+      ${field("Ditt namn", `<input name="v" id="rn-v" maxlength="30" required value="${esc(myName())}" autocomplete="given-name">`, "Så ser de andra vem som har loggat.")}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button></form>`);
   },
@@ -6634,6 +6660,7 @@ function updateNextInspection() {
 function onInput(ev) {
   if (ev.target.id === "ef-date" && $("#ef-future")) $("#ef-future").hidden = !(ev.target.value > todayStr());
   if (ev.isTrusted && ev.target.classList?.contains("from-receipt")) ev.target.classList.remove("from-receipt");
+  if (ev.target.classList?.contains("invalid") && String(ev.target.value || "").trim()) ev.target.classList.remove("invalid");
   if (ev.target.id === "tr-odoEnd" || ev.target.id === "tr-odoStart") {
     const a = $("#tr-odoStart") ? num($("#tr-odoStart").value) : num(ev.target.form?.dataset.start);
     const b = num($("#tr-odoEnd")?.value);
@@ -6646,6 +6673,8 @@ function onInput(ev) {
   }
   if (ev.target.id === "ef-recurring") {
     const b = $("#ef-rec-box"); if (b) b.hidden = !ev.target.checked;
+    $("#ef-amount")?.toggleAttribute("required", ev.target.checked);
+    markRequired($("#sheet"));
     const lab = $("#ef-date")?.closest("label")?.querySelector("span");
     if (lab) lab.textContent = ev.target.checked ? "Första betalningen" : "Datum";
   }
