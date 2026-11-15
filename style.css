@@ -1345,3 +1345,6 @@ div.koll-main { cursor: default; }
 .check:has(input[type=radio]:checked)::before { content: ""; background: var(--accent); box-shadow: inset 0 0 0 3.5px var(--accent-soft); border: 1.5px solid var(--accent); }
 /* Bilen saknar eget foto: knappen säger vad den gör. */
 .car-pick .cam.cam-txt { width: auto; padding: 0 13px 0 10px; border-radius: 18px; display: inline-flex; align-items: center; gap: 6px; font: 600 13px var(--f-body); }
+.plus-t { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 15px; }
+.plus-t th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); padding: 0 0 8px; }
+.plus-t td { padding: 10px 0; border-top: 1px solid var(--line); }

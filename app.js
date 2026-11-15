@@ -445,7 +445,23 @@ function limitSheet(kind) {
     members: `Gratisversionen har plats för ${FREE.members} personer i hushållet. Med Bildagboken Plus kan fler gå med.`,
     photos: `Gratisversionen har plats för ${FREE.photos} bilder. Alla bilder finns kvar, men för att lägga till nya behöver ni ta bort några eller skaffa Bildagboken Plus.`,
   }[kind];
-  openSheet("Bildagboken Plus", `<p>${esc(text)}</p>`);
+  openSheet("Bildagboken Plus", `<p>${esc(text)}</p>
+    <div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="plus">Läs om Bildagboken Plus</button></div>`);
+}
+// Plus-sidan. Visas först när gränserna är påslagna (FREE.from). Köpet byggs in med RevenueCat.
+function plusSheet() {
+  const until = tsMs(S.house?.plus?.until);
+  const rows = [
+    ["Bilar", `${FREE.cars}`, "Obegränsat"],
+    ["Personer i hushållet", `${FREE.members}`, "Obegränsat"],
+    ["Bilder", `${FREE.photos}`, "2 000"],
+  ];
+  openSheet("Bildagboken Plus", `
+    <p>${hasPlus() ? esc(`Ni har Plus till ${fmtDate(ymd(new Date(until)))}. Det gäller alla i hushållet.`) : "Ett köp gäller alla i hushållet. Allt ni har loggat finns kvar, vad ni än väljer."}</p>
+    <table class="plus-t"><thead><tr><th></th><th>Gratis</th><th>Plus</th></tr></thead>
+      <tbody>${rows.map(([a, b, c]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td><td><b>${esc(c)}</b></td></tr>`).join("")}</tbody></table>
+    ${hasPlus() ? "" : `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="plus-buy">Skaffa Plus</button>
+      <p class="hint">279 kr per år eller 35 kr per månad. Prova gratis i 14 dagar.</p></div>`}`);
 }
 const memberName = (u) => S.house?.memberInfo?.[u]?.name || "Någon";
 const whoName = (u) => (u === uid() ? "Du" : memberName(u));
@@ -2969,6 +2985,8 @@ function viewSettings() {
       </div>
       <p class="hint" style="margin-top:8px">Den som har koden kan gå med. Byt kod om den har kommit på villovägar, då slutar den gamla att fungera.</p>
     </div>
+    ${FREE.from ? `<div class="card"><h2>Bildagboken Plus</h2>
+      <div class="rows"><button class="dl as-btn" type="button" data-act="plus"><div class="dl-ic">${icon("spark", 20)}</div><div><div class="dl-t">${hasPlus() ? "Ni har Plus" : limited() ? "Gratisversionen" : "Ingen gräns för ert hushåll"}</div><div class="dl-s">${hasPlus() ? "Inga gränser för bilar, personer och bilder" : "Se vad som ingår i Plus"}</div></div></button></div></div>` : ""}
     <div class="card">
       <h2>Bilar</h2>
       <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(carName(x))}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
@@ -5478,6 +5496,8 @@ const ACTIONS = {
     const sections = (el.dataset.section || "basic,photo,dates").split(",").filter((k) => CAR_SECTIONS[k]);
     carSheet(true, sections.length ? sections : ["basic"]);
   },
+  plus() { plusSheet(); },
+  "plus-buy"() { showToast("Köpet går inte att göra än."); },
   "add-car"() {
     if (limited() && S.cars.length >= FREE.cars) return limitSheet("cars");
     carSheet(false);
