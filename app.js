@@ -3733,7 +3733,7 @@ async function suggestTripDistance(t) {
     const mil = Math.round(route.distance / 1000) / 10;
     const odo = Math.round((t.odoStart + mil) * 10) / 10;
     box.innerHTML = `<button class="chip-btn" type="button" data-act="trip-use-route" data-odo="${odo}">${icon("pin", 14)} ${esc(`Enligt kartan ${fmt(mil, 1)} mil. Använd ${fmt(odo, 1)}`)}</button>
-      <p class="hint" style="margin-top:6px">Kortaste vägen från där resan startade. Har du kört en omväg eller tur och retur, läs av mätaren.</p>`;
+      <p class="hint" style="margin-top:6px">Vägen som Apple Kartor föreslår från där resan startade. Har du kört en annan väg eller tur och retur, läs av mätaren.</p>`;
     box.hidden = false;
   } catch { /* utan karta får man läsa av mätaren */ }
 }
