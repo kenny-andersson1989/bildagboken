@@ -3,7 +3,7 @@
 export const EN = {
   "Ort, adress eller företag": "Town, address or business",
   "Senaste målen": "Recent destinations",
-  "Kortaste vägen från där resan startade. Har du kört en omväg eller tur och retur, läs av mätaren": "Shortest route from where the trip started. If you took a detour or a round trip, read the odometer",
+  "Vägen som Apple Kartor föreslår från där resan startade. Har du kört en annan väg eller tur och retur, läs av mätaren": "The route Apple Maps suggests from where the trip started. If you drove another way or a round trip, read the odometer",
   "Testläge": "Test mode",
   "Visa appen som en vanlig användare ser den. Gäller bara på den här enheten, och inget ändras för andra": "Show the app the way a regular user sees it. Applies only on this device, and nothing changes for others",
   "Som vanligt": "As usual",
