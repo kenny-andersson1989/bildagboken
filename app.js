@@ -360,11 +360,12 @@ function latestOdoEntry(carId, excludeId = null) {
     if (e.carId !== carId || e.odometer == null || e.id === excludeId) continue;
     if (!best || (e.date || "") > (best.date || "") || ((e.date || "") === (best.date || "") && tsMs(e.createdAt) > tsMs(best.createdAt))) best = e;
   }
-  // Avslutade resor i körjournalen räknas också.
+  // Resor i körjournalen räknas också: mätaren vid start direkt, och mätaren vid slut när resan avslutas.
   for (const t of S.trips) {
-    if (t.carId !== carId || t.odoEnd == null || t.id === excludeId) continue;
-    const e = { date: t.date, odometer: t.odoEnd, createdAt: t.endedAt || t.createdAt };
-    if (!best || (e.date || "") > (best.date || "") || ((e.date || "") === (best.date || "") && tsMs(e.createdAt) > tsMs(best.createdAt))) best = e;
+    if (t.carId !== carId || t.id === excludeId) continue;
+    const reads = [t.odoStart != null && { date: t.date, odometer: t.odoStart, createdAt: t.startedAt || t.createdAt },
+      t.odoEnd != null && { date: t.date, odometer: t.odoEnd, createdAt: t.endedAt || t.createdAt }].filter(Boolean);
+    for (const e of reads) if (!best || (e.date || "") > (best.date || "") || ((e.date || "") === (best.date || "") && tsMs(e.createdAt) > tsMs(best.createdAt))) best = e;
   }
   return best;
 }
