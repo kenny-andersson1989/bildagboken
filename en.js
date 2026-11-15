@@ -1076,6 +1076,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Gratisversionen har plats för (\d+) bilder\. Ta bort några eller skaffa Bildagboken Plus för att lägga till fler\.?$/, "The free version has room for $1 photos. Remove some or get Bildagboken Plus to add more."],
   [/^Ni har Plus till (.+)\. Det gäller alla i hushållet\.?$/, "You have Plus until $1. It covers everyone in the household."],
   [/^([\d\s ]+) kr från (\d.+)$/, "$1 kr from $2"],
   [/^([\d\s ]+) kr till (\d.+)$/, "$1 kr until $2"],
