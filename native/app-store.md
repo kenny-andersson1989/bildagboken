@@ -66,3 +66,14 @@ Data som samlas in: **Ja**. Inget används för spårning, och inget säljs.
 
 ## Skärmbilder
 iPhone 6,9" (1320 × 2868), i mappen `app-store-bilder`. Ladda upp dem i ordning 1–6. Påhittade namn och platser (Sara, Erik, Familjen Berg).
+
+## Version 1.1 (när 1.0 är godkänd)
+Nytt i 1.1: ny ikon, och länkar till bildagboken.com (inbjudan, delad servicebok, genvägar) öppnas direkt i appen.
+
+**Gör detta innan du startar bygget i Codemagic:**
+1. Gå till developer.apple.com → Certificates, Identifiers & Profiles → Identifiers → `se.bildagboken.app`.
+2. Bocka i **Associated Domains** och tryck **Save** (svara Confirm om den frågar).
+3. Starta bygget i Codemagic som vanligt. Utan steg 2 stoppar Apple bygget, eftersom appen ber om länkarna.
+
+**Kampanjtext "Nyheter i den här versionen":**
+Ny ikon. Inbjudningar och länkar från Bildagboken öppnas nu direkt i appen.
