@@ -419,7 +419,7 @@ function nameMatchesItem(text, item) {
 
 // Vad som gjordes vid en service eller ett eget jobb: [{ key, name, itemId, action, side }].
 // Äldre poster utan "work" byggs från items och parts, och allt räknas då som bytt.
-const WORK_ACTIONS = { bytt: "Bytt", pafyllt: "Fyllt på", rengjort: "Rengjort", kontrollerat: "Kontrollerat" };
+const WORK_ACTIONS = { bytt: "Bytt", lagat: "Lagat", pafyllt: "Fyllt på", rengjort: "Rengjort", kontrollerat: "Kontrollerat" };
 // Positioner som går att kombinera: hjulen för det mesta, fram och bak för torkarblad.
 const CORNERS = ["Vänster fram", "Höger fram", "Vänster bak", "Höger bak"];
 const ENDS = ["Fram", "Bak"];
@@ -1083,7 +1083,7 @@ function renderOnboarding(error = "") {
     <form class="card form" data-form="create-house" data-keep>
       <h2>Starta en ny bildagbok</h2>
       <label class="field"><span>Ditt namn</span><input name="name" id="ob-name" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
-      <label class="field"><span>Vad heter hushållet?</span><input name="house" id="ob-house" maxlength="40" placeholder="Till exempel Familjen Andersson"></label>
+      <label class="field"><span>Vad heter hushållet?</span><input name="house" id="ob-house" maxlength="40" placeholder="Till exempel Familjen Berg"></label>
       <button class="btn primary block" type="submit">Skapa</button>
       <p class="hint">Sedan kan du bjuda in andra med en kod, till exempel familj eller den du delar bil med.</p>
     </form>
@@ -1229,25 +1229,25 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
   const parts = {};
   parts.basic = `
     <div class="row2">
-      ${inp("make", "Märke", c.make, 'required placeholder="Till exempel Volvo" list="dl-make" autocomplete="off"')}
-      ${inp("model", "Modell", c.model, 'required placeholder="Till exempel V50" list="dl-model" autocomplete="off"')}
+      ${inp("make", "Märke", c.make, 'required placeholder="Volvo" list="dl-make" autocomplete="off"')}
+      ${inp("model", "Modell", c.model, 'required placeholder="V50" list="dl-model" autocomplete="off"')}
     </div>
     <datalist id="dl-make">${makeOptions()}</datalist>
     <datalist id="dl-model">${modelOptions(c.make)}</datalist>
     <div class="row2">
-      ${inp("year", "Årsmodell", c.year, 'inputmode="numeric" placeholder="Till exempel 2007"')}
-      ${inp("engine", "Motor", c.engine, 'placeholder="Till exempel 1.8F"')}
+      ${inp("year", "Årsmodell", c.year, 'inputmode="numeric" placeholder="2007"')}
+      ${inp("engine", "Motor", c.engine, 'placeholder="1.8F"')}
     </div>
     <label class="field"><span>Drivmedel</span>${sel("fuel", FUELS, c.fuel || "Bensin")}</label>
     <div class="row2">
-      ${inp("color", "Färg", c.color, 'placeholder="Till exempel svart"')}
-      ${inp("plate", "Registreringsnummer", c.plate, 'placeholder="Till exempel ABC 123" autocapitalize="characters"')}
+      ${inp("color", "Färg", c.color, 'placeholder="Svart"')}
+      ${inp("plate", "Registreringsnummer", c.plate, 'placeholder="ABC 123" autocapitalize="characters"')}
     </div>
     <label class="field"><span>Chassinummer (VIN)</span>
       <span class="geo-row"><input name="vin" id="cf-vin" value="${esc(c.vin || "")}" placeholder="17 tecken, valfritt" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="24">
       <label class="geo-btn" id="cf-vin-scan" aria-label="Läs av chassinumret med kameran" title="Läs av med kameran">${icon("camera", 20)}<input type="file" id="cf-vin-file" accept="image/*" class="vh"></label></span>
       <small id="cf-vin-info">${esc(c.vin ? vinInfo(c.vin) : "Står längst ner i vindrutan på förarsidan och i registreringsbeviset. Tryck på kameran för att läsa av det.")}</small></label>
-    <label class="check"><input type="checkbox" name="vinShare" id="cf-vinShare"${c.vinShare ? " checked" : ""}> Visa chassinumret i serviceboken som delas med en köpare</label>
+    ${isNew ? "" : `<label class="check"><input type="checkbox" name="vinShare" id="cf-vinShare"${c.vinShare ? " checked" : ""}> Visa chassinumret i serviceboken som delas med en köpare</label>`}
     ${isNew
       ? inp("odometer", "Mätarställning (mil)", "", 'inputmode="numeric" placeholder="Till exempel 21 480"') + `
         <div class="field">
@@ -1328,7 +1328,8 @@ function renderCarSetup() {
       <button class="btn primary block" type="submit">Spara bilen</button>
       <p class="hint">Försäkring, skatt och däck lägger du till under Bilen efteråt.</p>
     </form>
-    ${inviteCard()}`, { keepForm: true });
+    ${inviteCard()}
+    <button class="link" type="button" data-act="logout" style="align-self:center;margin:6px auto 20px;display:block">Logga ut (${esc(S.user?.email || "")})</button>`, { keepForm: true });
 }
 
 function carSvg(c) {
@@ -3044,13 +3045,29 @@ async function loadAdmin() {
       ]);
       return { id: h.id, ...h.data(), cars: cars.docs.map((d) => ({ id: d.id, ...d.data() })), entries: ents.docs.map((d) => ({ id: d.id, ...d.data() })) };
     }));
-    S.adminData = { houses, at: Date.now() };
+    const errs = await getDocs(collection(db, "errors")).then((q) => q.docs.map((d) => ({ id: d.id, ...d.data() }))).catch(() => []);
+    S.adminData = { houses, errors: errs.sort((x, y) => tsMs(y.at) - tsMs(x.at)), at: Date.now() };
   } catch (e) {
     console.error(e);
     S.adminData = { error: e.code === "permission-denied" ? "Firestore-reglerna ger inte ditt konto läsrätt till alla hushåll än. Publicera de nya reglerna och försök igen." : (e.code || e.message) };
   }
   if (S.view === "admin") render();
 }
+// Fel som har hänt hos användarna, nyast först. Samma fel grupperas.
+function adminErrorsCard(errs, users) {
+  const groups = new Map();
+  for (const e of errs) { const g = groups.get(e.msg) || { ...e, n: 0, who: new Set() }; g.n++; g.who.add(e.uid); groups.set(e.msg, g); }
+  const list = [...groups.values()].slice(0, 25);
+  const name = (id) => users.find((u) => u.id === id)?.name || "Okänd";
+  return `<div class="card"><h2>Fel i appen ${errs.length ? `<button class="link danger" type="button" data-act="admin-clear-errors">Rensa</button>` : ""}</h2>
+    ${list.length ? `<div class="rows">${list.map((g) => `<div class="admin-house" data-notr>
+        <div class="dl-t" style="word-break:break-word">${esc(g.msg)}</div>
+        <div class="dl-s">${g.n > 1 ? `${g.n} gånger · ` : ""}${esc([...g.who].map(name).join(", "))} · ${esc(timeAgo(tsMs(g.at)).toLowerCase())}${g.where ? ` · ${esc(g.where)}` : ""} · ${esc(g.native || "webb")} ${esc(g.ver || "")}</div>
+      </div>`).join("")}</div>` : `<p class="muted">Inga fel har rapporterats. Bra!</p>`}
+    <p class="hint" style="margin-top:10px">Appen skickar hit fel som inträffar hos användarna, utan något av det de har skrivit. Skicka gärna ett fel till Claude om du vill att det ska rättas.</p>
+  </div>`;
+}
+
 function viewAdmin() {
   const head = subHeader("Bara du ser det här", "Användare", true);
   if (!isAdmin()) return `${head}<div class="card empty"><b>Inte tillgängligt</b></div>`;
@@ -3091,6 +3108,7 @@ function viewAdmin() {
       <div class="admin-stats">${stat("Hushåll", H.length)}${stat("Användare", users.length)}${stat("Bilar", H.reduce((x, h) => x + h.cars.length, 0))}${stat("Poster", H.reduce((x, h) => x + h.entries.length, 0))}${stat("Aktiva 7 dagar", ago(7))}${stat("Aktiva 30 dagar", ago(30))}</div>
       <p class="hint" style="margin-top:10px">Aktiv betyder att personen har öppnat appen. Hämtat ${esc(timeAgo(a.at)).toLowerCase()}.</p>
     </div>
+    ${adminErrorsCard(a.errors || [], users)}
     <div class="card"><h2>Funktioner</h2><p class="muted" style="margin-bottom:8px">Hur många hushåll som har använt varje funktion.</p>
       <div class="rows">${features.map(([l, v]) => `<div class="admin-feat"><span>${esc(l)}</span><span class="wear ok"><i style="width:${Math.round((v / n) * 100)}%"></i></span><b>${v} av ${H.length}</b></div>`).join("")}</div>
     </div>
@@ -5480,6 +5498,13 @@ const ACTIONS = {
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button></form>`);
   },
+  async "admin-clear-errors"() {
+    const errs = S.adminData?.errors || [];
+    await Promise.all(errs.map((e) => deleteDoc(doc(db, "errors", e.id)).catch(() => {})));
+    S.adminData.errors = [];
+    render();
+    showToast("Felen är rensade");
+  },
   "open-admin"() { S.prevView = "installningar"; S.adminData = null; setView("admin"); },
   "admin-reload"() { S.adminData = null; render(); },
   "hide-start"() { pref.set("startHidden." + S.hid, "1"); render(); showToast("Dolt. Du hittar allt under Bilen och Inställningar."); },
@@ -5533,8 +5558,27 @@ function authError(e, name = null) {
   return map[e?.code] || `Inloggningen misslyckades (${e?.code || e?.message || "okänt fel"}).`;
 }
 
+// Felrapporter: fel i appen skickas kort till ägarens översikt, så att de går att rätta.
+// Högst åtta per gång appen är öppen, aldrig samma fel två gånger, och inga vanliga nätverksfel.
+const reportedErrors = new Set();
+function reportError(err, where = "") {
+  try {
+    if (!S.user || !navigator.onLine) return;
+    const msg = String(err?.message || err?.code || err || "").trim().slice(0, 500);
+    if (!msg || reportedErrors.has(msg) || reportedErrors.size >= 8) return;
+    if (/ResizeObserver|^Script error|Load failed|NetworkError|Failed to fetch|network|unavailable|offline|AbortError|aborted/i.test(msg)) return;
+    reportedErrors.add(msg);
+    const data = { uid: uid(), hid: S.hid || null, msg, where: String(where || "").slice(0, 100) || null, stack: String(err?.stack || "").slice(0, 1500) || null, ver: VERSION, ua: navigator.userAgent.slice(0, 200), native: NATIVE ? (ANDROID ? "android" : "ios") : null, lang: LANG, at: serverTimestamp() };
+    for (const k of Object.keys(data)) if (data[k] == null) delete data[k];
+    setDoc(doc(collection(db, "errors")), data).catch(() => {});
+  } catch { /* en felrapport får aldrig själv ge fel */ }
+}
+window.addEventListener("error", (ev) => reportError(ev.error || ev.message, ev.filename ? `${ev.filename.split("/").pop()}:${ev.lineno}` : ""));
+window.addEventListener("unhandledrejection", (ev) => reportError(ev.reason, "promise"));
+
 function onWriteError(e) {
   console.error(e);
+  if (e?.code !== "unavailable") reportError(e, "spara");
   showToast(e?.code === "permission-denied" ? "Du har inte behörighet att spara det här." : "Kunde inte spara. Det sparas när telefonen har nät igen.", 6000);
 }
 
@@ -5989,6 +6033,7 @@ function cleanup() {
 
 function onListenError(e) {
   console.error(e);
+  if (e?.code !== "permission-denied" && e?.code !== "unavailable") reportError(e, "hämta");
   if (e.code === "permission-denied") {
     cleanup();
     if (S.user) renderOnboarding("Du har inte längre tillgång till hushållet.");

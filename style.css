@@ -1332,3 +1332,4 @@ div.koll-main { cursor: default; }
 .vin-dd { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-variant-numeric: tabular-nums; letter-spacing: .3px; word-break: break-all; }
 #cf-vin { text-transform: uppercase; letter-spacing: .5px; }
 #cf-vin-info.warn { color: var(--warn, #A86B0C); }
+#cf-vin::placeholder { text-transform: none; letter-spacing: 0; }
