@@ -359,6 +359,29 @@ function addMonthsKeepDay(d, m) {
   const last = new Date(y, mm + 1, 0).getDate();
   return new Date(y, mm, Math.min(d.getDate(), last));
 }
+// Nästa betalning efter i dag för en återkommande kostnad, eller null om den har slutat.
+function nextRecDate(r) {
+  const s = parseDate(r.start), t = todayStr();
+  if (!s || !r.period) return null;
+  for (let i = 0; i < 1200; i++) {
+    const ds = ymd(addMonthsKeepDay(s, i * r.period));
+    if (ds > t) return r.end && ds > r.end ? null : ds;
+  }
+  return null;
+}
+function dayBeforeStr(ds) {
+  const d = parseDate(ds);
+  d.setDate(d.getDate() - 1);
+  return ymd(d);
+}
+// Nytt pris från ett datum: den gamla regeln slutar dagen före och en ny tar vid, så tidigare betalningar behåller sitt pris.
+function splitRecurring(c, r, from, changes) {
+  const rest = (c.recurring || []).filter((x) => x.id !== r.id);
+  if (from <= r.start) return [...rest, clean({ ...r, ...changes })];
+  const old = { ...r, end: dayBeforeStr(from) };
+  const neu = clean({ ...r, ...changes, id: "r" + randomId(8), start: from, createdBy: uid(), createdAt: Date.now() });
+  return [...rest, old, neu];
+}
 function recurringEntries(c) {
   const out = [];
   const today = todayStr();
@@ -3769,7 +3792,7 @@ function entryForm(type, e = {}, opts = {}) {
             ${field("Slutar", `<input type="date" name="endDate" id="ef-endDate" value="${esc(e.end || "")}">`, "Lämna tom om den fortsätter.")}
           </div>
           <p class="hint">Kostnaden ovan gäller per gång, och första betalningen anges nedanför. Den räknas in i Ekonomi och loggen varje gång, utan att du behöver logga den igen.</p>
-        </div>` : ""}
+        </div>${recSplitBox(c, opts.recurringId)}` : ""}
         ${date}${more()}`;
       break;
     case "kostnad":
@@ -4445,7 +4468,14 @@ async function saveEntry(form) {
         const rid = form.dataset.rec || "r" + randomId(8);
         const prev = (c.recurring || []).find((x) => x.id === rid);
         const rule = clean({ id: rid, type: "parkering", place: data.place, amount: data.amount, period: Number(str("period")) || 1, start: data.date, end, note: data.note, createdBy: prev?.createdBy || uid(), createdAt: prev?.createdAt || Date.now() });
-        const list = [...(c.recurring || []).filter((x) => x.id !== rid), rule];
+        let list = [...(c.recurring || []).filter((x) => x.id !== rid), rule];
+        if (prev && prev.amount !== rule.amount && $("#ef-rec-split") && str("recSplit") !== "all") {
+          const from = str("splitDate");
+          if (!from) return formError("Välj från vilket datum det nya beloppet gäller.");
+          if (end && from > end) return formError("Datumet ligger efter att parkeringen slutar.");
+          const { id, createdBy, createdAt, ...changes } = rule;
+          list = splitRecurring(c, prev, from, changes);
+        }
         updateDoc(ref("cars", c.id), { recurring: list }).catch(onWriteError);
         c.recurring = list;
         closeSheet();
@@ -4715,11 +4745,52 @@ function recurringSheet(rid) {
       ${r.note ? `<div><dt>Anteckning</dt><dd>${esc(r.note)}</dd></div>` : ""}
     </dl>
     <div class="form" style="margin-top:18px">
-      <button class="btn primary block" type="button" data-act="edit-rec" data-id="${esc(r.id)}">Ändra</button>
-      ${!ended ? `<button class="btn ghost block" type="button" data-act="end-rec" data-id="${esc(r.id)}">Avsluta från i dag</button>` : ""}
-      <button class="btn danger block" type="button" data-act="delete-rec" data-id="${esc(r.id)}">Ta bort</button>
-      <p class="hint">Betalningarna räknas fram automatiskt. Säger du upp platsen, välj Avsluta så finns det som har betalats kvar. Höjs priset: avsluta den här och lägg in en ny från det datumet, så stämmer de tidigare betalningarna. Ändrar du beloppet här gäller det alla betalningar.</p>
+      <button class="btn primary block btn-2l" type="button" data-act="edit-rec" data-id="${esc(r.id)}">Ändra<span class="btn-sub">Plats, belopp eller hur ofta</span></button>
+      ${!ended ? `<button class="btn ghost block btn-2l" type="button" data-act="rec-price" data-id="${esc(r.id)}">Byt pris från ett datum<span class="btn-sub">Tidigare betalningar behåller sitt pris</span></button>
+      <button class="btn ghost block btn-2l" type="button" data-act="end-rec" data-id="${esc(r.id)}">Sluta betala från i dag<span class="btn-sub">${paid.length ? esc(`${paid.length === 1 ? "Betalningen" : `De ${paid.length} betalningarna`} (${fmtKr(sum)} kr) finns kvar`) : "Inget har betalats än"}</span></button>` : ""}
+      <button class="btn danger block btn-2l" type="button" data-act="delete-rec" data-id="${esc(r.id)}">Radera helt<span class="btn-sub">${paid.length ? esc(`Tar bort ${paid.length === 1 ? "betalningen" : `alla ${paid.length} betalningar`}, som om den aldrig fanns`) : "Som om den aldrig fanns"}</span></button>
     </div>`);
+}
+
+// Ändras beloppet på en regel som redan har betalningar: fråga om det gäller framåt eller alla.
+function recSplitBox(c, rid) {
+  const r = rid && (c.recurring || []).find((x) => x.id === rid);
+  if (!r || !recurringEntries({ ...c, recurring: [r] }).length) return "";
+  return `<div id="ef-rec-split" data-orig="${esc(r.amount)}" hidden>
+    <p class="rec-split-t">Det nya beloppet gäller</p>
+    <label class="check"><input type="radio" name="recSplit" value="from" checked> Från ett datum. Tidigare betalningar behåller sitt pris</label>
+    ${field("Från", `<input type="date" name="splitDate" id="ef-splitDate" value="${esc(nextRecDate(r) || todayStr())}" min="${esc(r.start)}">`)}
+    <label class="check"><input type="radio" name="recSplit" value="all"> Alla betalningar. Jag skrev fel från början</label>
+  </div>`;
+}
+function recPriceSheet(rid) {
+  const r = (car().recurring || []).find((x) => x.id === rid);
+  if (!r) return;
+  const next = nextRecDate(r) || todayStr();
+  openSheet("Byt pris", `
+    <form class="form" data-form="rec-price" data-id="${esc(r.id)}" novalidate>
+      <p class="hint" style="margin-top:0">Nu: ${esc(`${fmtKr(r.amount)} kr, ${PERIODS[r.period]?.toLowerCase()}`)}</p>
+      ${field("Nytt pris per gång (kr)", `<input name="amount" id="rp-amount" inputmode="decimal" autocomplete="off" placeholder="${esc(fmtKr(r.amount))}">`)}
+      ${field("Gäller från", `<input type="date" name="from" id="rp-from" value="${esc(next)}" min="${esc(r.start)}">`, "Förslaget är nästa betalning. Betalningar före det datumet behåller det gamla priset.")}
+      <p class="err" id="form-err" hidden></p>
+      <button class="btn primary block" type="submit">Spara nytt pris</button>
+    </form>`, { back: "open-rec", backId: r.id });
+}
+function saveRecPrice(form) {
+  const c = car();
+  const r = (c.recurring || []).find((x) => x.id === form.dataset.id);
+  if (!r) return;
+  const fd = new FormData(form);
+  const amount = num(fd.get("amount"));
+  const from = String(fd.get("from") || "");
+  if (!amount || amount < 0) return formError("Fyll i det nya priset.");
+  if (!from) return formError("Välj från vilket datum det nya priset gäller.");
+  if (r.end && from > r.end) return formError("Datumet ligger efter att parkeringen slutar.");
+  const list = splitRecurring(c, r, from, { amount });
+  updateDoc(ref("cars", c.id), { recurring: list }).catch(onWriteError);
+  c.recurring = list;
+  closeSheet(); render();
+  showToast(`Nytt pris ${fmtKr(amount)} kr från ${fmtDate(from)}`, 5000);
 }
 
 function partSheet(key) {
@@ -4981,30 +5052,38 @@ const ACTIONS = {
     openEntry(el.dataset.id, { fromCat: el.dataset.cat || null });
   },
   "open-rec"(el) { recurringSheet(el.dataset.id); },
+  "rec-price"(el) { recPriceSheet(el.dataset.id); },
   "edit-rec"(el) {
     const r = (car().recurring || []).find((x) => x.id === el.dataset.id);
-    if (r) entryForm("parkering", { place: r.place, amount: r.amount, date: r.start, period: r.period, end: r.end, note: r.note }, { recurringId: r.id });
+    if (r) entryForm("parkering", { place: r.place, amount: r.amount, date: r.start, period: r.period, end: r.end, note: r.note }, { recurringId: r.id, back: "open-rec", backId: r.id });
   },
   async "end-rec"(el) {
     const c = car();
     const r = (c.recurring || []).find((x) => x.id === el.dataset.id);
     if (!r) return;
-    const ok = await confirmDialog({ title: "Avsluta den återkommande parkeringen?", lines: ["Inga fler betalningar räknas efter i dag. Det som redan har betalats finns kvar i loggen och Ekonomi."], okLabel: "Avsluta", warn: "" });
+    const ok = await confirmDialog({ title: "Sluta betala från i dag?", lines: ["Inga fler betalningar räknas efter i dag. Det som redan har betalats finns kvar i loggen och Ekonomi."], okLabel: "Sluta betala", warn: "" });
     if (!ok) return;
     const list = (c.recurring || []).map((x) => (x.id === r.id ? { ...x, end: todayStr() } : x));
     updateDoc(ref("cars", c.id), { recurring: list }).catch(onWriteError);
     c.recurring = list;
-    closeSheet(); render(); showToast("Avslutad från och med i dag");
+    closeSheet(); render(); showToast("Inga fler betalningar efter i dag");
   },
-  "delete-rec"(el) {
+  async "delete-rec"(el) {
     const c = car();
     const r = (c.recurring || []).find((x) => x.id === el.dataset.id);
     if (!r) return;
+    const paid = recurringEntries({ ...c, recurring: [r] });
+    if (paid.length) {
+      const sum = paid.reduce((a, e) => a + (e.amount || 0), 0);
+      const ended = r.end && r.end <= todayStr();
+      const ok = await confirmDialog({ title: "Radera parkeringen helt?", lines: [`${paid.length === 1 ? "Betalningen" : `Alla ${paid.length} betalningar`}, ${fmtKr(sum)} kr, försvinner från loggen och Ekonomi.`, ended ? "" : "Har du sagt upp platsen, välj Sluta betala i stället."], okLabel: "Radera", warn: "" });
+      if (!ok) return;
+    }
     const list = (c.recurring || []).filter((x) => x.id !== r.id);
     updateDoc(ref("cars", c.id), { recurring: list }).catch(onWriteError);
     c.recurring = list;
     closeSheet(); render();
-    showToast("Den återkommande parkeringen är borttagen", 6000, () => {
+    showToast("Parkeringen är raderad", 6000, () => {
       const again = [...(c.recurring || []).filter((x) => x.id !== r.id), r];
       c.recurring = again;
       updateDoc(ref("cars", c.id), { recurring: again }).catch(onWriteError);
@@ -5598,6 +5677,7 @@ async function onSubmit(ev) {
     if (kind === "items") return saveItems(form);
     if (kind === "booking") return saveBooking(form, ev.submitter?.value === "1");
     if (kind === "todo") return saveTodo(form);
+    if (kind === "rec-price") return saveRecPrice(form);
     if (kind === "doc") return await saveDoc(form);
     if (kind === "rename-one") {
       const v = String(new FormData(form).get("v") || "").trim();
@@ -5844,6 +5924,10 @@ function updateNextInspection() {
 function onInput(ev) {
   if (ev.target.id === "ef-date" && $("#ef-future")) $("#ef-future").hidden = !(ev.target.value > todayStr());
   if (ev.isTrusted && ev.target.classList?.contains("from-receipt")) ev.target.classList.remove("from-receipt");
+  if (ev.target.id === "ef-amount" && $("#ef-rec-split")) {
+    const box = $("#ef-rec-split");
+    box.hidden = num(ev.target.value) === Number(box.dataset.orig);
+  }
   if (ev.target.id === "ef-recurring") {
     const b = $("#ef-rec-box"); if (b) b.hidden = !ev.target.checked;
     const lab = $("#ef-date")?.closest("label")?.querySelector("span");
