@@ -1,6 +1,8 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Nytt pris": "New price",
+  "Tidigare pris": "Earlier price",
   "Lägg till foto": "Add photo",
   "Lägg till ett foto på er bil": "Add a photo of your car",
   "Gratisversionen har plats för 1 bil. Med Bildagboken Plus kan ni lägga till fler bilar": "The free version has room for 1 car. With Bildagboken Plus you can add more cars",
@@ -1061,6 +1063,8 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^([\d\s ]+) kr från (\d.+)$/, "$1 kr from $2"],
+  [/^([\d\s ]+) kr till (\d.+)$/, "$1 kr until $2"],
   [/^Det finns plats för (1 bild|\d+ bilder) till i gratisversionen\.?$/, (m, n) => `There is room for ${n === "1 bild" ? "1 more photo" : n.replace(" bilder", " more photos")} in the free version.`],
   [/^(.+) har redan (\d+) personer, så det är fullt i gratisversionen\. Med Bildagboken Plus kan fler gå med\.?$/, "$1 already has $2 people, so it is full in the free version. With Bildagboken Plus more can join."],
   [/^De (\d+) betalningarna \(([\d\s ]+) kr\) finns kvar$/, "The $1 payments ($2 kr) stay"],
