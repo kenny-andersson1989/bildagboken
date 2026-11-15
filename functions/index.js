@@ -238,7 +238,7 @@ const DOC_SCHEMA = {
         properties: { name: { type: "string" }, action: { type: "string", enum: ["bytt", "kontrollerat", "lagat", "justerat"] } },
       },
     },
-    inspectionResult: { type: ["string", "null"], enum: ["godkand", "anmarkning", "efterkontroll", "korforbud", null] },
+    inspectionResult: { anyOf: [{ type: "string", enum: ["godkand", "anmarkning", "efterkontroll", "korforbud"] }, { type: "null" }], description: "Besiktningens resultat, eller null om det inte är ett besiktningsprotokoll" },
     defects: { type: "array", items: { type: "string" }, description: "Brister från besiktningen, en per rad" },
     recheckBy: { type: ["string", "null"], description: "Sista dag för efterkontroll, YYYY-MM-DD" },
     nextInspection: { type: ["string", "null"], description: "Nästa besiktning senast, YYYY-MM-DD" },
@@ -270,7 +270,9 @@ exports.lasDokument = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120
   if (used > AI_MONTHLY_LIMIT) throw new HttpsError("resource-exhausted", `Ni har använt AI ${AI_MONTHLY_LIMIT} gånger den här månaden. Det fylls på nästa månad.`);
 
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
-  const res = await client.beta.messages.create({
+  let res;
+  try {
+    res = await client.beta.messages.create({
     model: "claude-opus-5-5",
     max_tokens: 4000,
     betas: ["server-side-fallback-2026-07-01"],
@@ -281,7 +283,13 @@ exports.lasDokument = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120
       { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
       { type: "text", text: `Läs av dokumentet.${formType ? ` Användaren fyller i ett formulär för: ${formType}.` : ""} Dagens datum är ${todayStr()}.` },
     ] }],
-  });
+    });
+  } catch (e) {
+    logger.error("Claude svarade med fel", { status: e?.status, message: e?.message });
+    if (e?.status === 401 || e?.status === 403) throw new HttpsError("failed-precondition", "AI-nyckeln fungerar inte.");
+    if (e?.status === 429 || e?.status === 529) throw new HttpsError("unavailable", "AI-tjänsten är upptagen. Försök igen om en stund.");
+    throw new HttpsError("internal", "Dokumentet gick inte att läsa.");
+  }
   if (res.stop_reason === "refusal") throw new HttpsError("failed-precondition", "Dokumentet gick inte att läsa.");
   const text = res.content.filter((b) => b.type === "text").map((b) => b.text).join("");
   try {
