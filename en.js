@@ -1181,6 +1181,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Dokumentet gick inte att läsa \((.+)\)\. Fyll i själv\.?$/, "The document could not be read ($1). Fill in yourself."],
   [/^Ifyllt med AI: (.+)$/, "Filled in with AI: $1"],
   [/^Körjournal · (.+)$/, "Driving log · $1"],
   [/^Startade (\d\d:\d\d) vid ([\d\s ,]+) mil$/, "Started $1 at $2 mil"],
