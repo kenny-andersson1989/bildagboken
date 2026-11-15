@@ -5,7 +5,7 @@ export const EN = {
   "Lägg till ett foto på er bil": "Add a photo of your car",
   "Gratisversionen har plats för 1 bil. Med Bildagboken Plus kan ni lägga till fler bilar": "The free version has room for 1 car. With Bildagboken Plus you can add more cars",
   "Gratisversionen har plats för 3 personer i hushållet. Med Bildagboken Plus kan fler gå med": "The free version has room for 3 people in the household. With Bildagboken Plus more can join",
-  "Gratisversionen har plats för 100 bilder. Alla bilder finns kvar, men för att lägga till nya behöver ni ta bort några eller skaffa Bildagboken Plus": "The free version has room for 100 photos. All photos are kept, but to add new ones you need to remove some or get Bildagboken Plus",
+  "Gratisversionen har plats för 50 bilder. Alla bilder finns kvar, men för att lägga till nya behöver ni ta bort några eller skaffa Bildagboken Plus": "The free version has room for 50 photos. All photos are kept, but to add new ones you need to remove some or get Bildagboken Plus",
   "Plats, belopp eller hur ofta": "Place, amount or how often",
   "Byt pris från ett datum": "Change price from a date",
   "Tidigare betalningar behåller sitt pris": "Earlier payments keep their price",
