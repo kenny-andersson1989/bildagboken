@@ -3661,7 +3661,7 @@ function tripCard(c) {
       <div><dt>${esc(`I tjänsten i ${MONTHS[new Date().getMonth()]}`)}</dt><dd>${esc(`${fmt(work, 1)} mil · ${fmtKr(work * MIL_RATE)} kr`)}</dd></div>
       <div><dt>Privat</dt><dd>${esc(`${fmt(priv, 1)} mil`)}</dd></div>
     </dl>
-    <div class="ask">${open ? "" : `<button class="btn-soft" type="button" data-act="start-trip">${icon("gauge", 16)} Starta resa</button>`}<button class="btn-soft" type="button" data-act="new-trip">${icon("plus", 16)} Logga resa</button><button class="btn-soft" type="button" data-act="trips">Alla resor</button></div>
+    <div class="ask">${open ? (open.to ? `<button class="btn-soft" type="button" data-act="trip-nav">${icon("pin", 16)} Vägbeskrivning</button>` : "") : `<button class="btn-soft" type="button" data-act="start-trip">${icon("gauge", 16)} Starta resa</button>`}<button class="btn-soft" type="button" data-act="new-trip">${icon("plus", 16)} Logga resa</button><button class="btn-soft" type="button" data-act="trips">Alla resor</button></div>
   </div>`;
 }
 
@@ -3683,7 +3683,8 @@ function tripForm(t = {}, mode = "new") {
         ${field("Mätare vid start (mil)", `<input name="odoStart" id="tr-odoStart" inputmode="decimal" value="${odoStart != null ? esc(String(odoStart).replace(".", ",")) : ""}" placeholder="Till exempel 21 480,6">`)}
       </div>`}
       ${mode === "start" ? "" : field("Mätare vid slut (mil)", `<input name="odoEnd" id="tr-odoEnd" inputmode="decimal" value="${t.odoEnd != null ? esc(String(t.odoEnd).replace(".", ",")) : ""}" placeholder="${odoStart != null ? esc(`Till exempel ${fmt(odoStart + 1.2, 1)}`) : "Till exempel 21 482,4"}">`, `<span id="tr-dist">${t.odoEnd != null ? esc(`${fmt(tripMil(t), 1)} mil`) : "Mil med en decimal. 1,2 mil är 12 km."}</span>`)}
-      ${field("Vart", `<input name="to" id="tr-to" value="${esc(t.to || "")}" list="tr-to-list" placeholder="Till exempel Volvo Torslanda" autocomplete="off">${list("tr-to-list", count("to"))}`)}
+      ${mode === "end" ? `<div id="tr-route" hidden></div>` : ""}
+      ${field("Vart", `<input name="to" id="tr-to" value="${esc(t.to || "")}" placeholder="Ort, adress eller företag" autocomplete="off"><span class="suggest" id="tr-to-suggest" role="listbox" hidden></span><input type="hidden" name="toLoc" id="tr-toLoc" value="${t.toLoc ? esc(JSON.stringify(t.toLoc)) : ""}">`)}
       ${field("Ärende", `<input name="purpose" id="tr-purpose" value="${esc(t.purpose || "")}" list="tr-purpose-list" placeholder="Till exempel Kundmöte" autocomplete="off">${list("tr-purpose-list", count("purpose"))}`)}
       <div class="row2">
         ${field("Typ av resa", `<select name="kind" id="tr-kind">${Object.entries(TRIP_KINDS).map(([k, l]) => `<option value="${k}"${kind === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
@@ -3695,6 +3696,46 @@ function tripForm(t = {}, mode = "new") {
       ${mode === "start" ? `<p class="hint">Fyll i mätarställningen när du kommer fram, under Bilen eller i plusmenyn.</p>` : ""}
     </form>`, { back: t.id && mode === "new" ? "trips" : null });
   if (mode === "end" && !window.matchMedia("(pointer: coarse)").matches) $("#tr-odoEnd")?.focus({ preventScroll: true });
+  if (mode === "end") suggestTripDistance(t);
+}
+
+// Senaste målen, när fältet Vart är tomt.
+function recentTripTargets() {
+  const box = $("#tr-to-suggest");
+  if (!box) return;
+  const seen = new Set();
+  const recent = carTrips().filter((t) => t.to && !seen.has(t.to) && seen.add(t.to)).slice(0, 5);
+  if (!recent.length) { box.hidden = true; return; }
+  box.innerHTML = `<p class="hint">Senaste målen</p>` + recent.map((t) => `<button type="button" role="option" data-act="place-pick" data-kind="tr-to" data-name="${esc(t.to)}" data-addr="${esc(t.toLoc?.addr || "")}" data-lat="${t.toLoc?.lat ?? ""}" data-lon="${t.toLoc?.lon ?? ""}" data-pid="${esc(t.toLoc?.pid || "")}"><b>${esc(t.to)}</b>${t.toLoc?.addr && t.toLoc.addr !== t.to ? `<span>${esc(t.toLoc.addr)}</span>` : ""}</button>`).join("");
+  box.hidden = false;
+}
+
+// Var man är just nu, för körjournalen. Ger null om platsen inte går att få (tillåts inte, eller tar för lång tid).
+const tripPosition = () => currentPosition().then((p) => ({ lat: p.coords.latitude, lon: p.coords.longitude })).catch(() => null);
+
+// Förslag på mätarställning vid slut: körsträckan enligt Apple Kartor, från där resan startade till där man är nu
+// (eller till målet). Mätaren gäller alltid; förslaget går att trycka på för att fylla i.
+async function suggestTripDistance(t) {
+  const box = $("#tr-route");
+  if (!box || !t.startLoc || t.odoStart == null) return;
+  const end = (await tripPosition()) || t.toLoc;
+  if (!end || !document.contains(box)) return;
+  try {
+    const mk = await loadMapKit();
+    const route = await new Promise((resolve, reject) => {
+      new mk.Directions().route({
+        origin: new mk.Coordinate(t.startLoc.lat, t.startLoc.lon),
+        destination: new mk.Coordinate(end.lat, end.lon),
+        transportType: mk.Directions.Transport.Automobile,
+      }, (err, data) => (err ? reject(err) : resolve(data?.routes?.[0])));
+    });
+    if (!route?.distance || route.distance < 300 || !document.contains(box)) return;
+    const mil = Math.round(route.distance / 1000) / 10;
+    const odo = Math.round((t.odoStart + mil) * 10) / 10;
+    box.innerHTML = `<button class="chip-btn" type="button" data-act="trip-use-route" data-odo="${odo}">${icon("pin", 14)} ${esc(`Enligt kartan ${fmt(mil, 1)} mil. Använd ${fmt(odo, 1)}`)}</button>
+      <p class="hint" style="margin-top:6px">Kortaste vägen från där resan startade. Har du kört en omväg eller tur och retur, läs av mätaren.</p>`;
+    box.hidden = false;
+  } catch { /* utan karta får man läsa av mätaren */ }
 }
 
 function saveTrip(form) {
@@ -3713,7 +3754,9 @@ function saveTrip(form) {
     carId: old?.carId || c.id,
     date: mode === "end" ? old.date : str("date") || todayStr(),
     odoStart, odoEnd,
-    to: str("to") || null, purpose: str("purpose") || null,
+    to: str("to") || null, toLoc: (() => { try { return JSON.parse(str("toLoc") || "null"); } catch { return null; } })() || (str("to") === old?.to ? old?.toLoc || null : null),
+    purpose: str("purpose") || null,
+    startLoc: old?.startLoc || null,
     kind: str("kind") || "tjanst", driver: str("driver") || uid(),
     startedAt: old?.startedAt || Date.now(),
     endedAt: odoEnd != null ? old?.endedAt || Date.now() : null,
@@ -3723,6 +3766,8 @@ function saveTrip(form) {
   setDoc(doc(col("trips"), id), data).catch(onWriteError);
   S.trips = [...S.trips.filter((x) => x.id !== id), { id, ...data }];
   closeSheet(); render();
+  // Var resan startade, för förslaget på sträcka när den avslutas. Hämtas i bakgrunden och sparas om det går.
+  if (mode === "start") tripPosition().then((loc) => { if (loc) updateDoc(doc(col("trips"), id), { startLoc: loc }).catch(() => {}); });
   showToast(mode === "start" ? "Resan är startad" : `${old && mode === "new" ? "Resan är ändrad" : "Resan är sparad"}: ${fmt(tripMil({ odoStart, odoEnd }) ?? 0, 1)} mil`);
 }
 
@@ -4101,6 +4146,8 @@ const PLACE_FIELDS = {
   "ef-station": { input: "ef-station", box: "ef-station-suggest", search: "poi" },
   "ef-place": { input: "ef-place", box: "ef-place-suggest", search: "poi" },
   "ef-workshop": { input: "ef-workshop", box: "ef-workshop-suggest", search: "poi" },
+  // Målet för en resa i körjournalen: orter, adresser och företag.
+  "tr-to": { input: "tr-to", box: "tr-to-suggest", search: "any" },
 };
 let placeTimer = null, placeAbort = null;
 function placeSearchSoon(kind) {
@@ -4210,6 +4257,7 @@ async function appleSearch(kind, q, quick = false) {
     const lat = pl.coordinate?.latitude, lon = pl.coordinate?.longitude;
     const pid = pl.id || "";
     const tel = pl.telephone || pl.phoneNumber || "";
+    if (kind === "any") { const nm = pl.name || addr.split(", ")[0]; return { title: nm, sub: addr === nm ? "" : addr, name: nm, addr, lat, lon, pid, src: "apple" }; }
     return kind === "poi"
       ? (isPoi ? { title: pl.name, sub: addr, name: pl.name, addr, lat, lon, pid, tel, src: "apple" } : null)
       : { title: addr.split(", ")[0], sub: addr.split(", ").slice(1).join(", "), name: "", addr, lat, lon, pid: "", src: "apple" };
@@ -5437,6 +5485,13 @@ const ACTIONS = {
       const b = document.getElementById(x.box); if (b) b.hidden = true;
       document.getElementById(x.input)?.setAttribute("aria-expanded", "false");
     });
+    if (el.dataset.kind === "tr-to") {
+      const d = el.dataset, lat = num(d.lat), lon = num(d.lon);
+      set("tr-to", d.name || d.addr);
+      set("tr-toLoc", lat != null && lon != null ? JSON.stringify(clean({ name: d.name || null, addr: d.addr || null, lat, lon, pid: d.pid || null })) : "");
+      hideAll();
+      return;
+    }
     // Var-fälten i en post: namnet i fältet, och platsen sparas med posten så att kartan blir rätt.
     if (el.dataset.kind.startsWith("ef-")) {
       const d = el.dataset;
@@ -5698,6 +5753,16 @@ const ACTIONS = {
     showToast(el.value === "free" ? "Testläge: gratisversionen" : el.value === "plus" ? "Testläge: Plus" : "Testläget är avstängt");
   },
   "new-trip"() { tripForm(); },
+  "trip-use-route"(el) {
+    const i = $("#tr-odoEnd");
+    if (!i) return;
+    i.value = String(el.dataset.odo).replace(".", ",");
+    i.dispatchEvent(new Event("input", { bubbles: true }));
+  },
+  "trip-nav"() {
+    const t = openTrip();
+    if (t) openMapChooser({ name: t.toLoc?.name || t.to, addr: t.toLoc?.addr, lat: t.toLoc?.lat, lon: t.toLoc?.lon, pid: t.toLoc?.pid, directions: true });
+  },
   "start-trip"() { const o = openTrip(); tripForm(o || {}, o ? "end" : "start"); },
   "edit-trip"(el) { const t = S.trips.find((x) => x.id === el.dataset.id); if (t) tripForm(t, t.odoEnd == null ? "end" : "new"); },
   trips() { tripsSheet(); },
@@ -6260,7 +6325,8 @@ function onInput(ev) {
   }
   if (ev.target.id === "w-search") workSuggest(ev.target.value);
   if (ev.target.id === "bk-place") placeSearchSoon("poi");
-  if (ev.isTrusted && ["ef-station", "ef-place", "ef-workshop"].includes(ev.target.id)) placeSearchSoon(ev.target.id);
+  if (ev.isTrusted && ["ef-station", "ef-place", "ef-workshop", "tr-to"].includes(ev.target.id)) placeSearchSoon(ev.target.id);
+  if (ev.target.id === "tr-to") { const h = $("#tr-toLoc"); if (h) h.value = ""; if (!ev.target.value.trim()) recentTripTargets(); }
   if (ev.target.id === "bk-addr") {
     // Egen adress: positionen från ett tidigare förslag gäller inte längre.
     ["bk-lat", "bk-lon", "bk-pid", "bk-src"].forEach((id) => { const x = document.getElementById(id); if (x) x.value = ""; });
@@ -6559,6 +6625,7 @@ document.addEventListener("click", (ev) => {
   if (a.tagName !== "A") ev.preventDefault();
   fn(a, ev);
 });
+document.addEventListener("focusin", (ev) => { if (ev.target.id === "tr-to" && !ev.target.value.trim()) recentTripTargets(); });
 document.addEventListener("submit", onSubmit);
 document.addEventListener("input", onInput);
 document.addEventListener("change", onChange);

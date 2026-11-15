@@ -1,6 +1,9 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Ort, adress eller företag": "Town, address or business",
+  "Senaste målen": "Recent destinations",
+  "Kortaste vägen från där resan startade. Har du kört en omväg eller tur och retur, läs av mätaren": "Shortest route from where the trip started. If you took a detour or a round trip, read the odometer",
   "Testläge": "Test mode",
   "Visa appen som en vanlig användare ser den. Gäller bara på den här enheten, och inget ändras för andra": "Show the app the way a regular user sees it. Applies only on this device, and nothing changes for others",
   "Som vanligt": "As usual",
@@ -1126,6 +1129,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Enligt kartan ([\d\s ,]+) mil\. Använd ([\d\s ,]+)$/, "By the map $1 mil. Use $2"],
   [/^Gratis: gränserna \((\d+) bil, (\d+) personer, (\d+) bilder\) och tipsen om Plus är påslagna\. Plus: allt som ingår i Plus, utan gränser\.?$/, "Free: the limits ($1 car, $2 people, $3 photos) and the Plus tips are on. Plus: everything in Plus, without limits."],
   [/^I tjänsten i (\S+)$/, "Business in $1"],
   [/^I tjänsten (\d{4})$/, "Business $1"],
