@@ -1462,3 +1462,8 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
   --shadow: 0 10px 30px -12px rgba(50, 40, 110, .24);
 }
 .theme-grid.colors { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* I mörka teman syns det valda alternativet i en rad med knappar tydligt: appens färg i stället för en nästan osynlig ton. */
+:root[data-theme="dark"] .seg button[aria-pressed="true"], :root[data-theme="gron-dark"] .seg button[aria-pressed="true"],
+:root[data-theme="hav-dark"] .seg button[aria-pressed="true"], :root[data-theme="natt"] .seg button[aria-pressed="true"] {
+  background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1.5px var(--accent);
+}
