@@ -32,6 +32,16 @@ service cloud.firestore {
       allow delete: if signedIn() && memberOf(resource.data.householdId);
     }
 
+    // Felrapporter från appen: alla inloggade kan skicka en kort rapport, bara ägaren kan läsa dem.
+    match /errors/{id} {
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'hid', 'msg', 'where', 'stack', 'ver', 'ua', 'native', 'lang', 'at'])
+        && request.resource.data.msg is string && request.resource.data.msg.size() <= 500
+        && (!('stack' in request.resource.data) || request.resource.data.stack.size() <= 1500);
+      allow read, delete: if isAdmin();
+    }
+
     match /households/{hid} {
       allow read: if (signedIn() && request.auth.uid in resource.data.members) || isAdmin();
       allow create: if signedIn() && request.resource.data.members == [request.auth.uid];
@@ -43,6 +53,8 @@ service cloud.firestore {
           !(request.auth.uid in resource.data.members)
           && request.resource.data.members.toSet() == resource.data.members.toSet().union([request.auth.uid].toSet())
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberInfo', 'joinedWith'])
+          // Den som går med får bara skriva sitt eget namn och sin egen e-post, inte ändra de andras.
+          && (!('memberInfo' in resource.data) || request.resource.data.memberInfo.diff(resource.data.memberInfo).affectedKeys().hasOnly([request.auth.uid]))
           && get(/databases/$(database)/documents/invites/$(request.resource.data.joinedWith)).data.householdId == hid
         )
       );
