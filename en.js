@@ -1,6 +1,12 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Gillar ni Bildagboken?": "Enjoying Bildagboken?",
+  "Med Bildagboken Plus kan ni ha fler bilar, vara fler i hushållet och spara upp till 2 000 bilder": "With Bildagboken Plus you can have more cars, more people in the household and save up to 2,000 photos",
+  "Läs om Plus": "About Plus",
+  "Inte nu": "Not now",
+  "Plus för fler": "Plus for more",
+  "Hushållet är fullt": "The household is full",
   "Läs om Bildagboken Plus": "Read about Bildagboken Plus",
   "Ett köp gäller alla i hushållet. Allt ni har loggat finns kvar, vad ni än väljer": "One purchase covers everyone in the household. Everything you have logged stays, whatever you choose",
   "Personer i hushållet": "People in the household",
@@ -1076,6 +1082,11 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^(\d+) av (\d+) bil i gratisversionen\.?$/, "$1 of $2 car in the free version."],
+  [/^(\d+) av (\d+) bilar i gratisversionen\.?$/, "$1 of $2 cars in the free version."],
+  [/^(\d+) av (\d+) bilder i gratisversionen\. Med Plus får ni plats för 2[\s\u00a0]000\.?$/, "$1 of $2 photos in the free version. With Plus you get room for 2,000."],
+  [/^(\d+) av (\d+) bilder i gratisversionen\.?$/, "$1 of $2 photos in the free version."],
+  [/^Gratisversionen har plats för (\d+) personer\. Med Plus kan fler gå med\.?$/, "The free version has room for $1 people. With Plus more can join."],
   [/^Gratisversionen har plats för (\d+) bilder\. Ta bort några eller skaffa Bildagboken Plus för att lägga till fler\.?$/, "The free version has room for $1 photos. Remove some or get Bildagboken Plus to add more."],
   [/^Ni har Plus till (.+)\. Det gäller alla i hushållet\.?$/, "You have Plus until $1. It covers everyone in the household."],
   [/^([\d\s ]+) kr från (\d.+)$/, "$1 kr from $2"],
