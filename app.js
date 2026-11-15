@@ -3129,16 +3129,16 @@ function viewSettings() {
     </div>
     <div class="card">
       <h2>Utseende och språk</h2>
-      <p class="label" style="margin:12px 0 8px">Färg</p>
+      <p class="label" style="margin:12px 0 8px">Ljust eller mörkt</p>
+      <div class="seg" role="group" aria-label="Ljust eller mörkt">
+        ${Object.entries(MODES).map(([k, l]) => `<button type="button" data-act="theme-mode" data-v="${k}" aria-pressed="${themePrefs().mode === k}">${l}</button>`).join("")}
+      </div>
+      <p class="hint" style="margin-top:8px">Automatiskt följer telefonen: ljust på dagen och mörkt när telefonen har mörkt läge påslaget.</p>
+      <p class="label" style="margin:16px 0 8px">Färg</p>
       <div class="theme-grid colors" role="group" aria-label="Färg">
         ${Object.entries(COLORS).map(([k, t]) => { const v = t[isDarkNow() ? "dark" : "light"]; return `<button class="theme-btn" type="button" data-act="theme-color" data-v="${k}" aria-pressed="${themePrefs().color === k}">
           <span class="theme-sw" style="background:${v.sw}" aria-hidden="true"><i style="background:${v.dot}"></i></span>${t.name}</button>`; }).join("")}
       </div>
-      <p class="label" style="margin:16px 0 8px">Ljust eller mörkt</p>
-      <div class="seg" role="group" aria-label="Ljust eller mörkt">
-        ${Object.entries(MODES).map(([k, l]) => `<button type="button" data-act="theme-mode" data-v="${k}" aria-pressed="${themePrefs().mode === k}">${l}</button>`).join("")}
-      </div>
-      <p class="hint" style="margin-top:10px">Automatiskt följer telefonen: ljust på dagen och mörkt när telefonen har mörkt läge påslaget.</p>
       <p class="label" style="margin:16px 0 8px">Språk</p>
       <div class="seg" role="group" aria-label="Språk">
         ${[["sv", "Svenska"], ["en", "English"]].map(([k, l]) => `<button type="button" data-act="lang" data-v="${k}" aria-pressed="${LANG === k}" data-notr>${l}</button>`).join("")}
