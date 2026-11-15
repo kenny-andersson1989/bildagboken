@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TMWQ9XA77D.se.bildagboken.app"],
+        "components": [
+          { "/": "/", "?": { "join": "*" }, "comment": "Inbjudan till ett hushåll" },
+          { "/": "/", "?": { "visa": "*" }, "comment": "Delad servicebok" },
+          { "/": "/", "?": { "ny": "*" }, "comment": "Genväg: logga något direkt" }
+        ]
+      }
+    ]
+  }
+}

@@ -25,6 +25,27 @@ const NATIVE = !!window.Capacitor?.isNativePlatform?.();
 // Android-appen: Apple-inloggning går inte smidigt där, så bara Google visas.
 const ANDROID = NATIVE && window.Capacitor?.getPlatform?.() === "android";
 const nativePlugin = (name) => window.Capacitor?.Plugins?.[name] || window.Capacitor?.registerPlugin?.(name);
+// Länkar som öppnar appen (bildagboken.com/?join=…, ?visa=…, ?ny=…): visa samma sida i appen.
+// Kräver tillägget App i iPhone-appen (från version 1.1). I äldre versioner händer inget.
+if (NATIVE && window.Capacitor?.isPluginAvailable?.("App")) {
+  const AppLinks = nativePlugin("App");
+  const openLink = (url) => {
+    try {
+      const u = new URL(url);
+      if (u.hostname !== location.hostname) return;
+      const to = u.pathname + u.search + u.hash;
+      if (to !== location.pathname + location.search + location.hash) location.href = to;
+    } catch { /* ingen giltig länk */ }
+  };
+  Promise.resolve(AppLinks.addListener("appUrlOpen", (e) => openLink(e.url))).catch(() => {});
+  // Startades appen av en länk: öppna den en gång (annars laddas sidan om i en slinga).
+  AppLinks.getLaunchUrl().then((r) => {
+    if (!r?.url) return;
+    let seen = null;
+    try { seen = sessionStorage.getItem("bildagboken.launchUrl"); sessionStorage.setItem("bildagboken.launchUrl", r.url); } catch { /* utan lagring */ }
+    if (seen !== r.url) openLink(r.url);
+  }).catch(() => {});
+}
 const LANG = (() => { try { return localStorage.getItem("bildagboken.lang") === "en" ? "en" : "sv"; } catch { return "sv"; } })();
 let EN = null, EN_RULES = [];
 if (LANG === "en") {
