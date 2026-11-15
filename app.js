@@ -1181,6 +1181,7 @@ function render() {
   updateWidget();
   if (S.trips.some((t) => t.odoEnd == null)) setTimeout(updateTripEstimate, 500);
   renderTripBar();
+  updateLiveActivity();
   if (autoAvailable() && !refreshAutoStatus.done) { refreshAutoStatus.done = true; refreshAutoStatus().then(render); }
   // Under Bilen hämtas PDF-verktyget i förväg, så att serviceboken kan delas direkt med ett tryck.
   if (S.view === "bilen" && !pdfReady()) setTimeout(() => loadPdfLibs().catch(() => {}), 800);
@@ -3873,6 +3874,21 @@ function renderTripBar() {
   if (EN && typeof trTree === "function") trTree(bar);
 }
 
+
+// Pågående resa i Dynamic Island och på låsskärmen (iPhone-appen från 1.2). Visas bara för den som kör,
+// och klockan räknar själv i telefonen, så den går även när appen är stängd. Skickas bara när något ändras.
+let liveSent = null;
+function updateLiveActivity() {
+  if (!NATIVE || ANDROID || !S.user || !S.hid || !S.loaded.entries) return;
+  const o = tripsOn() ? S.trips.find((t) => t.odoEnd == null && !t.auto && (t.driver || t.createdBy) === uid()) : null;
+  const c = o && S.cars.find((x) => x.id === o.carId);
+  const trip = o ? { id: o.id, start: tsMs(o.startedAt), from: o.from || "", to: o.to || "", car: c ? carName(c) : "", kind: o.kind === "privat" ? "privat" : "tjanst", lang: EN ? "en" : "sv" } : null;
+  const key = JSON.stringify(trip);
+  if (key === liveSent) return;
+  liveSent = key;
+  try { Promise.resolve(nativePlugin("TripActivity")?.sync(trip ? { trip } : {})).catch(() => {}); } catch { /* finns inte i den här versionen */ }
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { liveSent = null; updateLiveActivity(); } });
 
 // Mode: "new" (hela resan), "start" (bara början) eller "end" (avsluta en pågående resa).
 function tripForm(t = {}, mode = "new") {
