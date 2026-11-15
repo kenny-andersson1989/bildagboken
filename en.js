@@ -1,6 +1,19 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Läs om Bildagboken Plus": "Read about Bildagboken Plus",
+  "Ett köp gäller alla i hushållet. Allt ni har loggat finns kvar, vad ni än väljer": "One purchase covers everyone in the household. Everything you have logged stays, whatever you choose",
+  "Personer i hushållet": "People in the household",
+  "Bilder": "Photos",
+  "Obegränsat": "Unlimited",
+  "Skaffa Plus": "Get Plus",
+  "279 kr per år eller 35 kr per månad. Prova gratis i 14 dagar": "279 kr per year or 35 kr per month. Try it free for 14 days",
+  "Köpet går inte att göra än": "The purchase is not available yet",
+  "Ni har Plus": "You have Plus",
+  "Gratisversionen": "Free version",
+  "Ingen gräns för ert hushåll": "No limits for your household",
+  "Inga gränser för bilar, personer och bilder": "No limits on cars, people and photos",
+  "Se vad som ingår i Plus": "See what Plus includes",
   "Nytt pris": "New price",
   "Tidigare pris": "Earlier price",
   "Lägg till foto": "Add photo",
@@ -1063,6 +1076,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Ni har Plus till (.+)\. Det gäller alla i hushållet\.?$/, "You have Plus until $1. It covers everyone in the household."],
   [/^([\d\s ]+) kr från (\d.+)$/, "$1 kr from $2"],
   [/^([\d\s ]+) kr till (\d.+)$/, "$1 kr until $2"],
   [/^Det finns plats för (1 bild|\d+ bilder) till i gratisversionen\.?$/, (m, n) => `There is room for ${n === "1 bild" ? "1 more photo" : n.replace(" bilder", " more photos")} in the free version.`],
