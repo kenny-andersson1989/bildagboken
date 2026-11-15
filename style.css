@@ -65,7 +65,7 @@
     color-scheme: dark;
   }
 }
-:root[data-theme="dark"] {
+:root[data-theme="dark"], :root[data-theme="gron-dark"], :root[data-theme="hav-dark"] {
   --ground: #171514;
   --glow-1: rgba(229, 158, 91, .16);
   --glow-2: rgba(231, 112, 38, .14);
@@ -652,7 +652,7 @@ input[type="range"].fuel-range.unset::-moz-range-thumb { opacity: .35; }
 
 /* Logga in med Apple: svart knapp (vit i mörkt läge), enligt Apples riktlinjer */
 .btn.apple { background: #000; color: #fff; border: 1px solid #000; }
-:root[data-theme="dark"] .btn.apple, :root[data-theme="natt"] .btn.apple { background: #fff; color: #000; border-color: #fff; }
+:root[data-theme="dark"] .btn.apple, :root[data-theme="natt"] .btn.apple, :root[data-theme="gron-dark"] .btn.apple, :root[data-theme="hav-dark"] .btn.apple { background: #fff; color: #000; border-color: #fff; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme]) .btn.apple { background: #fff; color: #000; border-color: #fff; } }
 
 /* Ekonomi: bläddra mellan månader och år */
@@ -1248,8 +1248,8 @@ div.koll-main { cursor: default; }
 
 /* Logotypen som vektor: mörk text i ljusa teman, ljus text i mörka */
 .logo-d { display: none !important; }
-:root[data-theme="dark"] .logo-l, :root[data-theme="natt"] .logo-l { display: none !important; }
-:root[data-theme="dark"] .logo-d:not(.nav-logo), :root[data-theme="natt"] .logo-d:not(.nav-logo) { display: block !important; }
+:root[data-theme="dark"] .logo-l, :root[data-theme="natt"] .logo-l, :root[data-theme="gron-dark"] .logo-l, :root[data-theme="hav-dark"] .logo-l { display: none !important; }
+:root[data-theme="dark"] .logo-d:not(.nav-logo), :root[data-theme="natt"] .logo-d:not(.nav-logo), :root[data-theme="gron-dark"] .logo-d:not(.nav-logo), :root[data-theme="hav-dark"] .logo-d:not(.nav-logo) { display: block !important; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .logo-l { display: none !important; }
   :root:not([data-theme]) .logo-d:not(.nav-logo) { display: block !important; }
@@ -1413,3 +1413,52 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 .rz-tile { background: var(--input); border-radius: 16px; padding: 12px; min-width: 0; }
 .rz-tile small { display: block; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
 .rz-tile b { font: 700 20px var(--f-display); }
+
+/* Mörka varianter av grönt och blått: samma som mörkt läge, med egen bakgrund och accentfärg. */
+:root[data-theme="gron-dark"] {
+  --ground: #121914;
+  --glow-1: rgba(79, 191, 126, .16);
+  --glow-2: rgba(46, 125, 79, .16);
+  --glass: rgba(34, 44, 37, .62);
+  --glass-strong: rgba(40, 52, 44, .95);
+  --ink: #E8EFEA;
+  --ink-2: #B8C6BD;
+  --ink-3: #8A9A90;
+  --accent: #4FBF7E;
+  --accent-ink: #0B1A11;
+  --accent-soft: rgba(79, 191, 126, .16);
+  --accent-text: #6BD093;
+  --shadow: 0 10px 30px -12px rgba(0, 0, 0, .6);
+}
+:root[data-theme="hav-dark"] {
+  --ground: #10161F;
+  --glow-1: rgba(91, 141, 239, .18);
+  --glow-2: rgba(56, 189, 248, .1);
+  --glass: rgba(32, 40, 54, .62);
+  --glass-strong: rgba(38, 47, 63, .95);
+  --ink: #E8EDF5;
+  --ink-2: #B7C1D2;
+  --ink-3: #8894A8;
+  --accent: #5B8DEF;
+  --accent-ink: #08101F;
+  --accent-soft: rgba(91, 141, 239, .17);
+  --accent-text: #82A9F5;
+  --shadow: 0 10px 30px -12px rgba(0, 0, 0, .6);
+}
+/* Ljus variant av lila (natt är den mörka). */
+:root[data-theme="lila"] {
+  --ground: #E8E6F3;
+  --glow-1: rgba(139, 124, 246, .32);
+  --glow-2: rgba(56, 189, 248, .14);
+  --ink: #1F1D2B;
+  --ink-2: #4A4760;
+  --ink-3: #615D78;
+  --line: rgba(31, 29, 43, .1);
+  --accent: #6D5BD8;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(109, 91, 216, .14);
+  --accent-text: #5544B8;
+  --track: rgba(31, 29, 43, .08);
+  --shadow: 0 10px 30px -12px rgba(50, 40, 110, .24);
+}
+.theme-grid.colors { grid-template-columns: repeat(4, minmax(0, 1fr)); }
