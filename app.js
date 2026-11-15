@@ -6137,7 +6137,7 @@ function onChange(ev) {
     const total = limited() ? FREE.photos - photoCount() - pendingPhotos.length : Infinity;
     const room = Math.min(perPost, total);
     if (files.length > room) {
-      if (total < perPost) { if (total <= 0) { ev.target.value = ""; return limitSheet("photos"); } showToast(`Det finns plats för ${total === 1 ? "1 bild" : `${total} bilder`} till i gratisversionen.`); }
+      if (total < perPost) { if (total <= 0) { ev.target.value = ""; return showToast(`Gratisversionen har plats för ${FREE.photos} bilder. Ta bort några eller skaffa Bildagboken Plus för att lägga till fler.`, 7000); } showToast(`Det finns plats för ${total === 1 ? "1 bild" : `${total} bilder`} till i gratisversionen.`); }
       else showToast(`Högst ${MAX_PHOTOS} bilder per post.`);
     }
     pendingPhotos.push(...files.slice(0, Math.max(0, room)));
