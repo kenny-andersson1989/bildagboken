@@ -9,6 +9,7 @@
 import Foundation
 import CoreLocation
 import Capacitor
+import ActivityKit
 
 final class TripTracker: NSObject, CLLocationManagerDelegate {
     static let shared = TripTracker()
@@ -229,6 +230,61 @@ public class TripTrackerPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             TripTracker.shared.clear(ids)
             call.resolve()
+        }
+    }
+}
+
+// MARK: - Pågående resa i Dynamic Island och på låsskärmen (Live Activity)
+
+
+// Samma struktur finns i BildagbokenWidget.swift. iOS kopplar ihop dem via namnet, så de måste vara lika.
+@available(iOS 16.1, *)
+struct TripActivityAttributes: ActivityAttributes {
+    struct ContentState: Codable, Hashable {
+        var from: String
+        var to: String
+        var kind: String   // "tjanst" eller "privat"
+    }
+    var tripId: String
+    var start: Date
+    var car: String
+    var lang: String
+}
+
+// Webbappen skickar den pågående resan (eller ingen) med TripActivity.sync. Klockan i Dynamic Island räknar
+// själv utifrån starttiden, så den går även när appen är stängd. När resan avslutas försvinner rutan.
+@objc(TripActivityPlugin)
+public class TripActivityPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "TripActivityPlugin"
+    public let jsName = "TripActivity"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "sync", returnType: CAPPluginReturnPromise),
+    ]
+
+    @objc func sync(_ call: CAPPluginCall) {
+        guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
+        let t = call.getObject("trip")
+        let id = t?["id"] as? String
+        let startMs = (t?["start"] as? Double) ?? (t?["start"] as? NSNumber)?.doubleValue
+        let state = TripActivityAttributes.ContentState(
+            from: t?["from"] as? String ?? "", to: t?["to"] as? String ?? "", kind: t?["kind"] as? String ?? "tjanst")
+        let car = t?["car"] as? String ?? ""
+        let lang = t?["lang"] as? String ?? "sv"
+        Task { @MainActor in
+            var kept = false
+            for a in Activity<TripActivityAttributes>.activities {
+                if let id = id, a.attributes.tripId == id, !kept {
+                    kept = true
+                    await a.update(ActivityContent(state: state, staleDate: nil))
+                } else {
+                    await a.end(nil, dismissalPolicy: .immediate)
+                }
+            }
+            if !kept, let id = id, let ms = startMs, ActivityAuthorizationInfo().areActivitiesEnabled {
+                let attrs = TripActivityAttributes(tripId: id, start: Date(timeIntervalSince1970: ms / 1000), car: car, lang: lang)
+                _ = try? Activity.request(attributes: attrs, content: ActivityContent(state: state, staleDate: nil), pushType: nil)
+            }
+            call.resolve(["supported": true])
         }
     }
 }

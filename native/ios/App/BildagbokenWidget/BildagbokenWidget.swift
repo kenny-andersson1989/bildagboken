@@ -1,7 +1,9 @@
 // Widget på hemskärmen: det som är på gång med bilen, och hur mycket som finns i tanken.
 // Appen skriver datan (WidgetDataPlugin i SceneDelegate.swift) till den delade App Group-lagringen.
+// Här finns också rutan för en pågående resa i Dynamic Island och på låsskärmen (TripLiveActivity).
 import WidgetKit
 import SwiftUI
+import ActivityKit
 
 private let appGroup = "group.se.bildagboken.app"
 private let orange = Color(red: 0.93, green: 0.42, blue: 0.07)
@@ -177,7 +179,6 @@ struct BildagbokenWidgetView: View {
     }
 }
 
-@main
 struct BildagbokenHomeWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "BildagbokenWidget", provider: Provider()) { entry in
@@ -186,5 +187,112 @@ struct BildagbokenHomeWidget: Widget {
         .configurationDisplayName("Bildagboken")
         .description("Det som är på gång med bilen, och hur mycket som finns i tanken.")
         .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+// MARK: - Pågående resa (Live Activity)
+
+// Samma struktur finns i TripTracker.swift i appen. iOS kopplar ihop dem via namnet, så de måste vara lika.
+struct TripActivityAttributes: ActivityAttributes {
+    struct ContentState: Codable, Hashable {
+        var from: String
+        var to: String
+        var kind: String   // "tjanst" eller "privat"
+    }
+    var tripId: String
+    var start: Date
+    var car: String
+    var lang: String
+}
+
+// Klockan räknar uppåt från starttiden. iOS uppdaterar den själv varje sekund, även när appen är stängd.
+private func tripClock(_ start: Date) -> some View {
+    Text(timerInterval: start...Date.distantFuture, countsDown: false)
+        .monospacedDigit()
+}
+
+private func kindText(_ kind: String, en: Bool) -> String {
+    kind == "privat" ? (en ? "Private" : "Privat") : (en ? "Business" : "Tjänsteresa")
+}
+
+private func routeText(_ s: TripActivityAttributes.ContentState, en: Bool) -> String {
+    if !s.to.isEmpty { return (en ? "To " : "Mot ") + s.to }
+    if !s.from.isEmpty { return (en ? "From " : "Från ") + s.from }
+    return en ? "Trip in progress" : "Resa pågår"
+}
+
+struct TripLockScreenView: View {
+    let context: ActivityViewContext<TripActivityAttributes>
+    var body: some View {
+        let en = context.attributes.lang == "en"
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(orange)
+                Image(systemName: "car.fill").font(.system(size: 18, weight: .semibold)).foregroundColor(.white)
+            }
+            .frame(width: 42, height: 42)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(en ? "Trip in progress" : "Resa pågår").font(.caption.weight(.semibold)).foregroundColor(orange)
+                Text(routeText(context.state, en: en)).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text([context.attributes.car, kindText(context.state.kind, en: en)].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.caption).foregroundColor(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            tripClock(context.attributes.start)
+                .font(.title2.weight(.bold))
+                .multilineTextAlignment(.trailing)
+                .frame(width: 96, alignment: .trailing)
+        }
+        .padding(16)
+    }
+}
+
+struct TripLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: TripActivityAttributes.self) { context in
+            TripLockScreenView(context: context)
+                .activityBackgroundTint(Color(.systemBackground))
+                .activitySystemActionForegroundColor(orange)
+        } dynamicIsland: { context in
+            let en = context.attributes.lang == "en"
+            return DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Label(en ? "Trip" : "Resa", systemImage: "car.fill")
+                        .font(.subheadline.weight(.semibold)).foregroundColor(orange)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    tripClock(context.attributes.start)
+                        .font(.title3.weight(.bold))
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 90, alignment: .trailing)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(routeText(context.state, en: en)).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        Text([context.attributes.car, kindText(context.state.kind, en: en)].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } compactLeading: {
+                Image(systemName: "car.fill").foregroundColor(orange)
+            } compactTrailing: {
+                tripClock(context.attributes.start)
+                    .font(.caption.weight(.semibold))
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 52)
+            } minimal: {
+                Image(systemName: "car.fill").foregroundColor(orange)
+            }
+            .keylineTint(orange)
+        }
+    }
+}
+
+@main
+struct BildagbokenWidgets: WidgetBundle {
+    var body: some Widget {
+        BildagbokenHomeWidget()
+        TripLiveActivity()
     }
 }
