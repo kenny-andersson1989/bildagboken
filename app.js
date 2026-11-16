@@ -1334,6 +1334,7 @@ function glennGesture(m, ms = 3500) {
   setTimeout(refreshGlenn, ms + 50);
 }
 const callFn = async (name, payload) => {
+  if (window.__fnMock) return window.__fnMock(name, payload); // bara i test
   const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-functions.js");
   return (await httpsCallable(getFunctions(fb, "europe-west1"), name, { timeout: 120000 })(payload)).data;
 };
@@ -4498,6 +4499,21 @@ function adminErrorsCard(errs, users) {
   </div>`;
 }
 
+// "sv-SE-Chirp3-HD-Charon" blir "Charon (Chirp 3 HD)".
+const voiceLabel = (n) => { const m = String(n).match(/^sv-SE-(.+)-([^-]+)$/); return m ? `${m[2]} (${m[1].replace(/-/g, " ").replace(/Chirp3/, "Chirp 3")})` : n; };
+function renderVoiceAdmin() {
+  const v = S.voiceAdmin, box = $("#av-box");
+  if (!v || !box) return;
+  const rates = [[0.9, "Lugnare"], [1, "Normal"], [1.1, "Lite snabbare"], [1.2, "Snabbare"]];
+  const row = (x) => `<div class="dl"><span class="dl-ic">${icon("spark", 18)}</span>
+    <span><span class="dl-t">${esc(voiceLabel(x.name))}</span><span class="dl-s">${x.gender === "MALE" ? "Man" : x.gender === "FEMALE" ? "Kvinna" : "Neutral"}${!v.auto && x.name === v.current ? " · vald" : v.auto && x.name === v.current ? " · vald automatiskt" : ""}</span></span>
+    <span class="trash-acts"><button class="btn-soft" type="button" data-act="admin-voice-play" data-v="${esc(x.name)}">Lyssna</button>${x.name === v.current && !v.auto ? (Math.abs(v.rate - v.savedRate) > 0.01 ? `<button class="link" type="button" data-act="admin-voice-set" data-v="${esc(x.name)}">Spara takt</button>` : "") : `<button class="link" type="button" data-act="admin-voice-set" data-v="${esc(x.name)}">Välj</button>`}</span></div>`;
+  box.innerHTML = `<p class="label" style="margin:0 0 6px">Takt</p>
+    <div class="seg" role="group" aria-label="Takt">${rates.map(([r, l]) => `<button type="button" data-act="admin-voice-rate" data-v="${r}" aria-pressed="${Math.abs(v.rate - r) < 0.01}">${l}</button>`).join("")}</div>
+    <p class="hint" style="margin:6px 0 12px">Lyssna med den takt du har valt. Takten sparas när du trycker på Välj.</p>
+    <div class="rows">${v.voices.map(row).join("")}</div>
+    ${v.auto ? "" : `<div class="form" style="margin-top:12px"><button class="btn ghost block" type="button" data-act="admin-voice-set" data-v="">Tillbaka till automatiskt val</button></div>`}`;
+}
 function viewAdmin() {
   const head = subHeader("Bara du ser det här", "Användare", true);
   if (!isAdmin()) return `${head}<div class="card empty"><b>Inte tillgängligt</b></div>`;
@@ -4542,6 +4558,9 @@ function viewAdmin() {
       <div class="admin-stats">${stat("I dag", a.regStats.days?.[todayStr()] || 0)}${stat("Den här månaden", a.regStats.n || 0)}${stat("Kostnad i månaden (ca kr)", (a.regStats.n || 0) * 2)}</div>
       ${a.regStats.lastError ? `<p class="err" style="margin-top:8px">${esc(`${a.regStats.lastError} (${timeAgo(a.regStats.lastErrorAt).toLowerCase()})`)}</p>` : ""}
       <p class="hint" style="margin-top:8px">Räknar varje fråga till registreringsnummerapi.se. Samma regnummer igen inom 30 dagar kostar inget. Tak: 5 sökningar per person och dag (en var tionde sekund), 10 frågor per hushåll och månad, 150 om dagen totalt. Gäller inte dig.</p></div>` : ""}
+    <div class="card"><h2>Glenns röst</h2>
+      <p class="muted">Provlyssna på Googles svenska röster och välj vilken Glenn ska ha, och hur fort han pratar. Det gäller alla användare.</p>
+      <div class="ask"><button class="btn-soft" type="button" data-act="admin-voice">${icon("spark", 16)} Välj röst</button></div></div>
     ${adminErrorsCard(a.errors || [], users)}
     <div class="card"><h2>Funktioner</h2><p class="muted" style="margin-bottom:8px">Hur många hushåll som har använt varje funktion.</p>
       <div class="rows">${features.map(([l, v]) => `<div class="admin-feat"><span>${esc(l)}</span><span class="wear ok"><i style="width:${Math.round((v / n) * 100)}%"></i></span><b>${v} av ${H.length}</b></div>`).join("")}</div>
@@ -7675,6 +7694,34 @@ const ACTIONS = {
       closeSheet(); S.adminData = null; render();
     } catch (e) { el.disabled = false; showToast(`Det gick inte: ${e.message || e}`, 6000); }
   },
+  // Glenns röst: lista rösterna, provlyssna och spara.
+  async "admin-voice"() {
+    if (!isAdmin()) return;
+    openSheet("Glenns röst", `<div id="av-box"><p class="loading">Hämtar rösterna …</p></div>`);
+    try {
+      const r = await callFn("adminVoice", { action: "list" });
+      S.voiceAdmin = { voices: r.voices, current: r.current, auto: r.auto, rate: r.rate || 1, savedRate: r.rate || 1 };
+      renderVoiceAdmin();
+    } catch (e) { $("#av-box").innerHTML = `<p class="err">${esc(`Det gick inte: ${e.message || e}`)}</p>`; }
+  },
+  async "admin-voice-play"(el) {
+    const v = S.voiceAdmin; if (!v) return;
+    el.disabled = true; const label = el.innerHTML; el.textContent = "…";
+    try {
+      const r = await callFn("adminVoice", { action: "sample", voice: el.dataset.v, rate: v.rate });
+      unlockAudio(); stopSpeech(); await playB64(r.audio, sayId);
+    } catch (e) { showToast(`Det gick inte: ${e.message || e}`, 5000); } finally { el.disabled = false; el.innerHTML = label; }
+  },
+  async "admin-voice-set"(el) {
+    const v = S.voiceAdmin; if (!v) return;
+    try {
+      await callFn("adminVoice", { action: "set", voice: el.dataset.v || "", rate: v.rate });
+      v.current = el.dataset.v || v.current; v.auto = !el.dataset.v; v.savedRate = v.rate;
+      showToast(el.dataset.v ? `Glenn pratar nu med ${voiceLabel(el.dataset.v)}` : "Glenn använder den bästa mansrösten automatiskt", 5000);
+      renderVoiceAdmin();
+    } catch (e) { showToast(`Det gick inte: ${e.message || e}`, 5000); }
+  },
+  "admin-voice-rate"(el) { if (S.voiceAdmin) { S.voiceAdmin.rate = Number(el.dataset.v); renderVoiceAdmin(); } },
   async "admin-plus-set"(el) {
     if (!isAdmin()) return;
     el.disabled = true;
