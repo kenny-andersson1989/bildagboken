@@ -1439,7 +1439,6 @@ async function sayText(m) {
           if (id !== sayId) return;
           if (!a) {
             // En bit gick inte att få fram: läs resten med telefonens röst.
-            if (k === 0) throw new Error("ingen röst");
             talk(); await speakDevice(chunks.slice(k).join(" "), id);
             return;
           }
