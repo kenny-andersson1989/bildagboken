@@ -66,7 +66,7 @@ export const EN = {
   "Slå på körjournalen": "Turn on the driving log",
   "Körjournalen är påslagen. Den finns under Resor i menyn": "The driving log is on. It is under Trips in the menu",
   "Dölja fliken Resor?": "Hide the Trips tab?",
-  "Resorna finns kvar. Du kan slå på körjournalen igen under Inställningar": "The trips are kept. You can turn on the driving log again under Settings",
+  "Resorna finns kvar. Du kan slå på körjournalen igen med plusknappen i menyn": "The trips are kept. You can turn the driving log on again with the plus button in the menu",
   "Glömde du avsluta?": "Forgot to finish?",
   "Starta resa nu": "Start trip now",
   "Tryck när du åker och avsluta när du kommer fram. Appen visar resan medan du kör": "Tap when you leave and finish when you arrive. The app shows the trip while you drive",
