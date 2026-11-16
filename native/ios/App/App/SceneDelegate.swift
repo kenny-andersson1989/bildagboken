@@ -26,6 +26,8 @@ class BridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(WidgetDataPlugin())
         bridge?.registerPluginInstance(TripTrackerPlugin())
         bridge?.registerPluginInstance(TripActivityPlugin())
+        // Knapparna Tjänst och Privat i notisen efter en automatisk resa.
+        bridge?.notificationRouter.localNotificationHandler = TripTracker.shared
     }
 }
 

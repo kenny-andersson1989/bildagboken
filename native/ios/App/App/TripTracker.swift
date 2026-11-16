@@ -6,18 +6,25 @@
 // 2. Då slås noggrann GPS på en stund. Går det fortare än 18 km/h räknas det som en resa, och vägen mäts.
 // 3. När bilen har stått still i fyra minuter är resan slut. Den sparas i telefonen och GPS:en stängs av.
 // 4. Webbappen hämtar de sparade resorna (TripTracker.trips) och lägger in dem i körjournalen.
+// 5. När en resa är klar kommer en notis med knapparna Tjänst och Privat. Det man trycker på sparas här och
+//    följer med till körjournalen nästa gång appen öppnas. Sparade platser (Hem, Kontoret) ger namnen i notisen.
 import Foundation
+import UserNotifications
 import CoreLocation
 import Capacitor
 import ActivityKit
 
-final class TripTracker: NSObject, CLLocationManagerDelegate {
+final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotificationCenterDelegate, NotificationHandlerProtocol {
     static let shared = TripTracker()
 
     private let manager = CLLocationManager()
     private let defaults = UserDefaults.standard
     private let enabledKey = "autoTrips.enabled"
     private let tripsKey = "autoTrips.list"
+    private let kindsKey = "autoTrips.kinds"    // resans id → "tjanst" eller "privat", valt i notisen
+    private let placesKey = "autoTrips.places"  // sparade platser från webbappen: name, lat, lon
+    private let langKey = "autoTrips.lang"
+    static let category = "AUTO_TRIP_DONE"
 
     private let driveSpeed: CLLocationSpeed = 5      // m/s, ungefär 18 km/h
     private let stopAfter: TimeInterval = 240         // stilla så här länge = resan är slut
@@ -44,6 +51,22 @@ final class TripTracker: NSObject, CLLocationManagerDelegate {
         manager.pausesLocationUpdatesAutomatically = false
         manager.allowsBackgroundLocationUpdates = true
         manager.showsBackgroundLocationIndicator = false
+        registerCategory()
+    }
+
+    private var en: Bool { defaults.string(forKey: langKey) == "en" }
+
+    // Knapparna i notisen. Ingen av dem öppnar appen: valet sparas i bakgrunden.
+    private func registerCategory() {
+        let work = UNNotificationAction(identifier: "kind.tjanst", title: en ? "Business" : "Tjänst", options: [])
+        let priv = UNNotificationAction(identifier: "kind.privat", title: en ? "Private" : "Privat", options: [])
+        let cat = UNNotificationCategory(identifier: TripTracker.category, actions: [work, priv], intentIdentifiers: [], options: [])
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationCategories { cats in
+            var all = cats.filter { $0.identifier != TripTracker.category }
+            all.insert(cat)
+            center.setNotificationCategories(all)
+        }
     }
 
     // Anropas när appen startar, även när iOS startar den i bakgrunden för en platsändring.
@@ -53,6 +76,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate {
 
     func enable() {
         defaults.set(true, forKey: enabledKey)
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         switch manager.authorizationStatus {
         case .notDetermined: manager.requestWhenInUseAuthorization()
         case .authorizedWhenInUse: manager.requestAlwaysAuthorization()
@@ -160,9 +184,112 @@ final class TripTracker: NSObject, CLLocationManagerDelegate {
         list.append(trip)
         if list.count > 300 { list.removeFirst(list.count - 300) }
         defaults.set(list, forKey: tripsKey)
+        notify(trip)
+    }
+
+    // MARK: - Notisen när en resa är klar
+
+    private func placeName(_ lat: Double, _ lon: Double) -> String? {
+        let here = CLLocation(latitude: lat, longitude: lon)
+        var best: (String, CLLocationDistance)?
+        for p in defaults.array(forKey: placesKey) as? [[String: Any]] ?? [] {
+            guard let name = p["name"] as? String, let plat = p["lat"] as? Double, let plon = p["lon"] as? Double else { continue }
+            let d = here.distance(from: CLLocation(latitude: plat, longitude: plon))
+            if d <= 250, d < (best?.1 ?? .infinity) { best = (name, d) }
+        }
+        return best?.0
+    }
+
+    private func notify(_ trip: [String: Any]) {
+        guard let id = trip["id"] as? String, let meters = trip["meters"] as? Double,
+              let sLat = trip["startLat"] as? Double, let sLon = trip["startLon"] as? Double,
+              let eLat = trip["endLat"] as? Double, let eLon = trip["endLon"] as? Double,
+              let start = trip["start"] as? Double, let end = trip["end"] as? Double else { return }
+        let nf = NumberFormatter()
+        nf.locale = Locale(identifier: en ? "en_US" : "sv_SE")
+        nf.minimumFractionDigits = 1
+        nf.maximumFractionDigits = 1
+        let mil = nf.string(from: NSNumber(value: (meters / 1000).rounded() / 10)) ?? ""
+        let tf = DateFormatter()
+        tf.dateFormat = "HH:mm"
+        let times = "\(tf.string(from: Date(timeIntervalSince1970: start / 1000)))–\(tf.string(from: Date(timeIntervalSince1970: end / 1000)))"
+        let route = [placeName(sLat, sLon), placeName(eLat, eLon)]
+        let c = UNMutableNotificationContent()
+        c.title = en ? "Trip finished. Business or private?" : "Resa klar. Tjänst eller privat?"
+        var parts: [String] = []
+        if route[0] != nil || route[1] != nil {
+            parts.append("\(route[0] ?? (en ? "Start" : "Start")) → \(route[1] ?? (en ? "Destination" : "Mål"))")
+        }
+        parts.append("\(mil) mil")
+        parts.append(times)
+        c.body = parts.joined(separator: " · ")
+        c.sound = .default
+        c.categoryIdentifier = TripTracker.category
+        c.userInfo = ["autoTripId": id]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "autotrip-\(id)", content: c, trigger: nil))
+    }
+
+    // Tjänst eller Privat i notisen: sparas med resan, och i en lista för resor som redan har hämtats till appen.
+    private func setKind(_ id: String, _ kind: String) {
+        var list = savedTrips()
+        if let i = list.firstIndex(where: { ($0["id"] as? String) == id }) {
+            list[i]["kind"] = kind
+            defaults.set(list, forKey: tripsKey)
+        }
+        var kinds = defaults.dictionary(forKey: kindsKey) as? [String: String] ?? [:]
+        kinds[id] = kind
+        defaults.set(kinds, forKey: kindsKey)
+    }
+
+    private func handleResponse(_ response: UNNotificationResponse) -> Bool {
+        let info = response.notification.request.content.userInfo
+        guard response.notification.request.content.categoryIdentifier == TripTracker.category,
+              let id = info["autoTripId"] as? String else { return false }
+        if response.actionIdentifier == "kind.tjanst" { setKind(id, "tjanst") }
+        if response.actionIdentifier == "kind.privat" { setKind(id, "privat") }
+        return true
+    }
+
+    // Via Capacitor när appen är igång (SceneDelegate kopplar in den).
+    func willPresent(notification: UNNotification) -> UNNotificationPresentationOptions {
+        notification.request.content.categoryIdentifier == TripTracker.category ? [.banner, .list, .sound] : []
+    }
+
+    func didReceive(response: UNNotificationResponse) {
+        _ = handleResponse(response)
+    }
+
+    // Direkt från iOS när appen startas i bakgrunden bara för knappen i notisen (AppDelegate).
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        _ = handleResponse(response)
+        completionHandler()
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler(willPresent(notification: notification))
     }
 
     // MARK: - För webbappen
+
+    func setPlaces(_ places: [[String: Any]], lang: String) {
+        let clean: [[String: Any]] = places.compactMap { p in
+            guard let name = p["name"] as? String,
+                  let lat = (p["lat"] as? Double) ?? (p["lat"] as? NSNumber)?.doubleValue,
+                  let lon = (p["lon"] as? Double) ?? (p["lon"] as? NSNumber)?.doubleValue else { return nil }
+            return ["name": name, "lat": lat, "lon": lon]
+        }
+        defaults.set(clean, forKey: placesKey)
+        if lang != defaults.string(forKey: langKey) {
+            defaults.set(lang, forKey: langKey)
+            registerCategory()
+        }
+    }
+
+    func savedKinds() -> [String: String] {
+        defaults.dictionary(forKey: kindsKey) as? [String: String] ?? [:]
+    }
 
     func savedTrips() -> [[String: Any]] {
         defaults.array(forKey: tripsKey) as? [[String: Any]] ?? []
@@ -171,6 +298,8 @@ final class TripTracker: NSObject, CLLocationManagerDelegate {
     func clear(_ ids: [String]) {
         let keep = savedTrips().filter { !ids.contains(($0["id"] as? String) ?? "") }
         defaults.set(keep, forKey: tripsKey)
+        let kinds = savedKinds().filter { !ids.contains($0.key) }
+        defaults.set(kinds, forKey: kindsKey)
     }
 
     func status() -> [String: Any] {
@@ -201,6 +330,7 @@ public class TripTrackerPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "disable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "trips", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPlaces", returnType: CAPPluginReturnPromise),
     ]
 
     @objc func status(_ call: CAPPluginCall) {
@@ -222,7 +352,16 @@ public class TripTrackerPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func trips(_ call: CAPPluginCall) {
-        DispatchQueue.main.async { call.resolve(["trips": TripTracker.shared.savedTrips()]) }
+        DispatchQueue.main.async { call.resolve(["trips": TripTracker.shared.savedTrips(), "kinds": TripTracker.shared.savedKinds()]) }
+    }
+
+    @objc func setPlaces(_ call: CAPPluginCall) {
+        let places = (call.getArray("places") ?? []).compactMap { $0 as? [String: Any] }
+        let lang = call.getString("lang") ?? "sv"
+        DispatchQueue.main.async {
+            TripTracker.shared.setPlaces(places, lang: lang)
+            call.resolve()
+        }
     }
 
     @objc func clear(_ call: CAPPluginCall) {

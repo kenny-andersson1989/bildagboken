@@ -72,6 +72,7 @@ const S = {
   carId: null,
   entries: [],
   trips: [],
+  places: [],
   view: "oversikt",
   filter: "alla",
   loaded: { house: false, cars: false, entries: false },
@@ -3748,6 +3749,9 @@ const clock = (ms) => { const d = new Date(ms); return `${pad(d.getHours())}:${p
 
 
 // Fliken Resor: allt som har med körjournalen att göra.
+// Tjänst och Privat för en automatisk resa. Det som de sparade platserna föreslår är markerat.
+const reviewBtns = (t) => `<div class="review-btns">${["tjanst", "privat"].map((k) => `<button class="btn-soft${t.suggestKind === k ? " sug" : ""}" type="button" data-act="trip-kind" data-id="${esc(t.id)}" data-kind="${k}">${k === "tjanst" ? "Tjänst" : "Privat"}</button>`).join("")}<button class="link" type="button" data-act="edit-trip" data-id="${esc(t.id)}">Mer</button></div>${t.suggestKind ? `<p class="hint sug-t">${esc(`Förslag: ${t.suggestKind === "tjanst" ? "Tjänst" : "Privat"}, från dina sparade platser`)}</p>` : ""}`;
+
 function viewTrips() {
   const c = car();
   const open = openTrip();
@@ -3757,6 +3761,7 @@ function viewTrips() {
   const work = sumMil(month, "tjanst"), priv = sumMil(month, "privat");
   const review = toReview(c.id).sort((a, b) => tsMs(b.startedAt) - tsMs(a.startedAt));
   const recent = list.filter((t) => !(t.auto && !t.kind) && t !== open).slice(0, 5);
+  const gaps = tripGaps(c.id);
   const row = (t) => `<button class="dl as-btn" type="button" data-act="edit-trip" data-id="${esc(t.id)}"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.purpose, t.from && t.to ? `${t.from.split(",")[0]} → ${t.to}` : t.to].filter(Boolean).join(", ") || (t.kind === "privat" ? "Privat resa" : "Tjänsteresa"))}</div><div class="dl-s">${esc([fmtDateShort(t.date), t.kind ? TRIP_KINDS[t.kind] : "Ej genomgången", t.auto ? "GPS" : ""].filter(Boolean).join(" · "))}</div></div><span class="dl-v">${esc(tripMil(t) != null ? `${fmt(tripMil(t), 1)} mil` : "")}</span></button>`;
   const old = open && Date.now() - tsMs(open.startedAt) >= 4 * 36e5;
   return `${subHeader(`Körjournal · ${carName(c)}`, "Resor")}
@@ -3766,7 +3771,11 @@ function viewTrips() {
           <div class="row"><button class="rz-stop" type="button" data-act="start-trip"><span class="tb-sq"></span> Avsluta</button>${open.to ? `<button class="rz-ghost" type="button" data-act="trip-nav">Vägbeskrivning</button>` : ""}</div></div>`
       : `<button class="rz-start" type="button" data-act="trip-start-now">${icon("gauge", 24)} Starta resa</button><button class="link rz-link" type="button" data-act="new-trip">Logga en resa i efterhand</button>`}</article>
     ${review.length ? `<article class="card"><h2>${esc(`${review.length} ${review.length === 1 ? "resa" : "resor"} att gå igenom`)}</h2><div class="rows">${review.map((t) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.from, t.to].filter(Boolean).join(" → ") || "Resa")}</div><div class="dl-s">${esc(`${fmtDateShort(t.date)} ${clock(tsMs(t.startedAt))}–${clock(tsMs(t.endedAt))} · ${fmt(tripMil(t), 1)} mil · GPS`)}</div>
-      <div class="review-btns"><button class="btn-soft" type="button" data-act="trip-kind" data-id="${esc(t.id)}" data-kind="tjanst">Tjänst</button><button class="btn-soft" type="button" data-act="trip-kind" data-id="${esc(t.id)}" data-kind="privat">Privat</button><button class="link" type="button" data-act="edit-trip" data-id="${esc(t.id)}">Mer</button></div></div></div>`).join("")}</div></article>` : ""}
+      ${reviewBtns(t)}</div></div>`).join("")}</div></article>` : ""}
+    ${gaps.length ? `<article class="card gap-card"><h2>${esc(gaps.length === 1 ? "En lucka i körjournalen" : `${gaps.length} luckor i körjournalen`)}</h2>
+      <p class="muted" style="margin-top:0">Mätaren har gått längre mellan resorna än det som är loggat.</p>
+      <div class="rows">${gaps.slice(0, 3).map((g) => `<div class="dl"><div class="dl-ic">${icon("gauge", 20)}</div><div><div class="dl-t">${esc(gapText(g))}</div><div class="dl-s">${esc(`Mätaren ${fmt(num(g.a.odoEnd), 1)} → ${fmt(num(g.b.odoStart), 1)} mil`)}</div>
+        <div class="review-btns"><button class="btn-soft" type="button" data-act="gap-add" data-a="${esc(g.a.id)}" data-b="${esc(g.b.id)}">Lägg till resa</button><button class="link" type="button" data-act="gap-ok" data-b="${esc(g.b.id)}">Det stämmer</button></div></div></div>`).join("")}</div></article>` : ""}
     <article class="card"><h2>${esc(MONTHS[new Date().getMonth()].replace(/^./, (x) => x.toUpperCase()))}</h2><div class="rz-tiles">
       <div class="rz-tile"><small>I tjänsten</small><b>${esc(fmt(work, 1))}</b> mil</div>
       <div class="rz-tile"><small>Ersättning</small><b>${esc(fmtKr(work * MIL_RATE))}</b> kr</div>
@@ -3775,6 +3784,10 @@ function viewTrips() {
     <article class="card"><h2>Senaste resorna ${list.length ? `<button class="link" type="button" data-act="trips">Alla</button>` : ""}</h2>
       ${recent.length ? `<div class="rows">${recent.map(row).join("")}</div>` : `<p class="muted">Inga resor än. Tryck på Starta resa när du åker.</p>`}
       ${list.length ? `<div class="ask"><button class="btn-soft" type="button" data-act="export-trips">Ladda ner som kalkylark</button></div>` : ""}</article>
+    <article class="card"><h2>Sparade platser</h2>
+      <p class="muted" style="margin-top:0">Resor som börjar eller slutar vid en sparad plats får platsens namn, och appen föreslår tjänst eller privat.</p>
+      ${S.places.length ? `<div class="rows">${S.places.map((p) => `<button class="dl as-btn" type="button" data-act="edit-place" data-id="${esc(p.id)}"><div class="dl-ic">${icon("pin", 20)}</div><div><div class="dl-t">${esc(p.name)}</div><div class="dl-s">${esc([p.addr, p.kind ? PLACE_KINDS[p.kind] : ""].filter(Boolean).join(" · "))}</div></div></button>`).join("")}</div>` : ""}
+      <div class="ask"><button class="btn-soft" type="button" data-act="new-place">${icon("plus", 16)} Lägg till plats</button></div></article>
     <article class="card"><h2>Inställningar för körjournalen</h2>
       ${autoTripsHtml()}
       <div class="ask"><button class="link" type="button" data-act="trips-off">Dölj fliken Resor</button></div></article>`;
@@ -3786,6 +3799,50 @@ function viewTrips() {
 const autoAvailable = () => NATIVE && !ANDROID && tripsOn();
 const tracker = () => nativePlugin("TripTracker");
 const toReview = (cid = S.carId) => S.trips.filter((t) => t.carId === cid && t.auto && !t.kind);
+
+/* Sparade platser: Hem, Kontoret, Kund: Volvo och så vidare. En resa som börjar eller slutar inom 250 meter
+   från en sparad plats får platsens namn. Är platsen markerad som tjänst eller privat föreslås det för resan. */
+const PLACE_NEAR = 250;
+function placeAt(loc) {
+  if (!loc || loc.lat == null || loc.lon == null) return null;
+  let best = null, bestD = PLACE_NEAR;
+  for (const p of S.places) { const d = distM(p, loc); if (d <= bestD) { best = p; bestD = d; } }
+  return best;
+}
+// Tjänst om någon av platserna är en tjänsteplats, annars privat om någon är privat.
+const kindFromPlaces = (...ps) => (ps.some((p) => p?.kind === "tjanst") ? "tjanst" : ps.some((p) => p?.kind === "privat") ? "privat" : null);
+const placeByName = (name) => { const n = String(name || "").trim().toLowerCase(); return n ? S.places.find((p) => String(p.name).toLowerCase() === n) || null : null; };
+const PLACE_KINDS = { "": "Inget förslag", tjanst: "Tjänst", privat: "Privat" };
+
+// Telefonen får platserna, så att notisen efter en automatisk resa kan skriva "Hem → Kontoret".
+let placesSent = "";
+function sendPlacesToPhone() {
+  if (!autoAvailable()) return;
+  const json = JSON.stringify({ places: S.places.map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, kind: p.kind || "" })), lang: EN ? "en" : "sv" });
+  if (json === placesSent) return;
+  placesSent = json;
+  try { Promise.resolve(tracker()?.setPlaces(JSON.parse(json))).catch(() => {}); } catch { /* äldre version av appen */ }
+}
+
+/* Luckor: mätaren vid starten av en resa jämförs med mätaren när förra resan slutade. Skillnaden är mil som
+   inte finns i körjournalen. Från en halv mil räknas det som en lucka, om man inte har sagt att det stämmer. */
+const GAP_MIN = 0.5;
+function tripGaps(cid = S.carId) {
+  const list = carTrips(cid).filter((t) => num(t.odoStart) != null).sort((a, b) => num(a.odoStart) - num(b.odoStart) || tsMs(a.startedAt) - tsMs(b.startedAt));
+  const out = [];
+  for (let i = 1; i < list.length; i++) {
+    const a = list[i - 1], b = list[i];
+    const end = num(a.odoEnd);
+    if (end == null || b.gapOk) continue;
+    const mil = Math.round((num(b.odoStart) - end) * 10) / 10;
+    if (mil >= GAP_MIN) out.push({ a, b, mil });
+  }
+  return out.reverse();
+}
+const gapText = (g) => {
+  const d1 = fmtDateShort(g.a.date), d2 = fmtDateShort(g.b.date);
+  return `${fmt(g.mil, 1)} mil som inte är loggade ${d1 === d2 ? `den ${d1}` : `mellan ${d1} och ${d2}`}`;
+};
 function autoTripsHtml() {
   if (!tripsOn()) return "";
   if (!NATIVE || ANDROID) return `<p class="hint" style="margin-top:12px">Automatisk körjournal, som känner av resorna själv, finns i iPhone-appen.</p>`;
@@ -3800,28 +3857,47 @@ function autoTripsHtml() {
 async function refreshAutoStatus() {
   if (!autoAvailable()) return;
   try { S.autoStatus = await tracker().status(); } catch { S.autoStatus = null; return; }
+  sendPlacesToPhone();
   await importAutoTrips();
 }
 // Hämtar resorna som telefonen har mätt och lägger in dem i körjournalen, en gång var.
+const autoId = (nid) => "a" + String(nid).replace(/[^A-Za-z0-9]/g, "").slice(0, 24);
 async function importAutoTrips() {
   if (importAutoTrips.busy || !autoAvailable() || !S.loaded.entries) return;
   importAutoTrips.busy = true;
   try {
-    const list = ((await tracker().trips())?.trips || []).sort((a, b) => a.start - b.start);
-    if (!list.length) return;
+    const res = (await tracker().trips()) || {};
+    const list = (res.trips || []).sort((a, b) => a.start - b.start);
+    // Tjänst eller Privat som man har tryckt på i notisen, för resor som redan finns i körjournalen.
+    const kinds = res.kinds || {};
+    const applied = [];
+    for (const [nid, k] of Object.entries(kinds)) {
+      const t = S.trips.find((x) => x.id === autoId(nid));
+      if (t && !t.kind && (k === "tjanst" || k === "privat")) {
+        t.kind = k;
+        await updateDoc(doc(col("trips"), t.id), { kind: k, reviewedAt: Date.now() });
+      }
+      if (t || !list.some((r) => r.id === nid)) applied.push(nid);
+    }
+    if (!list.length) { if (applied.length) { await tracker().clear({ ids: applied }); render(); } return; }
     const c = car();
     let odo = odoOf(c);
-    const done = [];
+    const done = [...applied];
     for (const r of list) {
-      const id = "a" + String(r.id).replace(/[^A-Za-z0-9]/g, "").slice(0, 24);
+      const id = autoId(r.id);
       if (S.trips.some((t) => t.id === id)) { done.push(r.id); continue; }
       const mil = Math.round(r.meters / 1000) / 10;
+      const startLoc = { lat: r.startLat, lon: r.startLon }, endLoc = { lat: r.endLat, lon: r.endLon };
+      const pFrom = placeAt(startLoc), pTo = placeAt(endLoc);
+      const picked = r.kind || kinds[r.id];
+      const kind = picked === "tjanst" || picked === "privat" ? picked : null;
       const odoStart = odo != null ? Math.round(odo * 10) / 10 : null;
       const odoEnd = odoStart != null ? Math.round((odoStart + mil) * 10) / 10 : null;
       const data = clean({
         carId: c.id, date: ymd(new Date(r.start)), odoStart, odoEnd, auto: true, odoEstimated: true, autoMeters: r.meters,
-        startLoc: { lat: r.startLat, lon: r.startLon }, endLoc: { lat: r.endLat, lon: r.endLon },
-        from: null, to: null, purpose: null, kind: null, driver: uid(),
+        startLoc, endLoc,
+        from: pFrom?.name || null, to: pTo?.name || null, purpose: null, kind, driver: uid(),
+        suggestKind: kind ? null : kindFromPlaces(pFrom, pTo), reviewedAt: kind ? Date.now() : null,
         startedAt: r.start, endedAt: r.end, createdBy: uid(), createdAt: Date.now(),
       });
       await setDoc(doc(col("trips"), id), data);
@@ -3829,9 +3905,10 @@ async function importAutoTrips() {
       if (odoEnd != null) odo = odoEnd;
       done.push(r.id);
       // Adresserna fylls i efteråt, en i taget (OpenStreetMap vill inte ha för många frågor på en gång).
-      (async () => {
-        const from = await reverseAddress(r.startLat, r.startLon).catch(() => "");
-        const to = await reverseAddress(r.endLat, r.endLon).catch(() => "");
+      // Sparade platser har redan sina namn.
+      if (!pFrom || !pTo) (async () => {
+        const from = pFrom ? "" : await reverseAddress(r.startLat, r.startLon).catch(() => "");
+        const to = pTo ? "" : await reverseAddress(r.endLat, r.endLon).catch(() => "");
         if (from || to) updateDoc(doc(col("trips"), id), clean({ from: from || undefined, to: to || undefined })).catch(() => {});
       })();
     }
@@ -3847,7 +3924,7 @@ function reviewSheet() {
   if (!list.length) { closeSheet(); return showToast("Alla resor är genomgångna"); }
   openSheet("Resor att gå igenom", `<p class="muted" style="margin-top:0">Resorna har mätts med GPS. Mätarställningen är beräknad från den senast kända och sträckan.</p>
     <div class="rows">${list.map((t) => `<div class="dl review-row"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.from, t.to].filter(Boolean).join(" → ") || "Resa")}</div><div class="dl-s">${esc(`${fmtDateShort(t.date)} ${clock(tsMs(t.startedAt))}–${clock(tsMs(t.endedAt))} · ${fmt(tripMil(t), 1)} mil`)}</div>
-      <div class="review-btns"><button class="btn-soft" type="button" data-act="trip-kind" data-id="${esc(t.id)}" data-kind="tjanst">Tjänst</button><button class="btn-soft" type="button" data-act="trip-kind" data-id="${esc(t.id)}" data-kind="privat">Privat</button><button class="link" type="button" data-act="edit-trip" data-id="${esc(t.id)}">Mer</button></div></div></div>`).join("")}</div>`);
+      ${reviewBtns(t)}</div></div>`).join("")}</div>`);
 }
 
 // Raden för pågående resa (som i Spotify): syns ovanför menyn i hela appen så länge en resa pågår.
@@ -3903,7 +3980,7 @@ function tripForm(t = {}, mode = "new") {
   const kind = t.kind || prev?.kind || "tjanst";
   const title = mode === "start" ? "Starta resa" : mode === "end" ? "Avsluta resan" : t.id ? "Ändra resa" : "Resa";
   openSheet(title, `
-    <form class="form" data-form="trip" data-mode="${mode}" data-start="${odoStart ?? ""}"${t.id ? ` data-id="${esc(t.id)}"` : ""} novalidate>
+    <form class="form" data-form="trip" data-mode="${mode}"${t.gap ? ` data-gap="1"` : ""} data-start="${odoStart ?? ""}"${t.id ? ` data-id="${esc(t.id)}"` : ""} novalidate>
       ${mode === "end" ? `<p class="muted" style="margin-top:0">${esc(`Startade ${clock(tsMs(t.startedAt))} vid ${fmt(t.odoStart, 1)} mil.`)}</p>` : ""}
       ${t.edits?.length ? `<div class="hint" style="margin-top:0"><b>Ändrad i efterhand</b>${t.edits.slice(-5).reverse().map((e) => `<br>${esc(editLine(e))}`).join("")}</div>` : ""}
       ${mode === "end" ? "" : `<div class="row2">
@@ -3930,26 +4007,72 @@ function tripForm(t = {}, mode = "new") {
   if (mode === "start" && !t.from) fillTripFrom(false);
 }
 
+// En sparad plats som Från eller Vart: platsens namn, och förslag på tjänst eller privat (om man inte själv har valt).
+const placeLoc = (name) => { const p = placeByName(name); return p ? clean({ name: p.name, addr: p.addr || null, lat: p.lat, lon: p.lon }) : null; };
+function tripPlaceOf(which) {
+  const name = $(`#tr-${which}`)?.value;
+  let loc = null; try { loc = JSON.parse($(`#tr-${which}Loc`)?.value || "null"); } catch { /* inget */ }
+  return placeByName(name) || placeAt(loc);
+}
+function suggestTripKind() {
+  const sel = $("#tr-kind");
+  if (!sel || sel.dataset.touched) return;
+  const k = kindFromPlaces(tripPlaceOf("from"), tripPlaceOf("to"));
+  if (k) sel.value = k;
+}
+
+// Sparade platser: namn, adress (sök eller använd min plats) och om resor dit brukar vara tjänst eller privat.
+function placeForm(p = {}) {
+  openSheet(p.id ? "Ändra plats" : "Ny plats", `
+    <form class="form" data-form="place"${p.id ? ` data-id="${esc(p.id)}"` : ""} novalidate>
+      ${field("Namn", `<input name="name" id="pl-name" required value="${esc(p.name || "")}" placeholder="Till exempel Hem, Kontoret eller Kund: Volvo" autocomplete="off">`)}
+      ${field("Adress", `<span class="geo-row"><input name="addr" id="pl-addr" required value="${esc(p.addr || "")}" placeholder="Sök adress eller företag" autocomplete="off"><button class="geo-btn" type="button" data-act="place-here" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span><span class="suggest" id="pl-addr-suggest" role="listbox" hidden></span>
+        <input type="hidden" name="lat" id="pl-lat" value="${p.lat ?? ""}"><input type="hidden" name="lon" id="pl-lon" value="${p.lon ?? ""}">`, "Välj i listan, eller tryck på nålen när du är på platsen.")}
+      ${field("Resor hit är oftast", `<select name="kind" id="pl-kind">${Object.entries(PLACE_KINDS).map(([k, l]) => `<option value="${k}"${(p.kind || "") === k ? " selected" : ""}>${l}</option>`).join("")}</select>`, "Till exempel Tjänst för kontoret och kunder. Hem kan stå på Inget förslag.")}
+      <p class="err" id="form-err" hidden></p>
+      <button class="btn primary block" type="submit">Spara</button>
+      ${p.id ? `<button class="btn danger block" type="button" data-act="delete-place" data-id="${esc(p.id)}" style="margin-top:10px">Ta bort platsen</button>` : ""}
+    </form>`);
+}
+function savePlace(form) {
+  const fd = new FormData(form);
+  const name = String(fd.get("name") || "").trim(), addr = String(fd.get("addr") || "").trim();
+  const lat = num(fd.get("lat")), lon = num(fd.get("lon"));
+  if (!name) return formError("Skriv ett namn på platsen.");
+  if (lat == null || lon == null) return formError("Välj adressen i listan, eller tryck på nålen när du är på platsen.");
+  if (S.places.some((p) => p.id !== form.dataset.id && p.name.toLowerCase() === name.toLowerCase())) return formError("Det finns redan en plats med det namnet.");
+  const id = form.dataset.id || "p" + randomId(10);
+  const old = S.places.find((p) => p.id === id);
+  const data = clean({ name, addr: addr || null, lat, lon, kind: fd.get("kind") || null, createdBy: old?.createdBy || uid(), createdAt: old?.createdAt || Date.now() });
+  setDoc(doc(col("places"), id), data).catch(onWriteError);
+  S.places = [...S.places.filter((p) => p.id !== id), { id, ...data }].sort((a, b) => a.name.localeCompare(b.name, "sv"));
+  sendPlacesToPhone();
+  closeSheet(); render();
+  showToast(old ? "Platsen är ändrad" : `${name} är sparad`);
+}
+
 // Från: adressen där man är. Automatiskt när en resa startas (skriver inte över det man själv har skrivit), eller med knappen.
 async function fillTripFrom(manual) {
   const input = $("#tr-from");
   if (!input) return;
   const loc = await tripPosition();
   if (!loc) { if (manual) showToast("Kunde inte hitta din position. Skriv var du startar.", 5000); return; }
-  const addr = await reverseAddress(loc.lat, loc.lon).catch(() => "");
+  const saved = placeAt(loc);
+  const addr = saved?.name || await reverseAddress(loc.lat, loc.lon).catch(() => "");
   if (!addr || !document.contains(input) || (!manual && (input.value.trim() || input.dataset.touched))) return;
   input.value = addr;
   const h = $("#tr-fromLoc"); if (h) h.value = JSON.stringify({ addr, lat: loc.lat, lon: loc.lon });
 }
 
 // Senaste målen, när fältet Vart är tomt.
-function recentTripTargets() {
-  const box = $("#tr-to-suggest");
+const savedPlaceBtns = (field, list = S.places) => list.map((p) => `<button type="button" role="option" data-act="place-pick" data-kind="${field}" data-place="${esc(p.id)}" data-name="${esc(p.name)}" data-addr="${esc(p.addr || "")}" data-lat="${p.lat}" data-lon="${p.lon}"><b>${esc(p.name)}</b>${p.addr ? `<span>${esc(p.addr)}</span>` : ""}</button>`).join("");
+function recentTripTargets(field = "tr-to") {
+  const box = $(`#${field}-suggest`);
   if (!box) return;
-  const seen = new Set();
-  const recent = carTrips().filter((t) => t.to && !seen.has(t.to) && seen.add(t.to)).slice(0, 5);
-  if (!recent.length) { box.hidden = true; return; }
-  box.innerHTML = `<p class="hint">Senaste målen</p>` + recent.map((t) => `<button type="button" role="option" data-act="place-pick" data-kind="tr-to" data-name="${esc(t.to)}" data-addr="${esc(t.toLoc?.addr || "")}" data-lat="${t.toLoc?.lat ?? ""}" data-lon="${t.toLoc?.lon ?? ""}" data-pid="${esc(t.toLoc?.pid || "")}"><b>${esc(t.to)}</b>${t.toLoc?.addr && t.toLoc.addr !== t.to ? `<span>${esc(t.toLoc.addr)}</span>` : ""}</button>`).join("");
+  const seen = new Set(S.places.map((p) => p.name));
+  const recent = field === "tr-to" ? carTrips().filter((t) => t.to && !seen.has(t.to) && seen.add(t.to)).slice(0, 5) : [];
+  if (!recent.length && !S.places.length) { box.hidden = true; return; }
+  box.innerHTML = (S.places.length ? `<p class="hint">Sparade platser</p>${savedPlaceBtns(field)}` : "") + (recent.length ? `<p class="hint">Senaste målen</p>` : "") + recent.map((t) => `<button type="button" role="option" data-act="place-pick" data-kind="tr-to" data-name="${esc(t.to)}" data-addr="${esc(t.toLoc?.addr || "")}" data-lat="${t.toLoc?.lat ?? ""}" data-lon="${t.toLoc?.lon ?? ""}" data-pid="${esc(t.toLoc?.pid || "")}"><b>${esc(t.to)}</b>${t.toLoc?.addr && t.toLoc.addr !== t.to ? `<span>${esc(t.toLoc.addr)}</span>` : ""}</button>`).join("");
   box.hidden = false;
 }
 
@@ -4039,7 +4162,7 @@ async function saveTrip(form) {
   if (odoEnd != null && odoEnd - odoStart > 300) return formError("Sträckan ser för lång ut. Mätarställningen anges i mil, till exempel 21 480,6.");
   // En ny resa som startar lägre än senast kända mätarställning: fråga, det är oftast en felskrivning.
   const lastOdo = odoOf(c);
-  if (!old && lastOdo != null && odoStart < lastOdo - 0.05) {
+  if (!old && !form.dataset.gap && lastOdo != null && odoStart < lastOdo - 0.05) {
     const ok = await confirmDialog({ title: "Stämmer mätarställningen?", lines: [`${fmt(odoStart, 1)} mil är lägre än senast kända, ${fmt(lastOdo, 1)} mil.`], okLabel: "Ja, spara", warn: "" });
     if (!ok) return;
   }
@@ -4048,8 +4171,8 @@ async function saveTrip(form) {
     date: mode === "end" ? old.date : str("date") || todayStr(),
     odoStart, odoEnd,
     from: mode === "end" ? (str("from") || old?.from || null) : str("from") || null,
-    fromLoc: (() => { try { return JSON.parse(str("fromLoc") || "null"); } catch { return null; } })() || (str("from") === old?.from ? old?.fromLoc || null : null),
-    to: str("to") || null, toLoc: (() => { try { return JSON.parse(str("toLoc") || "null"); } catch { return null; } })() || (str("to") === old?.to ? old?.toLoc || null : null),
+    fromLoc: (() => { try { return JSON.parse(str("fromLoc") || "null"); } catch { return null; } })() || (str("from") === old?.from ? old?.fromLoc || null : null) || placeLoc(str("from")),
+    to: str("to") || null, toLoc: (() => { try { return JSON.parse(str("toLoc") || "null"); } catch { return null; } })() || (str("to") === old?.to ? old?.toLoc || null : null) || placeLoc(str("to")),
     purpose: str("purpose") || null,
     startLoc: old?.startLoc || null,
     kind: str("kind") || "tjanst", driver: str("driver") || uid(),
@@ -4062,6 +4185,7 @@ async function saveTrip(form) {
     auto: old?.auto || undefined, autoMeters: old?.autoMeters ?? undefined, endLoc: old?.endLoc || undefined,
     odoEstimated: old?.odoEstimated ? odoStart === old.odoStart && odoEnd === old.odoEnd : undefined,
     reviewedAt: old?.auto && !old.kind ? Date.now() : old?.reviewedAt ?? undefined,
+    gapOk: old?.gapOk || undefined, suggestKind: old?.suggestKind || undefined,
   });
   // Ändringar i en avslutad resa sparas: vem, när och vad som ändrades.
   if (old?.odoEnd != null && !(old.auto && !old.kind)) {
@@ -4456,6 +4580,7 @@ const PLACE_FIELDS = {
   // Målet för en resa i körjournalen: orter, adresser och företag.
   "tr-to": { input: "tr-to", box: "tr-to-suggest", search: "any" },
   "tr-from": { input: "tr-from", box: "tr-from-suggest", search: "any" },
+  "pl-addr": { input: "pl-addr", box: "pl-addr-suggest", search: "any" },
 };
 let placeTimer = null, placeAbort = null;
 function placeSearchSoon(kind) {
@@ -4612,8 +4737,10 @@ async function placeSearch(field, q) {
     if (input.value.trim() !== q) return;
     const seen = new Set();
     const list = found.filter((x) => x.title && !seen.has(x.title + x.sub) && seen.add(x.title + x.sub)).slice(0, 6);
-    box.innerHTML = list.length
-      ? list.map((x) => `<button type="button" role="option" data-act="place-pick" data-kind="${field}" data-name="${esc(x.name)}" data-addr="${esc(x.addr)}" data-lat="${x.lat ?? ""}" data-lon="${x.lon ?? ""}" data-pid="${esc(x.pid || "")}" data-tel="${esc(x.tel || "")}" data-src="${x.src || ""}"><b>${esc(x.title)}</b>${x.sub ? `<span>${esc(x.sub)}</span>` : ""}</button>`).join("")
+    const ql = q.toLowerCase();
+    const mine = field.startsWith("tr-") ? S.places.filter((p) => p.name.toLowerCase().includes(ql) || String(p.addr || "").toLowerCase().includes(ql)) : [];
+    box.innerHTML = mine.length || list.length
+      ? savedPlaceBtns(field, mine) + list.map((x) => `<button type="button" role="option" data-act="place-pick" data-kind="${field}" data-name="${esc(x.name)}" data-addr="${esc(x.addr)}" data-lat="${x.lat ?? ""}" data-lon="${x.lon ?? ""}" data-pid="${esc(x.pid || "")}" data-tel="${esc(x.tel || "")}" data-src="${x.src || ""}"><b>${esc(x.title)}</b>${x.sub ? `<span>${esc(x.sub)}</span>` : ""}</button>`).join("")
       : field.startsWith("ef-") ? `<p class="hint">Hittade inget med det namnet. Det du har skrivit sparas ändå.</p>`
       : `<p class="hint">${kind === "poi" ? "Hittade inget företag med det namnet. Skriv namnet själv och fyll i adressen nedanför." : "Hittade ingen adress. Skriv den själv, den kommer ändå med i kalendern."}</p>`;
     box.hidden = false;
@@ -5827,8 +5954,20 @@ const ACTIONS = {
     });
     if (el.dataset.kind === "tr-to" || el.dataset.kind === "tr-from") {
       const d = el.dataset, lat = num(d.lat), lon = num(d.lon);
-      set(d.kind, d.name || d.addr);
-      set(d.kind + "Loc", lat != null && lon != null ? JSON.stringify(clean({ name: d.name || null, addr: d.addr || null, lat, lon, pid: d.pid || null })) : "");
+      // Ligger det man valde vid en sparad plats får det platsens namn.
+      const saved = S.places.find((p) => p.id === d.place) || (lat != null && lon != null ? placeAt({ lat, lon }) : null);
+      const name = saved?.name || d.name || d.addr;
+      set(d.kind, name);
+      set(d.kind + "Loc", lat != null && lon != null ? JSON.stringify(clean({ name, addr: d.addr || null, lat, lon, pid: d.pid || null })) : "");
+      hideAll();
+      suggestTripKind();
+      return;
+    }
+    if (el.dataset.kind === "pl-addr") {
+      const d = el.dataset;
+      set("pl-addr", d.addr || d.name);
+      set("pl-lat", d.lat); set("pl-lon", d.lon);
+      const n = $("#pl-name"); if (n && !n.value.trim() && d.name) n.value = d.name;
       hideAll();
       return;
     }
@@ -6131,6 +6270,41 @@ const ACTIONS = {
     render();
   },
   "trip-here"() { fillTripFrom(true); },
+  "new-place"() { placeForm(); },
+  "edit-place"(el) { const p = S.places.find((x) => x.id === el.dataset.id); if (p) placeForm(p); },
+  async "place-here"(el) {
+    el.disabled = true;
+    try {
+      const loc = await tripPosition();
+      if (!loc) return showToast("Kunde inte hitta din position. Sök adressen i stället.", 5000);
+      $("#pl-lat").value = loc.lat; $("#pl-lon").value = loc.lon;
+      const addr = await reverseAddress(loc.lat, loc.lon).catch(() => "");
+      const a = $("#pl-addr"); if (a) a.value = addr || "Min plats";
+    } finally { el.disabled = false; }
+  },
+  async "delete-place"(el) {
+    const p = S.places.find((x) => x.id === el.dataset.id);
+    if (!p) return;
+    const ok = await confirmDialog({ title: `Ta bort ${p.name}?`, lines: ["Resor som redan är sparade ändras inte."], okLabel: "Ta bort", warn: "" });
+    if (!ok) return;
+    deleteDoc(doc(col("places"), p.id)).catch(onWriteError);
+    S.places = S.places.filter((x) => x.id !== p.id);
+    sendPlacesToPhone();
+    closeSheet(); render();
+  },
+  "gap-add"(el) {
+    const a = S.trips.find((x) => x.id === el.dataset.a), b = S.trips.find((x) => x.id === el.dataset.b);
+    if (!a || !b) return;
+    tripForm({ date: a.date, odoStart: a.odoEnd, odoEnd: b.odoStart, from: a.to || "", fromLoc: a.toLoc || null, to: b.from || "", toLoc: b.fromLoc || null, gap: true });
+  },
+  "gap-ok"(el) {
+    const b = S.trips.find((x) => x.id === el.dataset.b);
+    if (!b) return;
+    b.gapOk = true;
+    updateDoc(doc(col("trips"), b.id), { gapOk: true }).catch(onWriteError);
+    render();
+    showToast("Luckan är markerad som okej");
+  },
   "trip-nav"() {
     const t = openTrip();
     if (t) openMapChooser({ name: t.toLoc?.name || t.to, addr: t.toLoc?.addr, lat: t.toLoc?.lat, lon: t.toLoc?.lon, pid: t.toLoc?.pid, directions: true });
@@ -6420,6 +6594,7 @@ async function onSubmit(ev) {
     if (kind === "todo") return saveTodo(form);
     if (kind === "rec-price") return saveRecPrice(form);
     if (kind === "trip") return saveTrip(form);
+    if (kind === "place") return savePlace(form);
     if (kind === "doc") return await saveDoc(form);
     if (kind === "rename-one") {
       const v = String(new FormData(form).get("v") || "").trim();
@@ -6696,7 +6871,9 @@ function onInput(ev) {
   }
   if (ev.target.id === "w-search") workSuggest(ev.target.value);
   if (ev.target.id === "bk-place") placeSearchSoon("poi");
-  if (ev.isTrusted && ["ef-station", "ef-place", "ef-workshop", "tr-to", "tr-from"].includes(ev.target.id)) placeSearchSoon(ev.target.id);
+  if (ev.isTrusted && ["ef-station", "ef-place", "ef-workshop", "tr-to", "tr-from", "pl-addr"].includes(ev.target.id)) placeSearchSoon(ev.target.id);
+  if (ev.target.id === "pl-addr") { const a = $("#pl-lat"), b = $("#pl-lon"); if (a) a.value = ""; if (b) b.value = ""; }
+  if (ev.target.id === "tr-kind" && ev.isTrusted) ev.target.dataset.touched = "1";
   if (ev.target.id === "tr-from") { const h = $("#tr-fromLoc"); if (h) h.value = ""; ev.target.dataset.touched = "1"; }
   if (ev.target.id === "tr-to") { const h = $("#tr-toLoc"); if (h) h.value = ""; if (!ev.target.value.trim()) recentTripTargets(); }
   if (ev.target.id === "bk-addr") {
@@ -6878,7 +7055,7 @@ function checkNewBookings(cars, first) {
 function cleanup() {
   S.unsubs.forEach((u) => { try { u(); } catch { /* redan stängd */ } });
   S.unsubs = [];
-  S.hid = null; S.house = null; S.cars = []; S.entries = []; S.trips = []; S.carId = null;
+  S.hid = null; S.house = null; S.cars = []; S.entries = []; S.trips = []; S.places = []; S.carId = null;
   S.loaded = { house: false, cars: false, entries: false };
   closeSheet();
 }
@@ -6902,6 +7079,13 @@ function subscribe(hid) {
   // Körjournalen (Plus). Tom för de flesta hushåll, och påverkar inte när appen räknas som laddad.
   S.unsubs.push(onSnapshot(collection(db, "households", hid, "trips"), (s) => {
     S.trips = s.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+    if (S.loaded.entries) render();
+  }, () => {}));
+  // Sparade platser för körjournalen, som Hem och Kontoret.
+  S.places = [];
+  S.unsubs.push(onSnapshot(collection(db, "households", hid, "places"), (s) => {
+    S.places = s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.name).localeCompare(String(b.name), "sv"));
+    sendPlacesToPhone();
     if (S.loaded.entries) render();
   }, () => {}));
   S.loaded = { house: false, cars: false, entries: false };
@@ -6997,7 +7181,7 @@ document.addEventListener("click", (ev) => {
   if (a.tagName !== "A") ev.preventDefault();
   fn(a, ev);
 });
-document.addEventListener("focusin", (ev) => { if (ev.target.id === "tr-to" && !ev.target.value.trim()) recentTripTargets(); });
+document.addEventListener("focusin", (ev) => { if ((ev.target.id === "tr-to" || ev.target.id === "tr-from") && !ev.target.value.trim()) recentTripTargets(ev.target.id); });
 document.addEventListener("submit", onSubmit);
 document.addEventListener("input", onInput);
 document.addEventListener("change", onChange);
