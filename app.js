@@ -2518,8 +2518,29 @@ function regToCar(f) {
   return out;
 }
 // Söker och visar laddningssymbol i box. Lyckas det: onFound(fields). Annars en text om att fylla i själv.
+// Högst en sökning var tionde sekund: knapparna räknar ner så länge.
+const REG_WAIT_S = 10;
+let regNextAt = 0, regTick = null;
+function regCooldown() {
+  regNextAt = Date.now() + REG_WAIT_S * 1000;
+  clearInterval(regTick);
+  const paint = () => {
+    const left = Math.ceil((regNextAt - Date.now()) / 1000);
+    document.querySelectorAll('[data-act="reg-lookup"], [data-act="reg-refresh"]').forEach((b) => {
+      if (!b.dataset.label) b.dataset.label = b.innerHTML;
+      b.disabled = left > 0;
+      b.innerHTML = left > 0 ? `${icon("search", 16)} ${left}` : b.dataset.label;
+      b.setAttribute("aria-label", left > 0 ? `Vänta ${left} sekunder` : "Hämta");
+    });
+    if (left <= 0) clearInterval(regTick);
+  };
+  paint();
+  regTick = setInterval(paint, 500);
+}
 async function regLookup(box, plate, onFound) {
   const key = plateKey(plate);
+  if (Date.now() < regNextAt) return;
+  regCooldown();
   box.dataset.plate = key;
   box.innerHTML = `<div class="reg-busy" role="status"><span class="reg-spin" aria-hidden="true"></span><span>${esc(`Söker efter ${fmtPlate(key)} …`)}</span></div>`;
   // Samma regnummer i den här sessionen: använd svaret igen. Pågår redan en sökning på numret: vänta på den.
@@ -2535,8 +2556,14 @@ async function regLookup(box, plate, onFound) {
     if (res?.ok || res?.reason === "notfound") regMemo.set(key, res);
   }
   if (box.dataset.plate !== key) return; // man har hunnit skriva ett annat nummer
-  if (res?.ok && res.fields?.length) return onFound(res.fields);
-  const why = { limit: "Ni har gjort många sökningar på sistone.", notfound: `Hittade inga uppgifter om ${fmtPlate(key)}.` }[res?.reason] || "Det gick inte att hämta uppgifterna just nu.";
+  if (res?.ok && res.fields?.length) {
+    onFound(res.fields);
+    if (res.left != null && res.left < 3) box.insertAdjacentHTML("beforeend", `<p class="hint" style="margin-top:6px">${esc(res.left ? `Du kan söka ${res.left} ${res.left === 1 ? "gång" : "gånger"} till i dag.` : "Det var din sista sökning för i dag.")}</p>`);
+    return;
+  }
+  if (res?.reason === "daily") { box.innerHTML = `<div class="reg-fail"><p>Du har gjort 5 sökningar i dag. Du kan söka igen i morgon, eller fylla i uppgifterna själv.</p></div>`; return; }
+  if (res?.reason === "wait") { box.innerHTML = `<div class="reg-fail"><p>${esc(`Vänta ${res.wait || REG_WAIT_S} sekunder mellan sökningarna.`)}</p></div>`; return; }
+  const why = { limit: "Ni har gjort många sökningar den här månaden.", notfound: `Hittade inga uppgifter om ${fmtPlate(key)}.` }[res?.reason] || "Det gick inte att hämta uppgifterna just nu.";
   box.innerHTML = `<div class="reg-fail"><p>${esc(`${why} Fyll i uppgifterna själv.`)}</p></div>`;
 }
 const regMemo = new Map(), regPending = new Map();
@@ -4500,7 +4527,7 @@ function viewAdmin() {
     ${a.regStats ? `<div class="card"><h2>Sökningar på regnummer</h2>
       <div class="admin-stats">${stat("I dag", a.regStats.days?.[todayStr()] || 0)}${stat("Den här månaden", a.regStats.n || 0)}${stat("Kostnad i månaden (ca kr)", (a.regStats.n || 0) * 2)}</div>
       ${a.regStats.lastError ? `<p class="err" style="margin-top:8px">${esc(`${a.regStats.lastError} (${timeAgo(a.regStats.lastErrorAt).toLowerCase()})`)}</p>` : ""}
-      <p class="hint" style="margin-top:8px">Räknar varje fråga till registreringsnummerapi.se. Samma regnummer igen inom 30 dagar kostar inget. Tak: 10 per hushåll och månad, 15 per person och dag, 150 om dagen totalt.</p></div>` : ""}
+      <p class="hint" style="margin-top:8px">Räknar varje fråga till registreringsnummerapi.se. Samma regnummer igen inom 30 dagar kostar inget. Tak: 5 sökningar per person och dag (en var tionde sekund), 10 frågor per hushåll och månad, 150 om dagen totalt. Gäller inte dig.</p></div>` : ""}
     ${adminErrorsCard(a.errors || [], users)}
     <div class="card"><h2>Funktioner</h2><p class="muted" style="margin-bottom:8px">Hur många hushåll som har använt varje funktion.</p>
       <div class="rows">${features.map(([l, v]) => `<div class="admin-feat"><span>${esc(l)}</span><span class="wear ok"><i style="width:${Math.round((v / n) * 100)}%"></i></span><b>${v} av ${H.length}</b></div>`).join("")}</div>
