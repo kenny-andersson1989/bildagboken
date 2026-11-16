@@ -218,7 +218,10 @@ exports.glomdResa = onSchedule({ schedule: "every 60 minutes", timeZone: TZ }, a
 // Nyckeln sparas som hemlighet: firebase functions:secrets:set ANTHROPIC_API_KEY. Den når aldrig appen.
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 const ADMIN_UID = "mjQJQzsMCpVURkuVSyK5ctKVhG23";
-const AI_MONTHLY_LIMIT = 60;   // anrop per hushåll och månad
+const AI_MONTHLY_LIMIT = 60;   // läsningar av dokument per hushåll och månad
+const CHAT_MONTHLY_LIMIT = 30; // frågor om bilen per hushåll och månad
+// Claude Haiku 5.5: billig nog att Plus alltid täcker kostnaden, även för den som använder allt varje månad.
+const AI_MODEL = "claude-haiku-5-5";
 
 const DOC_SCHEMA = {
   type: "object",
@@ -272,12 +275,10 @@ exports.lasDokument = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
   let res;
   try {
-    res = await client.beta.messages.create({
-    model: "claude-opus-5-5",
+    res = await client.messages.create({
+    model: AI_MODEL,
     max_tokens: 4000,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    output_config: { format: { type: "json_schema", schema: DOC_SCHEMA } },
+    output_config: { effort: "low", format: { type: "json_schema", schema: DOC_SCHEMA } },
     system: "Du läser av svenska dokument om bilar: servicefakturor, verkstadskvitton, besiktningsprotokoll och tankkvitton. Fyll bara i det som står i dokumentet. Gissa inte; använd null eller en tom lista när något saknas eller inte går att läsa. Svara på svenska.",
     messages: [{ role: "user", content: [
       { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
@@ -302,3 +303,58 @@ exports.lasDokument = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120
 
 // För test: reminders() kan provas lokalt utan Firebase.
 exports._reminders = reminders;
+
+// Fråga om bilen (Bildagboken Plus): svarar på frågor utifrån det hushållet har loggat om bilen.
+// Appen skickar bilens uppgifter som text (med summor och snitt redan uträknade) och samtalet hittills.
+const CHAT_SYSTEM = [
+  "Du är assistenten i appen Bildagboken och svarar på frågor om användarens bil.",
+  "Bilens uppgifter, underhåll, kostnader, förbrukning, körjournal och hela loggen finns nedan. Utgå från dem.",
+  "Summor, snitt och förbrukning är redan uträknade av appen. Använd de siffrorna i stället för att räkna själv.",
+  "Säg tydligt när något inte finns i loggen. Du får använda allmän kunskap om bilmodellen och bilskötsel, men säg då att det är allmänna råd och inte från loggen.",
+  "Svara kort och tydligt, i hela meningar, utan rubriker, tabeller, fetstil eller tecken som * och #. Svaret kan läsas upp.",
+  "Svara på svenska, eller på engelska om användaren skriver på engelska.",
+].join(" ");
+
+exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB", maxInstances: 3 }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
+  const { hid, context, messages } = req.data || {};
+  if (typeof hid !== "string" || typeof context !== "string" || context.length > 300000) throw new HttpsError("invalid-argument", "Bilens uppgifter saknas eller är för stora.");
+  if (!Array.isArray(messages) || !messages.length || messages.length > 20) throw new HttpsError("invalid-argument", "Frågan saknas.");
+  const msgs = messages.map((m) => ({ role: m?.role === "assistant" ? "assistant" : "user", content: String(m?.text || "").slice(0, 4000) }));
+  if (msgs[msgs.length - 1].role !== "user" || !msgs[msgs.length - 1].content.trim()) throw new HttpsError("invalid-argument", "Frågan saknas.");
+  const house = (await db.doc(`households/${hid}`).get()).data();
+  if (!house || !(house.members || []).includes(uid)) throw new HttpsError("permission-denied", "Du hör inte till hushållet.");
+  const plus = (house.plus?.until?.toMillis?.() ?? house.plus?.until ?? 0) > Date.now();
+  if (!plus && uid !== ADMIN_UID) throw new HttpsError("permission-denied", "Fråga om bilen ingår i Bildagboken Plus.");
+
+  const usageRef = db.doc(`households/${hid}/ai/${todayStr().slice(0, 7)}`);
+  const used = await db.runTransaction(async (tx) => {
+    const n = ((await tx.get(usageRef)).data()?.chat || 0) + 1;
+    if (n > CHAT_MONTHLY_LIMIT) return n;
+    tx.set(usageRef, { chat: n, updatedAt: Date.now() }, { merge: true });
+    return n;
+  });
+  if (used > CHAT_MONTHLY_LIMIT) throw new HttpsError("resource-exhausted", `Ni har ställt ${CHAT_MONTHLY_LIMIT} frågor den här månaden. Det fylls på nästa månad.`);
+
+  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+  let res;
+  try {
+    res = await client.messages.create({
+      model: AI_MODEL,
+      max_tokens: 4000,
+      output_config: { effort: "medium" },
+      // Bilens uppgifter sparas tillfälligt hos Anthropic, så att följdfrågor i samma samtal kostar nästan inget.
+      system: [{ type: "text", text: CHAT_SYSTEM }, { type: "text", text: context, cache_control: { type: "ephemeral" } }],
+      messages: msgs,
+    });
+  } catch (e) {
+    logger.error("Claude svarade med fel", { status: e?.status, message: e?.message });
+    if (e?.status === 401 || e?.status === 403) throw new HttpsError("failed-precondition", "AI-nyckeln fungerar inte.");
+    if (e?.status === 429 || e?.status === 529) throw new HttpsError("unavailable", "AI-tjänsten är upptagen. Försök igen om en stund.");
+    throw new HttpsError("internal", "Frågan gick inte att besvara.");
+  }
+  if (res.stop_reason === "refusal") return { ok: true, answer: "Det kan jag tyvärr inte svara på. Fråga gärna något annat om bilen.", left: CHAT_MONTHLY_LIMIT - used };
+  const answer = res.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  return { ok: true, answer: answer || "Jag hittade inget svar. Försök fråga på ett annat sätt.", left: CHAT_MONTHLY_LIMIT - used };
+});
