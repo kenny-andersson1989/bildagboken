@@ -336,6 +336,7 @@ const CHAT_SYSTEM = [
   "Svara på svenska, eller på engelska om användaren skriver på engelska (då som en glad göteborgare som pratar engelska).",
   "Du kan logga en tankning åt användaren med verktyget logga_tankning. Vill användaren logga en tankning: fråga först efter det som saknas, en sak i taget och kort: var hen tankade, vad det kostade totalt och om det var full tank. Mätarställning är frivillig, så fråga inte efter den, men ta med den om användaren säger den. Datum är i dag om användaren inte säger något annat. Anropa verktyget först när du vet station, belopp och full tank, och skriv samtidigt en kort mening om att du har fyllt i det. Användaren sparar själv med en knapp i appen.",
   "Du vet var användaren är just nu om appen har fått lov (se Just nu nedan). Med verktyget sok_i_narheten hittar du närmaste mack, laddstolpe, verkstad, däckverkstad, biltvätt eller parkering, och med verktyget vader får du vädret där användaren är eller på en ort. Säg grader och vind i hela tal, avstånd i kilometer med högst en decimal, och nämn gärna halka, snö eller hård vind när det spelar roll för bilen. Appen visar knappar med vägbeskrivning till ställena du hittar, så du behöver inte läsa upp hela adresser.",
+  "Vill användaren ha en vägbeskrivning, eller säger något som \"kör mig till\" eller \"hur kommer jag till\", använd verktyget starta_vagbeskrivning med ett enda mål. Målet kan vara ett ställe du har hittat med sok_i_narheten (ta med namn, adress, lat och lon därifrån), en sparad plats som Hem eller Kontoret, adressen i en bokad tid (se Sparade platser och Bokade tider), eller en adress eller ett ställe som användaren säger (skicka det som adress, gärna med ort). Hitta inte på koordinater. Är målet oklart, fråga först. Svara sedan kort med målet och ungefär hur långt det är om du vet, och säg att användaren trycker på Starta vägbeskrivning. Appen öppnar då kartan.",
     "Glenn syns som en liten figur i appen. Är svaret goda nyheter, beröm eller något som ser bra ut, avsluta med taggen [tumme]. Skämtar du eller säger något med glimten i ögat, avsluta med [blink]. Annars ingen tagg. Högst en tagg, och inte i varje svar.",
 ].join(" ");
 
@@ -372,7 +373,7 @@ exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120,
 
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
   const convo = [...msgs];
-  let res, action = null, places = null;
+  let res, action = null, places = null, nav = null;
   try {
     // Glenn kan använda verktygen några gånger (till exempel väder och sedan en mack) innan han svarar.
     for (let round = 0; round < 4; round++) {
@@ -383,7 +384,7 @@ exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120,
         // Bilens uppgifter sparas tillfälligt hos Anthropic, så att följdfrågor i samma samtal kostar nästan inget.
         // Tid och plats ligger efter, eftersom de ändras.
         system: [{ type: "text", text: CHAT_SYSTEM }, { type: "text", text: context, cache_control: { type: "ephemeral" } }, { type: "text", text: situation }],
-        tools: [TANK_TOOL, NEARBY_TOOL, WEATHER_TOOL],
+        tools: [TANK_TOOL, NEARBY_TOOL, WEATHER_TOOL, NAV_TOOL],
         messages: convo,
       });
       if (res.stop_reason !== "tool_use") break;
@@ -394,6 +395,7 @@ exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120,
           if (b.name === "logga_tankning") { action = tankAction(b.input) || action; out = action ? "Kortet med tankningen visas nu för användaren, som sparar med en knapp." : "Uppgifterna räckte inte. Fråga efter det som saknas."; }
           else if (b.name === "sok_i_narheten") { const r = await nearby(b.input, here); if (r.places?.length) places = r.places.slice(0, 3); out = JSON.stringify(r); }
           else if (b.name === "vader") out = JSON.stringify(await weather(b.input, here));
+          else if (b.name === "starta_vagbeskrivning") { nav = navTarget(b.input) || nav; out = nav ? "Knappen Starta vägbeskrivning visas nu för användaren." : "Målet saknas. Fråga vart användaren vill åka."; }
           else out = "Okänt verktyg.";
         } catch (e) {
           logger.warn("Verktyget fungerade inte", { tool: b.name, message: e?.message });
@@ -415,8 +417,33 @@ exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120,
   // Taggen styr Glenns figur i appen (tummen upp eller blinkning) och tas bort ur texten.
   const tag = answer.match(/\[(tumme|blink)\]/i);
   answer = answer.replace(/\s*\[(tumme|blink)\]\s*/gi, " ").trim();
-  return { ok: true, answer: answer || "Jag hittade inget svar. Försök fråga på ett annat sätt.", mood: tag ? (tag[1].toLowerCase() === "tumme" ? "thumb" : "wink") : null, action, places, left: CHAT_MONTHLY_LIMIT - used };
+  if (!answer && nav) answer = `Tryck på Starta vägbeskrivning så öppnas kartan till ${nav.namn}.`;
+  return { ok: true, answer: answer || "Jag hittade inget svar. Försök fråga på ett annat sätt.", mood: tag ? (tag[1].toLowerCase() === "tumme" ? "thumb" : "wink") : null, action, places, nav, left: CHAT_MONTHLY_LIMIT - used };
 });
+
+// Vägbeskrivning: Glenn väljer ett mål, appen visar knappen Starta vägbeskrivning som öppnar kartan.
+const NAV_TOOL = {
+  name: "starta_vagbeskrivning",
+  description: "Visar knappen Starta vägbeskrivning i appen, som öppnar kartappen (Apple Kartor på iPhone) med vägen till målet. Ett mål per gång.",
+  input_schema: {
+    type: "object", additionalProperties: false, required: ["namn"],
+    properties: {
+      namn: { type: "string", description: "Vad målet heter, till exempel Circle K Mölndal, Hem eller Ikea Kungens kurva." },
+      adress: { type: "string", description: "Gatuadress och ort om du vet den, eller det användaren sa." },
+      lat: { type: "number", description: "Bara från sok_i_narheten eller de sparade uppgifterna, aldrig gissad." },
+      lon: { type: "number" },
+    },
+  },
+};
+function navTarget(i = {}) {
+  const namn = String(i.namn || "").trim().slice(0, 80);
+  const adress = String(i.adress || "").trim().slice(0, 160) || null;
+  const ok = (x, max) => Number.isFinite(x) && Math.abs(x) <= max;
+  const lat = ok(i.lat, 90) && ok(i.lon, 180) ? i.lat : null, lon = lat != null ? i.lon : null;
+  if (!namn && !adress) return null;
+  if (!adress && lat == null && !namn) return null;
+  return { namn: namn || adress, adress, lat, lon };
+}
 
 // Tankningen som Glenn har fyllt i, kontrollerad innan den skickas till appen.
 function tankAction(i = {}) {

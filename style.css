@@ -1831,3 +1831,6 @@ body.car-locked .fab { display: none; }
 [data-garage] .reg-spin { border-radius: 0; animation-timing-function: steps(4); }
 @keyframes regspin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .reg-spin { animation-duration: 2s; } }
+.glenn-card.glenn-nav { border-style: solid; }
+.glenn-nav .gc-s { margin-top: 2px; }
+.glenn-nav .btn { margin-top: 10px; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; }

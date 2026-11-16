@@ -1168,7 +1168,7 @@ function carContext(c) {
   const dl = deadlines(c);
   if (dl.length) { L.push("", "# Datum att hålla koll på"); for (const d of dl) L.push(`- ${d.title}: ${d.date instanceof Date ? ymd(d.date) : d.date || ""}${d.sub ? ` (${d.sub})` : ""}`); }
   const books = sortedBookings(c).filter((b) => b.date >= todayStr());
-  if (books.length) { L.push("", "# Bokade tider"); for (const b of books) L.push(`- ${b.date}${b.time ? ` kl ${b.time}` : ""}: ${BOOK_KINDS[b.kind] || "Bokning"}${b.place ? ` hos ${b.place}` : ""}${b.note ? `. ${b.note}` : ""}`); }
+  if (books.length) { L.push("", "# Bokade tider"); for (const b of books) L.push(`- ${b.date}${b.time ? ` kl ${b.time}` : ""}: ${BOOK_KINDS[b.kind] || "Bokning"}${b.place ? ` hos ${b.place}` : ""}${b.addr ? ` (${b.addr})` : ""}${b.note ? `. ${b.note}` : ""}`); }
   const todos = (c.todos || []).filter((t) => !t.done);
   if (todos.length) { L.push("", "# Att göra"); for (const t of todos) L.push(`- ${t.text}`); }
 
@@ -1559,6 +1559,20 @@ function tankCardHtml(m, i) {
   return `<div class="glenn-card${m.actionDone === "saved" ? " done" : ""}"><div class="gc-t">${icon("fuel", 18)} Tankning</div><div class="gc-s">${esc(sum)}</div>
     ${m.actionDone === "saved" ? `<div class="gc-ok">${icon("check", 16)} Sparad</div>` : `<div class="review-btns"><button class="btn-soft" type="button" data-act="glenn-save" data-i="${i}">Spara</button><button class="link" type="button" data-act="glenn-edit" data-i="${i}">Ändra</button></div>`}</div>`;
 }
+// Vägbeskrivning: på iPhone öppnas Apple Kartor direkt, på Android Google Maps. Länken öppnas med ett tryck,
+// eftersom telefonen inte låter en app öppna en annan av sig själv.
+const isApple = () => (NATIVE && !ANDROID) || /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent);
+function navUrl({ name, addr, lat, lon, pid }) {
+  const dest = addr ? [name && !addr.toLowerCase().includes(name.toLowerCase()) ? name : "", addr].filter(Boolean).join(", ") : lat != null ? `${lat},${lon}` : name;
+  if (isApple()) return `https://maps.apple.com/directions?${new URLSearchParams({ destination: lat != null && !addr ? `${lat},${lon}` : dest, ...(pid ? { "destination-place-id": pid } : {}), mode: "driving" }).toString().replace(/\+/g, "%20")}`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(lat != null ? `${lat},${lon}` : dest)}&travelmode=driving`;
+}
+function navCardHtml(m) {
+  const n = m.nav;
+  if (!n) return "";
+  return `<div class="glenn-card glenn-nav"><div class="gc-t">${icon("pin", 18)} ${esc(n.namn)}</div>${n.adress ? `<div class="gc-s">${esc(n.adress)}</div>` : ""}
+    <a class="btn primary block" href="${esc(navUrl({ name: n.namn, addr: n.adress, lat: n.lat, lon: n.lon }))}" target="_blank" rel="noopener">${icon("route", 18)} Starta vägbeskrivning</a></div>`;
+}
 // Ställen som Glenn hittade i närheten, med vägbeskrivning.
 function placesCardHtml(m, i) {
   if (!m.places?.length) return "";
@@ -1589,7 +1603,7 @@ function chatLogHtml(st) {
   return st.msgs.map((m, i) => {
     const bubble = `<div class="msg ${m.role === "user" ? "me" : "ai"}${m.err ? " err" : ""}"${m.err ? "" : " data-notr"}>${esc(m.text).replace(/\n/g, "<br>")}</div>`;
     if (m.role === "user") return bubble;
-    return `<div class="ai-row">${av(i)}${bubble}</div>${tankCardHtml(m, i)}${placesCardHtml(m, i)}${!m.err ? `<button class="link chat-play" type="button" data-act="chat-play" data-i="${i}">${speakerSvg} Lyssna</button>` : ""}`;
+    return `<div class="ai-row">${av(i)}${bubble}</div>${tankCardHtml(m, i)}${navCardHtml(m)}${m.nav ? "" : placesCardHtml(m, i)}${!m.err ? `<button class="link chat-play" type="button" data-act="chat-play" data-i="${i}">${speakerSvg} Lyssna</button>` : ""}`;
   }).join("")
     + (st.busy ? `<div class="ai-row">${av(null)}<div class="msg ai busy" aria-label="${esc(`${AI_NAME} tänker`)}"><span></span><span></span><span></span></div></div>` : "")
     + (st.left != null && st.left <= 5 ? `<p class="hint chat-left">${esc(`${st.left} frågor kvar den här månaden.`)}</p>` : "");
@@ -1636,7 +1650,7 @@ async function askCar(q, { voice = false } = {}) {
   let answer = null;
   try {
     const res = window.__chatMock ? await window.__chatMock(payload) : await callFn("fragaBilen", payload);
-    const m = { role: "assistant", text: res?.answer || "Jag hittade inget svar.", mood: res?.mood === "thumb" || res?.mood === "wink" ? res.mood : null, action: res?.action?.type === "tank" ? res.action : null, places: Array.isArray(res?.places) ? res.places.slice(0, 3) : null };
+    const m = { role: "assistant", text: res?.answer || "Jag hittade inget svar.", mood: res?.mood === "thumb" || res?.mood === "wink" ? res.mood : null, action: res?.action?.type === "tank" ? res.action : null, places: Array.isArray(res?.places) ? res.places.slice(0, 3) : null, nav: res?.nav?.namn ? res.nav : null };
     st.msgs.push(m);
     answer = m;
     if (m.mood) m.gestureUntil = Date.now() + 3500;
@@ -1680,7 +1694,7 @@ async function voiceLoop() {
       if (!st.voice || !ans) break;
       voiceUi("talk", ans.text);
       await sayText(ans);
-      if (ans.action) break;
+      if (ans.action || ans.nav) break;
     }
   } finally {
     if (st.voice) endVoice();
@@ -7528,7 +7542,9 @@ const ACTIONS = {
   "glenn-save"(el) { glennTank(Number(el.dataset.i), true); },
   "glenn-route"(el) {
     const p = chatState().msgs[Number(el.dataset.i)]?.places?.[Number(el.dataset.k)];
-    if (p) openMapChooser({ name: p.namn, addr: p.adress || "", lat: p.lat, lon: p.lon, directions: true });
+    if (!p) return;
+    if (isApple() || ANDROID) return void window.open(navUrl({ name: p.namn, addr: p.adress || "", lat: p.lat, lon: p.lon }), "_blank", "noopener");
+    openMapChooser({ name: p.namn, addr: p.adress || "", lat: p.lat, lon: p.lon, directions: true });
   },
   "glenn-edit"(el) { glennTank(Number(el.dataset.i), false); },
   "chat-speak"(el) {
