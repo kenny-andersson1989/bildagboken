@@ -1,6 +1,7 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Jag lyssnar … Tryck på mig när du är klar.": "I'm listening … Tap me when you're done.",
   "Glenns Garage är alltid mörkt, som en verkstad en novemberkväll.": "Glenn's Garage is always dark, like a workshop on a November evening.",
   "Bilverkstad · Göteborg": "Car workshop · Gothenburg",
   "Tjena! Ska vi kika på kärran?": "Hi there! Shall we have a look at the old girl?",
