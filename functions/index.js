@@ -778,10 +778,12 @@ function parseRegResponse(body) {
 // Spärrar så att krediterna inte tar slut i onödan:
 // - samma regnummer: svaret sparas i 30 dagar, "hittades inte" i 7 dagar (kostar inget att fråga igen)
 // - samma regnummer samtidigt (dubbeltryck): bara en fråga till tjänsten
-// - per hushåll: REGNR_PER_MONTH i månaden, per person: REGNR_PER_DAY om dagen
+// - per person: högst REGNR_PER_DAY sökningar om dagen och en sökning var REGNR_WAIT_S:e sekund (alla sökningar räknas)
+// - per hushåll: REGNR_PER_MONTH frågor till tjänsten i månaden
 // - totalt för hela appen: REGNR_TOTAL_PER_DAY om dagen, som en nödbroms
 // Varje fråga till tjänsten räknas i regstats/{månad}, som administratörssidan visar.
-const REGNR_PER_DAY = 15;
+const REGNR_PER_DAY = 5;
+const REGNR_WAIT_S = 10;
 const REGNR_TOTAL_PER_DAY = 150;
 const regInflight = new Map();
 exports.hamtaFordon = onCall({ secrets: [REGNR_USERNAME], timeoutSeconds: 30, memory: "256MiB", maxInstances: 3 }, async (req) => {
@@ -793,21 +795,33 @@ exports.hamtaFordon = onCall({ secrets: [REGNR_USERNAME], timeoutSeconds: 30, me
   if (typeof hid !== "string") throw new HttpsError("invalid-argument", "Hushållet saknas.");
   const house = (await db.doc(`households/${hid}`).get()).data();
   if (!house || !(house.members || []).includes(uid)) throw new HttpsError("permission-denied", "Du hör inte till hushållet.");
+  const isAdmin = uid === ADMIN_UID;
+  const day = todayStr();
+  // Per person: en sökning var tionde sekund och högst fem om dagen. Kontrolleras och räknas i en transaktion,
+  // så att flera tryck samtidigt inte kan slinka igenom.
+  const userRef = db.doc(`regusers/${uid}`);
+  const gate = await db.runTransaction(async (tx) => {
+    const u = (await tx.get(userRef)).data() || {};
+    const n = u.day === day ? u.n || 0 : 0;
+    const wait = Math.ceil((REGNR_WAIT_S * 1000 - (Date.now() - (u.lastAt || 0))) / 1000);
+    if (!isAdmin && wait > 0) return { ok: false, reason: "wait", wait };
+    if (!isAdmin && n >= REGNR_PER_DAY) return { ok: false, reason: "daily", left: 0 };
+    tx.set(userRef, { day, n: n + 1, lastAt: Date.now() });
+    return { ok: true, left: REGNR_PER_DAY - n - 1 };
+  });
+  if (!gate.ok) return gate;
   // Samma bil nyligen: svaret finns redan, och kostar inget.
   const cacheRef = db.doc(`regcache/${plate}`);
   const cached = (await cacheRef.get()).data();
-  if (cached?.fields?.length && cached.at > Date.now() - 30 * 864e5) return { ok: true, fields: cached.fields, cached: true };
-  if (cached?.notFound && cached.at > Date.now() - 7 * 864e5) return { ok: false, reason: "notfound", cached: true };
+  if (cached?.fields?.length && cached.at > Date.now() - 30 * 864e5) return { ok: true, fields: cached.fields, cached: true, left: gate.left };
+  if (cached?.notFound && cached.at > Date.now() - 7 * 864e5) return { ok: false, reason: "notfound", cached: true, left: gate.left };
   // Samma regnummer frågas redan just nu: vänta på det svaret.
   if (regInflight.has(plate)) return regInflight.get(plate);
-  const month = todayStr().slice(0, 7), day = todayStr();
+  const month = day.slice(0, 7);
   const statsRef = db.doc(`regstats/${month}`);
   const usageRef = db.doc(`households/${hid}/ai/${month}`);
-  const userRef = db.doc(`regusers/${uid}`);
-  const [usage, stats, userUse] = await Promise.all([usageRef.get(), statsRef.get(), userRef.get()]);
-  const isAdmin = uid === ADMIN_UID;
+  const [usage, stats] = await Promise.all([usageRef.get(), statsRef.get()]);
   if (!isAdmin && (usage.data()?.regnr || 0) >= REGNR_PER_MONTH) return { ok: false, reason: "limit" };
-  if (!isAdmin && userUse.data()?.day === day && (userUse.data()?.n || 0) >= REGNR_PER_DAY) return { ok: false, reason: "limit" };
   if ((stats.data()?.days?.[day] || 0) >= REGNR_TOTAL_PER_DAY) { logger.error("Regnummer: dagens tak för hela appen är nått", { day }); return { ok: false, reason: "busy" }; }
   const user = REGNR_USERNAME.value();
   if (!user) { logger.error("REGNR_USERNAME saknas"); return { ok: false, reason: "config" }; }
@@ -816,7 +830,6 @@ exports.hamtaFordon = onCall({ secrets: [REGNR_USERNAME], timeoutSeconds: 30, me
     await Promise.all([
       usageRef.set({ regnr: admin.firestore.FieldValue.increment(1), updatedAt: Date.now() }, { merge: true }),
       statsRef.set({ n: admin.firestore.FieldValue.increment(1), days: { [day]: admin.firestore.FieldValue.increment(1) }, updatedAt: Date.now() }, { merge: true }),
-      userRef.set(userUse.data()?.day === day ? { n: admin.firestore.FieldValue.increment(1) } : { day, n: 1 }, { merge: true }),
     ]);
     let body, status;
     try {
@@ -843,6 +856,7 @@ exports.hamtaFordon = onCall({ secrets: [REGNR_USERNAME], timeoutSeconds: 30, me
     await cacheRef.set({ fields, at: Date.now() }).catch(() => {});
     return { ok: true, fields };
   })();
+  const withLeft = job.then((r) => ({ ...r, left: gate.left }));
   regInflight.set(plate, job);
-  try { return await job; } finally { regInflight.delete(plate); }
+  try { return await withLeft; } finally { regInflight.delete(plate); }
 });
