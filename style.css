@@ -1554,10 +1554,11 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 .glenn-card.done { border-style: solid; }
 .glenn-card .gc-ok { margin-top: 6px; display: flex; align-items: center; gap: 4px; color: var(--sage); font-weight: 700; font-size: 14px; }
 
-/* Pixeltypsnittet Pixelify Sans (SIL Open Font License) ligger i appen, så att temat fungerar utan nät.
-   Det laddas bara när temat Glenns Garage används. */
-@font-face { font-family: "Pixelify Sans"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(fonts/pixelify-latin.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: "Pixelify Sans"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(fonts/pixelify-latin-ext.woff2) format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+/* Pixeltypsnittet Jersey 15 (SIL Open Font License) ligger i appen, så att Glenns teman fungerar utan nät.
+   Det har tydliga siffror (tvåan ser inte ut som en åtta) och å, ä och ö. Det är litet i sig, så det förstoras.
+   Laddas bara när ett av Glenns teman används. */
+@font-face { font-family: "Garage Pixel"; font-style: normal; font-weight: 400 800; font-display: swap; size-adjust: 122%; src: url(fonts/jersey15-latin.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Garage Pixel"; font-style: normal; font-weight: 400 800; font-display: swap; size-adjust: 122%; src: url(fonts/jersey15-latin-ext.woff2) format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 /* ===================================================================== Glenns Garage
    Tre teman i pixelstil, som Glenn: Femtiotalsmack (garage), Neonnatt (garage-neon) och Mysig verkstad (garage-cozy).
    Pixeltypsnittet bara i rubriker och skylten; vanlig text och alla siffror har appens vanliga typsnitt, så att de går
@@ -1607,10 +1608,14 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
   --g-av: #fde2cd;
   color-scheme: light;
 }
+:root[data-garage] { --f-display: "Garage Pixel", "Urbanist", system-ui, sans-serif; --f-body: "Garage Pixel", "Figtree", system-ui, sans-serif; }
+/* Pixeltypsnittet är tunnare än appens vanliga, så ingen extra fetstil som gör bokstäverna grötiga. */
+:root[data-garage] body { -webkit-font-smoothing: auto; letter-spacing: .01em; font-synthesis: none; }
+:root[data-garage] :is(input, select, textarea, button) { font-family: var(--f-body); }
 :root[data-garage] body { background-color: var(--ground); background-image: var(--g-bgimg); background-size: var(--g-bgsize); background-attachment: fixed; }
 :root[data-garage] body::after { display: none; }
-/* Pixel bara i rubriker. */
-:root[data-garage] :is(.hello h1, .card > h2, .sheet-head h2, .sheet h2:first-child) { font-family: "Pixelify Sans", var(--f-display); letter-spacing: .02em; }
+/* Rubrikerna i versaler. */
+:root[data-garage] :is(.hello h1, .card > h2, .sheet-head h2, .sheet h2:first-child) { font-family: var(--f-display); letter-spacing: .03em; }
 :root[data-garage] .card > h2 { text-transform: uppercase; letter-spacing: .05em; font-size: 16px; font-weight: 600; color: var(--g-h2); }
 :root[data-garage] :is(.card, .sheet, .nav-inner, .msg, .chat-bar, .tripbar, .toast-msg, .hero-tile, .voice) { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 :root[data-garage] :is(.card, .btn, .btn-soft, .chip-btn, .icon-btn, .seg, .seg button, .msg, .chat-bar, .pill, .new-pill, .toast-msg, .dl-ic, .hero-tile, .theme-btn, .suggest, .glenn-card, .rz-tile, .hh-ghost, .tab, .stat, .tripbar, .tb-stop, .rz-start, .rz-stop, .rz-ghost, details.more, .filters button, .review-btns button, .auto-box, .hh-invite, .car-chips button, .add, .gp-row, .garage-sign, .gs-bubble, .gs-av, .gs-av img, .voice-orb, .glenn-av) { border-radius: var(--g-r) !important; }
@@ -1642,9 +1647,9 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 .garage-sign { position: relative; margin-bottom: 14px; padding: 14px; background: var(--g-sign); color: var(--g-signink); border: 3px solid var(--g-edge); box-shadow: var(--g-sh); overflow: hidden; }
 .gs-row { display: flex; align-items: center; gap: 12px; }
 .gs-board { flex: 1; min-width: 0; }
-.gs-t { display: block; font-family: "Pixelify Sans", system-ui, sans-serif; font-weight: 700; font-size: 26px; line-height: 1.05; letter-spacing: .04em; color: var(--g-signink); text-shadow: var(--g-tsh); }
+.gs-t { display: block; font-family: "Garage Pixel", system-ui, sans-serif; font-weight: 400; font-size: 30px; line-height: 1.05; letter-spacing: .04em; color: var(--g-signink); text-shadow: var(--g-tsh); }
 :root[data-theme="garage-neon"] .gs-t { animation: neon 6s infinite steps(1); }
-.gs-s { display: block; margin-top: 6px; font-family: "Pixelify Sans", system-ui, sans-serif; font-size: 13px; color: var(--g-signsub); letter-spacing: .06em; text-transform: uppercase; }
+.gs-s { display: block; margin-top: 6px; font-family: "Garage Pixel", system-ui, sans-serif; font-size: 15px; color: var(--g-signsub); letter-spacing: .06em; text-transform: uppercase; }
 @keyframes neon { 0%, 91%, 95%, 100% { opacity: 1; } 92%, 94% { opacity: .4; } }
 .gs-av { flex: none; width: 76px; height: 76px; padding: 0; border: 3px solid var(--g-edge); background: var(--g-av); cursor: pointer; overflow: hidden; }
 .gs-av img { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
