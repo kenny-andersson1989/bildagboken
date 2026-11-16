@@ -145,7 +145,17 @@ const daysText = (d) => {
   const m = Math.round(d / 30.4);
   return m >= 18 ? `${fmt(m / 12, 1)} år` : `${m} mån`;
 };
-const icon = (name, size = 22) => `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+// I Glenns teman används symbolerna i pixelstil (px-), annars de vanliga (i-).
+const icon = (name, size = 22) => `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#${document.documentElement.dataset.garage ? "px" : "i"}-${name}"/></svg>`;
+// Symbolerna som står direkt i index.html (menyn) byts när temat byts.
+function swapIcons(root = document) {
+  const px = !!document.documentElement.dataset.garage;
+  root.querySelectorAll("use").forEach((u) => {
+    const h = u.getAttribute("href") || "";
+    if (/^#(i|px)-/.test(h)) u.setAttribute("href", h.replace(/^#(i|px)-/, px ? "#px-" : "#i-"));
+  });
+}
+swapIcons();
 const uid = () => S.user?.uid;
 const randomId = (len = 8, alphabet = "abcdefghijkmnpqrstuvwxyz23456789") => {
   const a = new Uint32Array(len);
@@ -520,6 +530,10 @@ function plusSheet() {
     ${hasPlus() ? "" : `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="plus-buy">Skaffa Plus</button>
       <p class="hint">39 kr per månad. Prova gratis i 14 dagar. Avsluta när du vill.</p></div>`}`);
 }
+// Hushållets ägare: den som betalar för Plus (plus.by, skrivs av servern vid köpet), annars den som skapade
+// hushållet. Bara ägaren kan ta bort andra (också i säkerhetsreglerna).
+const ownerUid = (h = S.house) => h?.plus?.by || h?.owner || h?.members?.[0] || null;
+const isOwner = () => ownerUid() === uid();
 const memberName = (u) => S.house?.memberInfo?.[u]?.name || "Någon";
 const whoName = (u) => (u === uid() ? "Du" : memberName(u));
 const myName = () => memberName(uid());
@@ -1508,6 +1522,33 @@ function garageSign() {
     <div class="hazard"></div>
   </div>`;
 }
+// Bilen på Översikt i pixelstil: bilden ritas i låg upplösning och förstoras med skarpa pixlar.
+function pixelCar(root) {
+  if (!isGarage()) return;
+  const draw = (src, w, h, cls, replace) => {
+    const img = new Image();
+    img.onload = () => {
+      const W = 96, H = Math.max(1, Math.round((W * (h || img.naturalHeight)) / (w || img.naturalWidth)));
+      const cv = document.createElement("canvas");
+      cv.width = W; cv.height = H; cv.className = cls + " car-px"; cv.setAttribute("aria-hidden", "true");
+      const g = cv.getContext("2d");
+      g.imageSmoothingEnabled = true;
+      g.drawImage(img, 0, 0, W, H);
+      if (document.contains(replace)) { replace.style.display = "none"; replace.insertAdjacentElement("afterend", cv); }
+    };
+    img.src = src;
+  };
+  root.querySelectorAll(".car-pick svg.car").forEach((svg) => {
+    const css = getComputedStyle(document.documentElement);
+    const vb = (svg.getAttribute("viewBox") || "0 0 320 112").split(/\s+/).map(Number);
+    const xml = svg.outerHTML.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"').replace(/var\((--[\w-]+)\)/g, (m, v) => css.getPropertyValue(v).trim() || "#777");
+    draw("data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml), vb[2], vb[3], "car", svg);
+  });
+  root.querySelectorAll(".car-pick img.car-photo").forEach((im) => {
+    const go = () => draw(im.src, im.naturalWidth, im.naturalHeight, im.className, im);
+    if (im.complete && im.naturalWidth) go(); else im.addEventListener("load", go, { once: true });
+  });
+}
 // Saker från verkstaden på korten, efter rubriken (svenska eller engelska).
 const GARAGE_DECO = [[/^(däck|tyres)/i, "tire"], [/^(underhåll|maintenance)/i, "oil"], [/^(uppgifter|details)/i, "toolbox"], [/^(på gång|coming up)/i, "cone"], [/^(att göra|to do)/i, "coffee"], [/^(sparade platser|saved places)/i, "cone"], [/^(tankningar|refuelling)/i, "oil"]];
 function garageDeco(root) {
@@ -1573,6 +1614,7 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   app.innerHTML = html;
   markRequired(app);
   garageDeco(app);
+  pixelCar(app);
   arrangeColumns();
   addHideButtons();
   if (active) {
@@ -2182,10 +2224,12 @@ function headerMain() {
 // Aviseringar och Inställningar uppe till höger, på alla flikar.
 function topActions() {
   const n = unseenFromOthers().length;
+  // Den sida man är inne på (Aviseringar eller Inställningar) är markerad.
+  const on = (v) => (S.view === v ? ` aria-current="page"` : "");
   return `<div class="top-actions">
       ${chatOn() || plusOnSale() ? `<button class="icon-btn ai-btn" type="button" data-act="chat" aria-label="Fråga Glenn">${icon("spark")}</button>` : ""}
-      <button class="icon-btn" type="button" data-go="aviseringar" aria-label="Aviseringar${n ? `, ${n} nya` : ""}">${icon("bell")}${n ? `<span class="badge">${n > 9 ? "9+" : n}</span>` : ""}</button>
-      <button class="icon-btn" type="button" data-go="installningar" aria-label="Inställningar">${icon("gear")}</button>
+      <button class="icon-btn" type="button" data-go="aviseringar"${on("aviseringar")} aria-label="Aviseringar${n ? `, ${n} nya` : ""}">${icon("bell")}${n ? `<span class="badge">${n > 9 ? "9+" : n}</span>` : ""}</button>
+      <button class="icon-btn" type="button" data-go="installningar"${on("installningar")} aria-label="Inställningar">${icon("gear")}</button>
     </div>`;
 }
 
@@ -2197,7 +2241,7 @@ function subHeader(small, title, back = false, deskTitle = null) {
   return `<header class="top${back ? " has-back" : ""}">
     ${back ? `<button class="icon-btn back-btn" type="button" data-go="${to}" aria-label="Tillbaka till ${toName}">${icon("back", 18)}</button>` : ""}
     <div class="hello"><small>${esc(small)}</small><h1>${deskTitle ? `<span class="hi-mobile">${esc(title)}</span><span class="hi-desk">${esc(deskTitle)}</span>` : esc(title)}</h1></div>
-    ${back ? "" : topActions()}
+    ${topActions()}
   </header>`;
 }
 
@@ -2313,15 +2357,19 @@ const gridPhotos = new Map();
 const photosOf = (e) => (Array.isArray(e?.photoIds) && e.photoIds.length ? e.photoIds : e?.photoId ? [e.photoId] : []);
 // Varje bild i loggen för bilen, nyast först: [post, bildens id].
 const carPhotoList = (c) => S.entries.filter((e) => e.carId === c.id && photosOf(e).length).sort((a, b) => (b.date || "").localeCompare(a.date || "")).flatMap((e) => photosOf(e).map((pid) => [e, pid]));
+// Bilderna visas åtta i taget. Den nionde rutan är en pil till nästa åtta.
+const PHOTO_PAGE = 8;
+const photoPageOf = (c) => Math.min(S.photoPage || 0, Math.max(0, Math.ceil(carPhotoList(c).length / PHOTO_PAGE) - 1));
 function photosCard(c) {
   const ents = carPhotoList(c);
   if (!ents.length) return "";
-  const shown = ents.slice(0, 24);
+  const page = photoPageOf(c), pages = Math.ceil(ents.length / PHOTO_PAGE);
+  const shown = ents.slice(page * PHOTO_PAGE, page * PHOTO_PAGE + PHOTO_PAGE);
   return `<div class="photos-part">
     <p class="label" style="margin:0 0 8px">Bilder från loggen</p>
     ${S.showPhotos ? `<div class="photo-grid">${shown.map(([e, pid]) => `<button type="button" class="pg" data-act="open-entry" data-id="${esc(e.id)}" aria-label="${esc(entryTitle(e))}, ${esc(fmtDateShort(e.date))}">
-        ${gridPhotos.get(pid) ? `<img src="${esc(gridPhotos.get(pid))}" alt="">` : `<span class="pg-wait"></span>`}<span class="pg-d"><b>${esc(photoLabel(e))}</b>${esc(fmtDateShort(e.date))}</span></button>`).join("")}</div>
-      ${ents.length > shown.length ? `<p class="hint" style="margin-top:8px">De ${shown.length} senaste av ${ents.length} bilder.</p>` : ""}
+        ${gridPhotos.get(pid) ? `<img src="${esc(gridPhotos.get(pid))}" alt="">` : `<span class="pg-wait"></span>`}<span class="pg-d"><b>${esc(photoLabel(e))}</b>${esc(fmtDateShort(e.date))}</span></button>`).join("")}${page < pages - 1 ? `<button type="button" class="pg pg-next" data-act="photo-page" data-d="1" aria-label="Nästa ${PHOTO_PAGE} bilder">${icon("next", 28)}<span>Nästa</span></button>` : ""}</div>
+      ${pages > 1 ? `<div class="pg-pages">${page > 0 ? `<button class="link" type="button" data-act="photo-page" data-d="-1">${icon("back", 14)} Föregående</button>` : "<span></span>"}<span class="hint">${esc(`Sida ${page + 1} av ${pages}`)}</span></div>` : ""}
       <button class="link" type="button" data-act="hide-photos" style="margin-top:10px">Dölj bilderna</button>`
       : `<p class="muted">Kvitton och foton från loggen, i datumordning. ${ents.length === 1 ? "1 bild" : `${ents.length} bilder`}.</p>
       <div class="ask" style="margin-top:8px"><button class="btn-soft" type="button" data-act="show-photos">${icon("image", 16)} Visa bilderna</button></div>`}
@@ -2334,7 +2382,8 @@ function photoLabel(e) {
 }
 async function loadPhotoGrid() {
   const c = car();
-  const ids = carPhotoList(c).slice(0, 24).map(([, pid]) => pid).filter((id) => !gridPhotos.has(id));
+  const page = photoPageOf(c);
+  const ids = carPhotoList(c).slice(page * PHOTO_PAGE, page * PHOTO_PAGE + PHOTO_PAGE).map(([, pid]) => pid).filter((id) => !gridPhotos.has(id));
   await Promise.all(ids.map((id) => getDoc(ref("photos", id)).then((snap) => { if (snap.exists()) gridPhotos.set(id, snap.data().data); }).catch(() => {})));
   render();
 }
@@ -2912,7 +2961,8 @@ const CARD_NAMES = { koll: "På gång", todo: "Att göra", recent: "Senaste akti
 // Korten som går att flytta, per vy. Översikt sparas under "cards" (som förut) och Bilen under "cards.bilen".
 const CARD_VIEWS = {
   oversikt: { names: CARD_NAMES, pref: "cards", title: "Översikten" },
-  bilen: { get names() { return { upp: "Uppgifter", maint: "Underhåll", dack: "Däck", media: "Bilder och dokument", book: "Servicebok" }; }, pref: "cards.bilen", title: "Bilen" },
+  bilen: { get names() { return { upp: "Uppgifter", maint: "Underhåll", dack: "Däck", media: "Bilder och dokument", book: "Servicebok", bilar: "Bilar" }; }, pref: "cards.bilen", title: "Bilen" },
+  ekonomi: { names: { month: "Kostnad per månad", year: "Hela året", rec: "Återkommande kostnader", tank: "Tankningar", facts: "Bilåret i siffror" }, pref: "cards.ekonomi", title: "Ekonomi" },
 };
 function cardPrefs(view = "oversikt") {
   const v = CARD_VIEWS[view];
@@ -3004,7 +3054,7 @@ let arranging = null;      // vilken vy som är i flyttläge
 let suppressTimer = null;
 function suppressNextClick() { suppressClick = true; clearTimeout(suppressTimer); suppressTimer = setTimeout(() => { suppressClick = false; }, 450); }
 let pressTimer = null, pressStart = null, dragCard = null, suppressClick = false;
-const ARRANGE_VIEWS = { oversikt: "view-oversikt", bilen: "view-bilen" };
+const ARRANGE_VIEWS = { oversikt: "view-oversikt", bilen: "view-bilen", ekonomi: "view-ekonomi" };
 function enterArrange(view) {
   arranging = view;
   document.body.classList.add("arranging");
@@ -3457,8 +3507,8 @@ function viewEconomy() {
   ].filter(([, n]) => n);
 
   const navBtn = (act, d, label, disabled) => `<button class="icon-btn" type="button" data-act="${act}" data-d="${d}" aria-label="${label}"${disabled ? " disabled" : ""}>${icon(d < 0 ? "back" : "next", 18)}</button>`;
-  return `${subHeader("Vad bilen kostar", "Ekonomi")}
-    <div class="card eco-month">
+  return arrangeCards(`${subHeader("Vad bilen kostar", "Ekonomi")}
+    <!--card:month--><div class="card eco-month">
       <div class="eco-nav">
         ${navBtn("eco-step", -1, "Föregående månad", sel <= firstKey)}
         <div class="eco-nav-t"><div class="label">Kostnad</div><h2>${esc(monthLabelLong(sel))}</h2></div>
@@ -3469,7 +3519,7 @@ function viewEconomy() {
         ? `<p class="muted" style="text-align:center;margin:0 0 10px">${monthList.length === 1 ? "1 post" : `${monthList.length} poster`}</p><div class="rows">${catRows(monthList, monthTotal, sel)}</div>`
         : `<p class="muted" style="text-align:center">Inga kostnader loggade i ${esc(MONTHS[Number(sel.slice(5, 7)) - 1])}.</p>`}
     </div>
-    <div class="card">
+    <!--card:year--><div class="card">
       <div class="eco-nav">
         ${navBtn("eco-year", -1, "Föregående år", year <= firstYear)}
         <div class="eco-nav-t"><div class="label">Hela året</div><h2>${year}</h2></div>
@@ -3491,13 +3541,13 @@ function viewEconomy() {
       </div>
       <p class="hint" style="margin-top:10px">Tryck på en stapel för att se den månaden. Kostnad per mil räknas på körsträckan mellan årets loggade mätarställningar.</p>
     </div>
-    ${(c.recurring || []).length ? `<div class="card"><h2>Återkommande kostnader</h2><div class="rows">${c.recurring.map((r) => {
+    <!--card:rec-->${(c.recurring || []).length ? `<div class="card"><h2>Återkommande kostnader</h2><div class="rows">${c.recurring.map((r) => {
       const ended = r.end && r.end <= todayStr();
       return `<button class="dl as-btn" type="button" data-act="open-rec" data-id="${esc(r.id)}"><span class="dl-ic">${icon("parking", 20)}</span>
         <span><span class="dl-t">${esc(r.place || "Parkering")}</span><span class="dl-s">${esc(`${fmtKr(r.amount)} kr ${PERIODS[r.period]?.toLowerCase()} · ${ended ? `slutade ${fmtDateShort(r.end)}` : `sedan ${fmtDateShort(r.start)}`}`)}</span></span>
         <span class="pill ${ended ? "none" : "ok"}">${ended ? "Avslutad" : "Pågår"}</span></button>`;
     }).join("")}</div></div>` : ""}
-    ${(() => {
+    <!--card:tank-->${(() => {
       const tanks = carEntries().filter((e) => e.type === "tank" && (e.date || "").startsWith(`${year}-`)).sort((a, b) => a.date.localeCompare(b.date));
       if (tanks.length < 2) return "";
       const paidT = tanks.filter((e) => e.amount > 0);
@@ -3516,7 +3566,7 @@ function viewEconomy() {
         ${fav ? `<div><dt>Oftast hos</dt><dd>${esc(fav[0])} (${fav[1]} gånger)</dd></div>` : ""}
       </dl></div>`;
     })()}
-    ${yearTotal || yearFacts.length ? `<div class="card">
+    <!--card:facts-->${yearTotal || yearFacts.length ? `<div class="card">
       <h2>Bilåret ${year} i siffror</h2>
       <dl class="detail-list">
         ${topCat ? `<div><dt>Mest pengar på</dt><dd>${esc(topCat[0])}, ${esc(fmtKr(topCat[1]))} kr (${Math.round((topCat[1] / yearTotal) * 100)} %)</dd></div>` : ""}
@@ -3524,7 +3574,7 @@ function viewEconomy() {
         ${yearFacts.map(([k, n]) => `<div><dt>${esc(k)}</dt><dd>${n} st</dd></div>`).join("")}
         ${prevTotal ? `<div><dt>Jämfört med ${year === new Date().getFullYear() ? `samma tid ${year - 1}` : year - 1}</dt><dd>${yearTotal >= prevTotal ? `${esc(fmtKr(yearTotal - prevTotal))} kr mer` : `${esc(fmtKr(prevTotal - yearTotal))} kr mindre`}</dd></div>` : ""}
       </dl>
-    </div>` : ""}`;
+    </div>` : ""}`, "ekonomi");
 }
 
 // Stapel som fylls på från förra bytet till nästa: tom när det är nybytt, full när det är dags.
@@ -3585,7 +3635,6 @@ function viewCar() {
   return arrangeCards(`${subHeader([c.year, c.fuel].filter(Boolean).join(" · "), carName(c), false, "Bilen")}
     <div class="car-chips" role="group" aria-label="Välj bil">
       ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon("car", 16)}${esc(carName(x))}</button>`).join("")}
-      <button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>
     </div>
     <!--card:upp--><div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
@@ -3613,6 +3662,15 @@ function viewCar() {
       <p class="muted">All service, egna jobb, däckbyten och besiktningar med datum, mätarställning och kostnad. Bra att visa en köpare eller verkstad.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="print-book">${icon("print", 16)} Dela eller spara som PDF</button>
       ${shareCardHtml(c)}</div>
+    </div>
+    <!--card:bilar--><div class="card">
+      <h2>Bilar</h2>
+      <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(carName(x))}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
+        <span class="row-actions">${x.id === S.carId ? `<span class="pill ok">Vald</span>` : `<button class="link" type="button" data-act="pick-car" data-id="${esc(x.id)}">Välj</button>`}
+        <button class="link danger" type="button" data-act="delete-car" data-id="${esc(x.id)}" aria-label="Ta bort ${esc(carName(x))}">Ta bort</button></span></div>`).join("")}</div>
+      ${limited() ? `<p class="hint plus-hint" style="margin-top:8px">${esc(`${S.cars.length} av ${FREE.cars} ${FREE.cars === 1 ? "bil" : "bilar"} i gratisversionen.`)} <button class="link" type="button" data-act="plus">Plus för fler</button></p>` : ""}
+      <div class="ask"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>
+      <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för alla ni som delar bilen. Du får frågan en gång till innan något tas bort.</p>
     </div>`, "bilen");
 }
 
@@ -3656,10 +3714,11 @@ function viewSettings() {
       <p class="label" style="margin:12px 0 2px">Ni som delar</p>
       <div class="rows">${members.map((m) => `<div class="dl"><div class="avatar${m === uid() ? " me" : ""}">${esc(memberName(m).slice(0, 1).toUpperCase())}</div><div><div class="dl-t">${m === uid()
           ? `<button class="hh-me" type="button" data-act="rename-me" aria-label="Byt ditt namn">${esc(memberName(m))} (du) <span class="hh-pen">${icon("pen", 14)}</span></button>`
-          : esc(memberName(m))}</div><div class="dl-s">${esc(S.house.memberInfo?.[m]?.email || "")}</div></div>
+          : esc(memberName(m))}${m === ownerUid() ? ` <span class="pill ok">Ägare</span>` : ""}</div><div class="dl-s">${esc(S.house.memberInfo?.[m]?.email || "")}</div></div>
         <span class="row-actions">${members.length > 1 ? (m === uid()
           ? `<button class="link danger" type="button" data-act="leave-house">Lämna</button>`
-          : `<button class="link danger" type="button" data-act="remove-member" data-id="${esc(m)}" aria-label="Ta bort ${esc(memberName(m))}">Ta bort</button>`) : ""}</span></div>`).join("")}</div>
+          : isOwner() ? `<button class="link danger" type="button" data-act="remove-member" data-id="${esc(m)}" aria-label="Ta bort ${esc(memberName(m))}">Ta bort</button>` : "") : ""}</span></div>`).join("")}</div>
+      ${members.length > 1 ? `<p class="hint" style="margin-top:6px">${esc(isOwner() ? "Du är hushållets ägare och den enda som kan ta bort andra." : `${memberName(ownerUid())} är hushållets ägare och den enda som kan ta bort andra.`)}${S.house?.plus?.by ? "" : " Den som betalar för Plus blir ägare."}</p>` : ""}
       ${membersFull() ? `<div class="hh-invite"><div class="hh-grow"><span class="label">Hushållet är fullt</span><span class="dl-s">${esc(caps() === PLUS ? `Bildagboken Plus har plats för ${PLUS.members} personer.` : `Gratisversionen har plats för ${FREE.members} personer. Med Plus kan ni vara upp till ${PLUS.members}.`)}</span></div>${caps() === PLUS ? "" : `<button class="btn-soft" type="button" data-act="plus">Läs om Plus</button>`}</div>` : `      <div class="hh-invite">
         <div class="hh-grow"><span class="label">Inbjudningskod</span><span class="hh-code" data-notr>${esc(S.house?.inviteCode || "")}</span></div>
         <button class="btn-soft" type="button" data-act="copy-invite">Kopiera länk</button>
@@ -3669,14 +3728,6 @@ function viewSettings() {
     </div>
     ${plusOnSale() ? `<div class="card plus-card"><h2>Bildagboken Plus</h2>
       <div class="rows"><button class="dl as-btn" type="button" data-act="plus"><div class="dl-ic">${icon("spark", 20)}</div><div><div class="dl-t">${hasPlus() ? esc(plusUntilText()) : limited() ? "Ni har gratisversionen" : "Ingen gräns för ert hushåll"}</div><div class="dl-s">${hasPlus() ? "Körjournal, läsning med AI, upp till 6 bilar och 6 personer. Gäller alla i hushållet." : "Körjournal, läsning med AI, fler bilar, fler i hushållet och fler bilder."}</div></div><span class="dl-v">›</span></button></div></div>` : ""}
-    <div class="card">
-      <h2>Bilar</h2>
-      <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(carName(x))}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
-        <span class="row-actions">${x.id === S.carId ? `<span class="pill ok">Vald</span>` : `<button class="link" type="button" data-act="pick-car" data-id="${esc(x.id)}">Välj</button>`}
-        <button class="link danger" type="button" data-act="delete-car" data-id="${esc(x.id)}" aria-label="Ta bort ${esc(carName(x))}">Ta bort</button></span></div>`).join("")}</div>
-      <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för alla ni som delar bilen. Du får frågan en gång till innan något tas bort.</p>
-      ${limited() ? `<p class="hint plus-hint" style="margin-top:8px">${esc(`${S.cars.length} av ${FREE.cars} ${FREE.cars === 1 ? "bil" : "bilar"} i gratisversionen.`)} <button class="link" type="button" data-act="plus">Plus för fler</button></p>` : ""}
-    </div>
     <div class="card">
       <h2>Notiser</h2>
       ${pushOn()
@@ -6226,7 +6277,7 @@ function carSheet(edit, sections = ["basic"]) {
       ${carFormFields(c, { sections, isNew: !edit })}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
-      ${edit && sections.includes("basic") ? `<p class="hint">Vill du ta bort bilen? Det gör du under Inställningar → Bilar.</p>` : ""}
+      ${edit && sections.includes("basic") ? `<p class="hint">Vill du ta bort bilen? Det gör du under Bilen → Bilar, längst ner.</p>` : ""}
     </form>`);
 }
 
@@ -6269,6 +6320,7 @@ function applyTheme() {
   const v = COLORS[color][isDarkNow() ? "dark" : "light"];
   document.documentElement.dataset.theme = v.theme;
   if (COLORS[color].garage) document.documentElement.dataset.garage = "1"; else delete document.documentElement.dataset.garage;
+  swapIcons();
   document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.content = v.sw; });
 }
 // Följer telefonen när den byter mellan ljust och mörkt (vid läget Automatiskt).
@@ -6752,7 +6804,12 @@ const ACTIONS = {
   },
   "edit-doc"(el) { const d = (car()?.docs || []).find((x) => x.id === el.dataset.id); if (d) docForm(d); },
   "hide-photos"() { S.showPhotos = false; render(); },
-  async "show-photos"() { S.showPhotos = true; render(); await loadPhotoGrid(); },
+  async "show-photos"() { S.showPhotos = true; S.photoPage = 0; render(); await loadPhotoGrid(); },
+  async "photo-page"(el) {
+    S.photoPage = Math.max(0, photoPageOf(car()) + Number(el.dataset.d));
+    render();
+    await loadPhotoGrid();
+  },
   "todo-clear"() {
     const c = car();
     const before = c.todos || [];
@@ -7082,6 +7139,7 @@ const ACTIONS = {
   },
   async "remove-member"(el) {
     const m = el.dataset.id;
+    if (!isOwner()) return showToast("Bara hushållets ägare kan ta bort andra.");
     const ok = await confirmDialog({
       title: `Ta bort ${memberName(m)}?`,
       lines: [`${memberName(m)} kommer inte längre åt bilarna och loggen. Det som redan är loggat finns kvar.`, "Inbjudningskoden byts också, så att den gamla inte går att använda igen."],
@@ -7103,7 +7161,11 @@ const ACTIONS = {
     });
     if (!ok) return;
     try {
-      await updateDoc(doc(db, "households", S.hid), { members: (S.house.members || []).filter((x) => x !== uid()) });
+      // Lämnar ägaren går ägarskapet till nästa person i hushållet (om ingen annan betalar för Plus).
+      const rest = (S.house.members || []).filter((x) => x !== uid());
+      const upd = { members: rest };
+      if (isOwner() && !S.house?.plus?.by && rest.length) upd.owner = rest[0];
+      await updateDoc(doc(db, "households", S.hid), upd);
       cleanup();
       renderOnboarding();
       showToast("Du har lämnat hushållet");
@@ -7259,6 +7321,7 @@ async function createHouse(form) {
   await setDoc(hRef, {
     name: house,
     members: [uid()],
+    owner: uid(),
     memberInfo: { [uid()]: { name, email: S.user.email || null, lastSeen: serverTimestamp() } },
     inviteCode: code,
     createdAt: serverTimestamp(),

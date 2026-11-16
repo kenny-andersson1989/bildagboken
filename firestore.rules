@@ -9,6 +9,10 @@ service cloud.firestore {
     function isAdmin() {
       return signedIn() && request.auth.uid == 'mjQJQzsMCpVURkuVSyK5ctKVhG23';
     }
+    // Hushållets ägare: den som betalar för Plus (plus.by), annars owner, annars den som skapade hushållet.
+    function ownerOf(d) {
+      return d.get('plus', {}).get('by', d.get('owner', d.members[0]));
+    }
     function memberOf(hid) {
       return signedIn()
         && request.auth.uid in get(/databases/$(database)/documents/households/$(hid)).data.members;
@@ -44,12 +48,17 @@ service cloud.firestore {
 
     match /households/{hid} {
       allow read: if (signedIn() && request.auth.uid in resource.data.members) || isAdmin();
-      allow create: if signedIn() && request.resource.data.members == [request.auth.uid] && !('plus' in request.resource.data);
+      allow create: if signedIn() && request.resource.data.members == [request.auth.uid] && !('plus' in request.resource.data)
+        && (!('owner' in request.resource.data) || request.resource.data.owner == request.auth.uid);
       allow update: if signedIn() && (
-        // Medlemmar får ändra hushållet.
-        // Plus skrivs bara av servern när någon har betalat.
+        // Medlemmar får ändra hushållet. Plus skrivs bara av servern när någon har betalat.
+        // Bara ägaren får ta bort andra och byta ägare. Andra får bara ta bort sig själva (Lämna).
         (request.auth.uid in resource.data.members && request.resource.data.members.size() > 0
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plus']))
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plus'])
+          && (ownerOf(resource.data) == request.auth.uid
+            || (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['owner'])
+              && (request.resource.data.members.toSet() == resource.data.members.toSet()
+                || resource.data.members.toSet().difference(request.resource.data.members.toSet()) == [request.auth.uid].toSet()))))
         // Den som inte är medlem får bara lägga till sig själv, och bara med en giltig inbjudningskod.
         || (
           !(request.auth.uid in resource.data.members)
