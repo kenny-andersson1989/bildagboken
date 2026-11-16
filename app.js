@@ -2205,8 +2205,8 @@ const LICENSES = { B: "B", B96: "B96", BE: "BE" };
 // Vanliga släp med ungefärliga vikter: [namn, totalvikt, tjänstevikt, egna bromsar].
 const TRAILERS = [
   ["Litet släp utan bromsar", 750, 170, false],
-  ["Släp med bromsar, 1 000 kg", 1000, 250, true],
-  ["Släp med bromsar, 1 300 kg", 1300, 300, true],
+  ["Mellanstort släp med bromsar", 1000, 250, true],
+  ["Större släp med bromsar", 1300, 300, true],
   ["Kåpsläp", 1500, 450, true],
   ["Båttrailer", 1300, 250, true],
   ["Liten husvagn", 1200, 950, true],
@@ -2221,18 +2221,19 @@ const TRAILER_PICS = {
   box: `<svg viewBox="0 0 120 64" aria-hidden="true"><path d="M2 56h116" class="tp-ground"/><path d="M4 40h18M2 38v4" class="tp-line"/><rect x="10" y="36" width="8" height="5" rx="1" class="tp-body"/><path d="M22 44V16q0-4 4-4h64q4 0 4 4v28Z" class="tp-body"/><path d="M22 22h72" class="tp-line"/><circle cx="50" cy="48" r="7" class="tp-wheel"/><circle cx="68" cy="48" r="7" class="tp-wheel"/><circle cx="50" cy="48" r="2.5" class="tp-hub"/><circle cx="68" cy="48" r="2.5" class="tp-hub"/></svg>`,
   caravan: `<svg viewBox="0 0 120 64" aria-hidden="true"><path d="M2 56h116" class="tp-ground"/><path d="M4 42h16M2 40v4" class="tp-line"/><path d="M20 44V18q0-10 12-10h66q14 0 18 14v22Z" class="tp-body"/><rect x="30" y="16" width="22" height="12" rx="3" class="tp-win"/><rect x="88" y="18" width="16" height="10" rx="3" class="tp-win"/><rect x="62" y="16" width="14" height="26" rx="2" class="tp-line-f"/><circle cx="58" cy="48" r="7" class="tp-wheel"/><circle cx="58" cy="48" r="2.5" class="tp-hub"/></svg>`,
 };
-const TRAILER_TYPES = [["small", "Litet släp", false, 500, 750], ["box", "Kåpsläp", true, 1000, 1500], ["caravan", "Husvagn", true, 1200, 1800]];
+// [bild, namn, egna bromsar, vanlig totalvikt, vanlig tjänstevikt (tomt)]
+const TRAILER_TYPES = [["small", "Litet släp", false, 750, 170], ["box", "Kåpsläp", true, 1500, 450], ["caravan", "Husvagn", true, 1500, 1200]];
 function trailerTiles(t, lic) {
-  return `<div class="tow-tiles">${TRAILER_TYPES.map(([pic, name, braked, lo, hi]) => {
+  return `<div class="tow-tiles">${TRAILER_TYPES.map(([pic, name, braked, typTotal, typCurb]) => {
     const lmax = licenseMax(t, lic);
-    const max = Math.min(trailerCarMax(t, braked), lmax ?? Infinity);
-    const cls = max >= hi ? "ok" : max >= lo ? "warn" : "bad";
-    const sub = max >= hi ? "Räcker för de flesta" : max >= lo ? "Räcker för mindre" : "För tungt för de flesta";
+    const max = Math.min(trailerCarMax(t, braked), lmax ?? Infinity); // släp + last, högst
+    const load = Math.min(max, typTotal) - typCurb;                      // last i ett vanligt sådant släp
+    const cls = max >= typTotal ? "ok" : load >= 100 ? "warn" : "bad";
+    const big = load >= 100 ? `Lasta ca ${fmt(Math.round(load / 10) * 10)} kg` : "För tungt";
     return `<div class="tow-tile ${cls}">${TRAILER_PICS[pic]}
       <b>${esc(name)}</b>
-      <span class="tt-kg">${esc(`Upp till ${fmt(max)} kg`)}</span>
-      <span class="tt-sub">${esc(sub)}</span>
-      <span class="tt-typ">${esc(`Vanligt: ${fmt(lo)}–${fmt(hi)} kg`)}</span></div>`;
+      <span class="tt-kg">${esc(big)}</span>
+      <span class="tt-typ">${esc(`Släp + last högst ${fmt(max)} kg`)}</span></div>`;
   }).join("")}</div>`;
 }
 const licenseOf = () => (LICENSES[pref.get("license")] ? pref.get("license") : "B");
@@ -2248,16 +2249,20 @@ const trailerCarMax = (t, braked) => Math.min(...[braked ? t.braked : Math.min(7
 // Släpets högsta totalvikt (enligt registreringsbeviset) för ett körkort, eller null om bilens totalvikt saknas.
 const licenseMax = (t, lic) => (lic === "BE" ? Infinity : t.total ? (lic === "B96" ? t.b96 : t.b) : null);
 // Svar för ett släp: ok (true/false/"warn") och en text.
+// Svar för ett släp: [ok (true/"warn"/false), rubrik, förklaring]. Rubriken säger hur mycket man får lasta.
+// Totalvikt = släpet och lasten tillsammans. Tjänstevikt = släpet tomt.
 function trailerVerdict(t, lic, total, curb, braked) {
+  const ca = curb ? "ca " : "";
+  const about = curb != null ? `Väger ${ca}${fmt(curb)} kg tomt och får väga ${fmt(total)} kg med last.` : `Får väga ${fmt(total)} kg med last.`;
   const lmax = licenseMax(t, lic);
   if (lmax != null && total > lmax) {
     const need = lic === "B" && t.b96 != null && total <= t.b96 ? "utökad B (B96)" : "BE";
-    return [false, `Kräver körkort ${need}.`];
+    return [false, `Kräver körkort ${need}`, `${about} Med körkort ${lic} får släpets totalvikt vara högst ${fmt(lmax)} kg.`];
   }
   const max = trailerCarMax(t, braked);
-  if (total <= max) return [true, curb != null ? `Går bra fullastat. Du får lasta ${curb ? "ungefär " : ""}${fmt(total - curb)} kg.` : "Går bra fullastat."];
-  if (curb != null && max - curb >= 100) return ["warn", `Går, men med högst ${fmt(max - curb)} kg last, eftersom släpet bara får väga ${fmt(max)} kg här.`];
-  return [false, `För tungt för bilen. Släpet får väga högst ${fmt(max)} kg med lasten.`];
+  if (total <= max) return [true, curb != null ? `Du får lasta ${ca}${fmt(total - curb)} kg` : "Går bra fullastat", about];
+  if (curb != null && max - curb >= 100) return ["warn", `Du får lasta ${ca}${fmt(max - curb)} kg`, `${about} Bakom din bil får det bara väga ${fmt(max)} kg, så du får inte fylla det helt.`];
+  return [false, "För tungt för bilen", `${about} Bakom din bil får släpet väga högst ${fmt(max)} kg med lasten.`];
 }
 const verdictIcon = (ok) => (ok === true ? icon("check", 16) : ok === "warn" ? icon("gauge", 16) : icon("close", 16));
 function trailerCard(c) {
@@ -2276,23 +2281,24 @@ function trailerCard(c) {
     <div class="seg" role="group" aria-label="Ditt körkort">${Object.keys(LICENSES).map((k) => `<button type="button" data-act="license" data-v="${k}" aria-pressed="${k === lic}">${k}</button>`).join("")}</div>
     ${trailerTiles(t, lic)}
     <div class="tow-answer">
-      <p><b>${esc(`Du får dra ett släp på upp till ${fmt(most)} kg`)}</b></p>
-      <p class="muted">${esc(`Med lasten. Ett släp utan egna bromsar högst ${fmt(trailerCarMax(t, false))} kg.`)} ${esc(limitText)}</p>
+      <p><b>${esc(`Släpet och lasten får tillsammans väga högst ${fmt(most)} kg`)}</b></p>
+      <p class="muted"><span>${esc(`Ett släp utan egna bromsar högst ${fmt(trailerCarMax(t, false))} kg.`)}</span> ${limitText ? `<span>${esc(limitText)}</span>` : ""}</p>
+      <p class="muted">Så räknar du: i släpets registreringsbevis står totalvikt (släpet med last) och tjänstevikt (släpet tomt). Skillnaden är hur mycket du får lasta.</p>
       ${t.total ? "" : `<p class="hint">Fyll i bilens totalvikt under Ändra, så räknar appen också ut vilket körkort som behövs.</p>`}
       ${t.train ? "" : `<p class="hint">Har du tågvikten (står i registreringsbeviset)? Fyll i den, så blir svaret säkrare.</p>`}
     </div>
     <p class="label" style="margin:16px 0 4px">Vanliga släp</p>
     <div class="rows tow-list">${TRAILERS.map(([name, total, curb, braked]) => {
-      const [ok, text] = trailerVerdict(t, lic, total, curb, braked);
+      const [ok, head, text] = trailerVerdict(t, lic, total, curb, braked);
       return `<div class="dl tow-row ${ok === true ? "ok" : ok === "warn" ? "warn" : "bad"}"><span class="dl-ic">${verdictIcon(ok)}</span>
-        <span><span class="dl-t">${esc(name)}</span><span class="dl-s">${esc(`Totalvikt ca ${fmt(total)} kg. ${text}`)}</span></span></div>`;
+        <span><span class="dl-t">${esc(name)}</span><span class="tow-head">${esc(head)}</span><span class="dl-s">${esc(text)}</span></span></div>`;
     }).join("")}</div>
     <p class="hint" style="margin-top:6px">Vikterna för släpen är ungefärliga. Kolla alltid släpets registreringsbevis.</p>
     <details class="more" style="margin-top:12px"><summary>Har du ett visst släp?</summary>
       <div class="form trailer-calc" style="margin-top:8px">
         <div class="row2">
-          <label class="field"><span>Släpets totalvikt (kg)</span><input id="tc-total" inputmode="numeric"></label>
-          <label class="field"><span>Tjänstevikt, valfritt (kg)</span><input id="tc-curb" inputmode="numeric"></label>
+          <label class="field"><span>Totalvikt, släp + last (kg)</span><input id="tc-total" inputmode="numeric"></label>
+          <label class="field"><span>Tjänstevikt, tomt släp (kg)</span><input id="tc-curb" inputmode="numeric"></label>
         </div>
         <div id="tc-out" aria-live="polite"><p class="hint">Vikterna står i släpets registreringsbevis.</p></div>
       </div>
@@ -2305,8 +2311,8 @@ function trailerCalc() {
   if (!out || !t) return;
   const total = num($("#tc-total").value), curb = num($("#tc-curb").value);
   if (total == null) { out.innerHTML = `<p class="hint">Vikterna står i släpets registreringsbevis.</p>`; return; }
-  const [ok, text] = trailerVerdict(t, licenseOf(), total, curb, total > 750);
-  out.innerHTML = `<div class="tc-res"><p class="${ok === true ? "ok" : ok === "warn" ? "warn" : "bad"}">${verdictIcon(ok)} ${esc(text)}</p></div>
+  const [ok, head, text] = trailerVerdict(t, licenseOf(), total, curb, total > 750);
+  out.innerHTML = `<div class="tc-res"><p class="${ok === true ? "ok" : ok === "warn" ? "warn" : "bad"}">${verdictIcon(ok)} ${esc(head)}</p><p class="tc-sub">${esc(text)}</p></div>
     <p class="hint">Räknat på vikterna ni har fyllt i. Kontrollera alltid mot bilens och släpets registreringsbevis.</p>`;
 }
 document.addEventListener("input", (ev) => { if (["tc-total", "tc-curb"].includes(ev.target.id)) trailerCalc(); });
