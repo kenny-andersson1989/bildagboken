@@ -1477,3 +1477,12 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 .review-btns .btn-soft.sug { box-shadow: inset 0 0 0 2px var(--accent); font-weight: 700; }
 .hint.sug-t { margin: 6px 0 0; }
 .gap-card { border-left: 4px solid var(--warn); }
+
+/* Bildagboken Plus: fördelarna i Plus-rutan, och en liten etikett där en Plus-funktion finns. */
+.plus-perks { display: grid; gap: 12px; margin: 14px 0 4px; }
+.plus-perk { display: flex; gap: 12px; align-items: flex-start; }
+.plus-perk b { display: block; font-size: 15px; }
+.plus-perk span:not(.dl-ic) { display: block; color: var(--ink-2); font-size: 14px; line-height: 1.4; }
+.plus-badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .02em; vertical-align: middle; }
+.plus-teaser .plus-badge { position: absolute; top: 8px; right: 8px; margin: 0; }
+.types .plus-teaser { position: relative; }

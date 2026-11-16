@@ -451,6 +451,18 @@ function limited(h = S.house) {
   const made = tsMs(h.createdAt);
   return !made || made >= Date.parse(FREE.from);
 }
+// Plus visas för alla först när det går att köpa (FREE.from är satt). Administratören ser det i testläget.
+const plusOnSale = () => !!FREE.from || !!testMode();
+// "Ni har Plus till 3 mars 2027", eller utan datum (testläget).
+const plusUntilText = () => { const u = tsMs(S.house?.plus?.until); return u > Date.now() ? `Ni har Plus till ${fmtDate(ymd(new Date(u)))}` : "Ni har Plus"; };
+// Fördelarna med Plus, i den ordning de visas överallt.
+const PLUS_PERKS = [
+  ["route", "Körjournal", "Logga tjänsteresor och privata resor. Milersättningen räknas ut, och iPhone-appen kan logga resorna själv."],
+  ["spark", "Läsning med AI", "Fota kvittot, servicefakturan eller besiktningsprotokollet, så fylls allt i åt dig."],
+  ["car", "Fler bilar", "Hela familjens bilar i samma app."],
+  ["home", "Fler i hushållet", "Bjud in alla som kör bilarna."],
+  ["image", "2 000 bilder", "Plats för kvitton, dokument och bilder på bilen."],
+];
 const photoCount = () => S.entries.reduce((a, e) => a + photosOf(e).length, 0);
 function limitSheet(kind) {
   const text = {
@@ -475,7 +487,6 @@ function plusTipCard() {
 }
 // Plus-sidan. Visas först när gränserna är påslagna (FREE.from). Köpet byggs in med RevenueCat.
 function plusSheet() {
-  const until = tsMs(S.house?.plus?.until);
   const rows = [
     ["Bilar", `${FREE.cars}`, "Obegränsat"],
     ["Personer i hushållet", `${FREE.members}`, "Obegränsat"],
@@ -484,7 +495,8 @@ function plusSheet() {
     ["Läsning med AI", "–", "Ingår"],
   ];
   openSheet("Bildagboken Plus", `
-    <p>${hasPlus() ? esc(`Ni har Plus till ${fmtDate(ymd(new Date(until)))}. Det gäller alla i hushållet.`) : "Ett köp gäller alla i hushållet. Allt ni har loggat finns kvar, vad ni än väljer."}</p>
+    <p>${hasPlus() ? esc(`${plusUntilText()}. Det gäller alla i hushållet.`) : "Ett köp gäller alla i hushållet. Allt ni har loggat finns kvar, vad ni än väljer."}</p>
+    <div class="plus-perks">${PLUS_PERKS.map(([ic, t, d]) => `<div class="plus-perk"><span class="dl-ic">${icon(ic, 20)}</span><div><b>${esc(t)}</b><span>${esc(d)}</span></div></div>`).join("")}</div>
     <table class="plus-t"><thead><tr><th></th><th>Gratis</th><th>Plus</th></tr></thead>
       <tbody>${rows.map(([a, b, c]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td><td><b>${esc(c)}</b></td></tr>`).join("")}</tbody></table>
     ${hasPlus() && !tripsVisible() ? `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="trips-on">${icon("route", 18)} Slå på körjournalen</button></div>` : ""}
@@ -2110,7 +2122,7 @@ const RECEIPT_TYPES = ["tank", "service", "eget", "dack", "tvatt", "parkering", 
 const aiOn = () => hasPlus() || (isAdmin() && !testMode());
 function receiptButton() {
   return `<label class="btn ghost block receipt-btn" id="receipt-btn">${icon(aiOn() ? "spark" : "camera", 18)} <span id="receipt-label">${aiOn() ? "Läs av med AI" : "Läs av ett kvitto"}</span>
-    <input type="file" id="ef-scan" accept="image/*" class="vh"></label>`;
+    <input type="file" id="ef-scan" accept="image/*" class="vh"></label>${!aiOn() && plusOnSale() ? `<p class="hint plus-hint" style="margin-top:6px">Med Plus fyller AI i allt från kvittot. <button class="link" type="button" data-act="plus">Läs mer</button></p>` : ""}`;
 }
 async function scanReceipt(file) {
   const label = $("#receipt-label"), btn = $("#receipt-btn");
@@ -2338,7 +2350,7 @@ function viewOverview() {
     <h2>Ekonomi <button class="link" type="button" data-go="ekonomi">Visa alla</button></h2>
     ${hasCosts ? `<div class="eco">
       <div class="stat"><div class="label">${MONTHS[new Date().getMonth()].replace(/^./, (x) => x.toUpperCase())}</div><div class="n">${fmtKr(eco.thisMonth)} <small>kr</small></div></div>
-      <div class="stat"><div class="label">Snitt per månad</div><div class="n">${(() => { const y = yearAverage(carEntries().filter((e) => e.amount > 0 && e.date), new Date().getFullYear()); return y.total ? fmtKr(y.avg) : "–"; })()} <small>kr</small></div></div>
+      <div class="stat"><div class="label">Snitt per månad</div><div class="n">${(() => { const y = yearAverage(carEntries().filter((e) => e.amount > 0 && e.date), new Date().getFullYear()); return y.total ? fmt(Math.round(y.avg)) : "–"; })()} <small>kr</small></div></div>
       <div class="bars" aria-label="Kostnad per månad de senaste sex månaderna">
         ${eco.bars.map((b) => `<div class="bar${b.now ? " now" : ""}">${b.sum ? `<b>${fmt(b.sum / 1000, 1)}k</b>` : ""}<i style="height:${Math.round((b.sum / maxBar) * 70)}%"></i><span>${b.label}</span></div>`).join("")}
       </div>
@@ -2937,7 +2949,7 @@ function viewEconomy() {
       </div>
       <div class="eco" style="margin-top:12px">
         <div class="stat"><div class="label">Totalt ${year}</div><div class="n">${fmtKr(yearTotal)} <small>kr</small></div>${delta(yearTotal, prevTotal)}</div>
-        <div class="stat"><div class="label">Snitt per månad</div><div class="n">${yearTotal ? fmtKr(yearAvg) : "–"} <small>kr</small></div></div>
+        <div class="stat"><div class="label">Snitt per månad</div><div class="n">${yearTotal ? fmt(Math.round(yearAvg)) : "–"} <small>kr</small></div></div>
         <div class="stat"><div class="label">Kostnad per mil</div><div class="n">${driven && yearTotal ? fmt(yearTotal / driven, 2) : "–"} <small>kr</small></div>${driven && prevDriven && prevTotal ? delta(yearTotal / driven, prevTotal / prevDriven) : ""}</div>
         <div class="stat"><div class="label">Körsträcka</div><div class="n">${driven != null ? fmt(driven) : "–"} <small>mil</small></div>${delta(driven, prevDriven)}</div>
       </div>
@@ -2962,7 +2974,7 @@ function viewEconomy() {
       const max = paidT.reduce((m, e) => (e.amount > (m?.amount || 0) ? e : m), null);
       return `<div class="card"><h2>Tankningar ${year}</h2><dl class="detail-list">
         <div><dt>Antal</dt><dd>${tanks.length} st</dd></div>
-        ${paidT.length ? `<div><dt>Snitt per tankning</dt><dd>${esc(fmtKr(sum / paidT.length))} kr</dd></div>` : ""}
+        ${paidT.length ? `<div><dt>Snitt per tankning</dt><dd>${esc(fmt(Math.round(sum / paidT.length)))} kr</dd></div>` : ""}
         <div><dt>Tankar ungefär</dt><dd>${gap < 1.5 ? "varje dag" : `var ${Math.round(gap)}:e dag`}</dd></div>
         ${max ? `<div><dt>Dyraste</dt><dd>${esc(fmtKr(max.amount))} kr, ${esc(fmtDateShort(max.date))}</dd></div>` : ""}
         ${fav ? `<div><dt>Oftast hos</dt><dd>${esc(fav[0])} (${fav[1]} gånger)</dd></div>` : ""}
@@ -3119,8 +3131,8 @@ function viewSettings() {
       </div>`}
       ${membersFull() ? "" : `<p class="hint" style="margin-top:8px">Den som har koden kan gå med. Byt kod om den har kommit på villovägar, då slutar den gamla att fungera.</p>`}
     </div>
-    ${FREE.from || testMode() ? `<div class="card"><h2>Bildagboken Plus</h2>
-      <div class="rows"><button class="dl as-btn" type="button" data-act="plus"><div class="dl-ic">${icon("spark", 20)}</div><div><div class="dl-t">${hasPlus() ? "Ni har Plus" : limited() ? "Gratisversionen" : "Ingen gräns för ert hushåll"}</div><div class="dl-s">${hasPlus() ? "Inga gränser för bilar, personer och bilder" : "Se vad som ingår i Plus"}</div></div></button></div></div>` : ""}
+    ${plusOnSale() ? `<div class="card plus-card"><h2>Bildagboken Plus</h2>
+      <div class="rows"><button class="dl as-btn" type="button" data-act="plus"><div class="dl-ic">${icon("spark", 20)}</div><div><div class="dl-t">${hasPlus() ? esc(plusUntilText()) : limited() ? "Ni har gratisversionen" : "Ingen gräns för ert hushåll"}</div><div class="dl-s">${hasPlus() ? "Körjournal, läsning med AI och inga gränser. Gäller alla i hushållet." : "Körjournal, läsning med AI, fler bilar, fler i hushållet och fler bilder."}</div></div><span class="dl-v">›</span></button></div></div>` : ""}
     ${tripsOn() ? `<div class="card"><h2>Körjournal</h2><p class="muted">Logga resor i tjänsten och privat, med milersättning och export. Den finns under Resor i menyn.</p>
       <div class="ask">${tripsVisible() ? `<button class="btn-soft" type="button" data-go="resor">${icon("route", 16)} Öppna Resor</button><button class="link" type="button" data-act="trips-off">Dölj fliken</button>` : `<button class="btn-soft" type="button" data-act="trips-on">${icon("route", 16)} Slå på körjournalen</button>`}</div></div>` : ""}
     <div class="card">
@@ -3527,6 +3539,7 @@ function typePicker() {
   openSheet("Vad vill du logga?", LOG_GROUPS.map(([name, keys]) => `<p class="types-head">${name}</p><div class="types">
     ${keys.map((k) => `<button type="button" data-act="new-entry" data-type="${k === "besiktning" ? "kostnad" : k}"${k === "besiktning" ? ' data-cat="Besiktning"' : ""}>${icon(typeIcon(k), 26)}${typeLabel(k)}</button>`).join("")}
   </div>`).join("") + `
+  ${!tripsOn() && plusOnSale() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="plus" class="plus-teaser">${icon("car", 26)}Resa<span class="plus-badge">Plus</span></button></div>` : ""}
   ${tripsVisible() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="trip-menu">${icon("car", 26)}${openTrip() ? "Avsluta resa" : "Resa"}</button></div>` : ""}
   <p class="types-head">Boka</p><button class="btn primary block" type="button" data-act="new-booking">${icon("calendar", 18)} Lägg in bokad tid</button>
   <p class="hint" style="margin-top:14px">Det du sparar syns direkt för alla ni som delar bilen.</p>`);

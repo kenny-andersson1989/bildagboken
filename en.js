@@ -1,6 +1,19 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Logga tjänsteresor och privata resor. Milersättningen räknas ut, och iPhone-appen kan logga resorna själv.": "Log business and private trips. The mileage allowance is calculated, and the iPhone app can log trips by itself.",
+  "Fota kvittot, servicefakturan eller besiktningsprotokollet, så fylls allt i åt dig.": "Take a photo of the receipt, service invoice or inspection report, and everything is filled in for you.",
+  "Fler bilar": "More cars",
+  "Hela familjens bilar i samma app.": "All the family's cars in one app.",
+  "Fler i hushållet": "More people in the household",
+  "Bjud in alla som kör bilarna.": "Invite everyone who drives the cars.",
+  "2 000 bilder": "2,000 photos",
+  "Plats för kvitton, dokument och bilder på bilen.": "Room for receipts, documents and photos of the car.",
+  "Ni har gratisversionen": "You have the free version",
+  "Körjournal, läsning med AI, fler bilar, fler i hushållet och fler bilder.": "Driving log, AI reading, more cars, more people and more photos.",
+  "Körjournal, läsning med AI och inga gränser. Gäller alla i hushållet.": "Driving log, AI reading and no limits. Applies to everyone in the household.",
+  "Med Plus fyller AI i allt från kvittot.": "With Plus, AI fills in everything from the receipt.",
+  "Läs mer": "Read more",
   "Ingen resa pågår just nu.": "No trip in progress right now.",
   "Sparade platser": "Saved places",
   "Resor som börjar eller slutar vid en sparad plats får platsens namn, och appen föreslår tjänst eller privat.": "Trips that start or end at a saved place get the place's name, and the app suggests business or private.",
@@ -1213,6 +1226,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Ni har Plus till (.+)$/, "You have Plus until $1"],
   [/^(\d+) luckor i körjournalen$/, "$1 gaps in the driving log"],
   [/^([\d\s ,]+) mil som inte är loggade den (.+)$/, "$1 mil not logged on $2"],
   [/^([\d\s ,]+) mil som inte är loggade mellan (.+) och (.+)$/, "$1 mil not logged between $2 and $3"],
