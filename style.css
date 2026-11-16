@@ -1505,12 +1505,36 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 @keyframes chatdot { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
 @media (prefers-reduced-motion: reduce) { .msg.busy span { animation: none; opacity: .6; } }
 .chat-left { margin: 0; text-align: center; }
-.chat-form { display: flex; gap: 8px; align-items: flex-end; }
-.chat-form textarea { flex: 1; resize: none; min-height: 46px; max-height: 140px; padding: 12px 14px; border-radius: 22px; font: inherit; font-size: 16px; }
-.chat-mic, .chat-send { flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; border: 0; cursor: pointer; }
-.chat-send { background: var(--accent); color: #fff; }
-.chat-mic { background: var(--accent-soft, rgba(231,112,38,.15)); color: var(--accent); }
-.chat-mic.on { background: var(--danger); color: #fff; }
+/* Raden längst ner, som i ChatGPT: fältet, mikrofonen och röst- eller skicka-knappen i en avlång ruta. */
+.chat-bar { display: flex; align-items: flex-end; gap: 4px; padding: 6px 6px 6px 16px; border-radius: 28px; background: var(--input); border: 1px solid var(--line); box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+.chat-bar textarea { flex: 1; resize: none; border: 0; background: transparent; outline: none; box-shadow: none; padding: 11px 0; min-height: 44px; max-height: 140px; font: inherit; font-size: 17px; line-height: 1.35; color: var(--ink); }
+.chat-bar textarea:focus { box-shadow: none; }
+.cb-mic, .cb-go { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; border: 0; cursor: pointer; background: transparent; color: var(--ink); }
+.cb-mic.on { color: #fff; background: var(--danger); animation: micpulse 1.2s infinite; }
+@keyframes micpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(200,50,40,.45); } 50% { box-shadow: 0 0 0 8px rgba(200,50,40,0); } }
+.cb-go { background: var(--accent); color: #fff; }
+.cb-go .go-send { display: none; }
+.cb-go.has-text .go-send { display: grid; }
+.cb-go.has-text .go-voice { display: none; }
+.cb-go span { display: grid; place-items: center; }
+.msg.intro { max-width: 92%; }
+.chat-play.on { color: var(--danger); }
+/* Röstläget: en stor cirkel som andas när Glenn lyssnar, snurrar när han tänker och pulserar när han pratar. */
+.chat { position: relative; }
+.voice { position: absolute; inset: -4px; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px 16px; background: var(--glass-strong); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: 18px; text-align: center; }
+.voice[hidden] { display: none; }
+.voice-orb { width: 150px; height: 150px; border-radius: 50%; border: 0; cursor: pointer; background: radial-gradient(circle at 35% 30%, #ffb27a, var(--accent) 60%, #b84a12); box-shadow: 0 10px 40px rgba(231,112,38,.35); display: grid; place-items: center; transition: transform .3s; }
+.voice-orb span { width: 40%; height: 40%; border-radius: 50%; background: rgba(255,255,255,.25); }
+.voice[data-state="listen"] .voice-orb { animation: breathe 1.6s infinite ease-in-out; }
+.voice[data-state="think"] .voice-orb { animation: think 1.2s infinite linear; }
+.voice[data-state="talk"] .voice-orb { animation: talk .5s infinite alternate ease-in-out; }
+.voice[data-state="idle"] .voice-orb { opacity: .7; }
+@keyframes breathe { 0%, 100% { transform: scale(.94); } 50% { transform: scale(1.04); } }
+@keyframes think { from { transform: rotate(0deg) scale(.9); } to { transform: rotate(360deg) scale(.9); } }
+@keyframes talk { from { transform: scale(.96); } to { transform: scale(1.08); } }
+@media (prefers-reduced-motion: reduce) { .voice-orb, .cb-mic.on { animation: none !important; } }
+.voice-state { margin: 6px 0 0; font-weight: 700; font-size: 18px; }
+.voice-text { margin: 0; color: var(--ink-2); max-width: 32ch; max-height: 30vh; overflow-y: auto; line-height: 1.45; }
 .chat-foot .check { margin: 0 0 6px; }
 .chat-foot .hint { margin: 0; }
 .chat-play { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin: -4px 0 0 6px; font-size: 14px; }

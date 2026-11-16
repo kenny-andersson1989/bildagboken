@@ -1,6 +1,22 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Fråga Glenn": "Ask Glenn",
+  "Glenn är appens AI. Skriv eller prata med honom om allt ni har loggat: kostnader, service, däck och förbrukning.": "Glenn is the app's AI. Write or talk to him about everything you have logged: costs, service, tyres and fuel use.",
+  "Fråga Glenn (AI)": "Ask Glenn (AI)",
+  "Glenn läser upp svaren": "Glenn reads the answers aloud",
+  "Prata in text": "Dictate text",
+  "Prata med Glenn": "Talk to Glenn",
+  "Jag lyssnar …": "I'm listening …",
+  "Glenn tänker …": "Glenn is thinking …",
+  "Glenn tänker": "Glenn is thinking",
+  "Glenn pratar. Tryck på cirkeln för att avbryta.": "Glenn is talking. Tap the circle to interrupt.",
+  "Tryck på cirkeln och prata.": "Tap the circle and talk.",
+  "Glenn behöver nät.": "Glenn needs a connection.",
+  "Tillåt mikrofonen och taligenkänning för Bildagboken i telefonens inställningar.": "Allow the microphone and speech recognition for Bildagboken in the phone's settings.",
+  "Prata in kräver den nya versionen av appen. Tryck på mikrofonen på tangentbordet så länge.": "Talking requires the new version of the app. Use the microphone on the keyboard for now.",
+  "Prata in fungerar inte i den här webbläsaren.": "Talking doesn't work in this browser.",
+  "Glenns röst är slut för den här månaden. Svaren läses upp med telefonens röst i stället.": "Glenn's voice is used up for this month. Answers are read with the phone's voice instead.",
   "Lyssna": "Listen",
   "Svaren läses upp när de kommer. Kontrollera att telefonen inte står på ljudlöst.": "Answers are read aloud when they arrive. Check that the phone is not on silent.",
   "Fråga om bilen": "Ask about the car",
@@ -1246,6 +1262,8 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Tjenare! Jag är Glenn\. Jag har koll på allt ni har loggat om (.+)\. Vad undrar du\?$/, "Hi there! I'm Glenn. I know everything you have logged about $1. What would you like to know?"],
+  [/^Glenn svarar utifrån det ni har loggat om (.+)\. AI kan ha fel, så kontrollera viktiga saker\.$/, "Glenn answers based on what you have logged about $1. AI can be wrong, so check important things."],
   [/^Ni har ställt (\d+) frågor den här månaden\. Det fylls på nästa månad\.$/, "You have asked $1 questions this month. More are added next month."],
   [/^Det kan jag tyvärr inte svara på\. Fråga gärna något annat om bilen\.$/, "I'm afraid I can't answer that. Feel free to ask something else about the car."],
   [/^(\d+) frågor kvar den här månaden\.$/, "$1 questions left this month."],
