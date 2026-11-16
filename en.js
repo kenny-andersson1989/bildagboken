@@ -36,6 +36,7 @@ export const EN = {
   "Motoreffekt": "Engine power",
   "Mätarställning vid besiktning": "Odometer at inspection",
   "Släpvagn": "Trailer",
+  "Starta vägbeskrivning": "Start directions",
   "Du har gjort 5 sökningar i dag. Du kan söka igen i morgon, eller fylla i uppgifterna själv.": "You have made 5 searches today. You can search again tomorrow, or fill in the details yourself.",
   "Det var din sista sökning för i dag.": "That was your last search for today.",
   "Skriv registreringsnumret och tryck på Hämta, så fylls bilens uppgifter i.": "Type the registration number and tap Fetch to fill in the car's details.",
