@@ -1636,7 +1636,7 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 :root[data-garage] .chat-bar { background: var(--input); border: 3px solid var(--g-edge); box-shadow: var(--g-sh); }
 :root[data-garage] .toast-msg { border: 3px solid var(--g-edge); box-shadow: var(--g-sh); }
 :root[data-garage] .voice-orb { border: 4px solid var(--g-edge); box-shadow: var(--g-sh); background: var(--g-av); }
-:root[data-garage] .glenn-av { border: 2px solid var(--g-edge); }
+:root[data-garage] .glenn-av { border: 0; }
 :root[data-garage] .gp-row { border: 2px solid var(--g-edge); background: var(--g-tile); }
 :root[data-garage] .glenn-card { border-color: var(--g-edge); }
 /* Neonnatt: kanterna lyser. */
@@ -1727,3 +1727,29 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 .gp-mini.g-diner { --m-bg: #bfe3d0; --m-sign: #d7263d; --m-signink: #fff8ea; --m-card: #fff8ea; --m-edge: #3a1d1d; --m-line: #d7263d; --m-nav: #fff8ea; --m-fab: #ffcf40; }
 .gp-mini.g-neon { --m-bg: #2a1446; --m-sign: #12081f; --m-signink: #ffe66b; --m-card: #3d2066; --m-edge: #ff4fd8; --m-line: #5ef2ff; --m-nav: #1a0b2e; --m-fab: #ff4fd8; }
 .gp-mini.g-cozy { --m-bg: #efe2c8; --m-sign: #5d7a3a; --m-signink: #fffaf0; --m-card: #fffaf0; --m-edge: #6b4a2b; --m-line: #5d7a3a; --m-nav: #fffaf0; --m-fab: #f2c14e; }
+
+/* Glenn med bakgrund efter vädret och kläder efter väder och högtid (glennFig i app.js).
+   Bakgrunden ligger längst bak, regn och snö framför den men bakom Glenn, och kläderna överst. */
+.gfig { position: relative; display: block; overflow: hidden; background: var(--sky) center / cover no-repeat; image-rendering: pixelated; }
+.gfig > img { position: relative; z-index: 1; display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.gfig::after { content: ""; position: absolute; inset: 0; z-index: 2; background: var(--acc, none) center / 100% 100% no-repeat; image-rendering: pixelated; pointer-events: none; }
+.gfig::before { content: ""; position: absolute; inset: -16px 0 0; z-index: 0; background: var(--fx, none) 0 0 / 24px 24px repeat; image-rendering: pixelated; pointer-events: none; }
+.gfig.fx-rain::before { animation: wx-fall .5s linear infinite; }
+.gfig.fx-snow::before { animation: wx-fall 3s linear infinite; }
+.gfig.fx-party::before { animation: wx-fall 4s linear infinite; }
+@keyframes wx-fall { from { transform: translateY(0); } to { transform: translateY(24px); } }
+@media (prefers-reduced-motion: reduce) { .gfig::before { animation: none !important; } }
+/* Hela Glenn i röstläget: överkanten syns, benen klipps. */
+.gfig.full { width: 100%; height: 100%; }
+.gfig.full > img { object-fit: cover; object-position: top center; }
+.gfig.full::after { background-size: cover; background-position: top center; }
+.voice-orb .gfig { border-radius: inherit; }
+.gfig-av { flex: none; width: 52px; height: 52px; border-radius: 50%; }
+.gfig-av .glenn-av { width: 100%; height: 100%; border-radius: 0; }
+.gs-av .gfig { width: 100%; height: 100%; }
+.gp-head .gp-fig { width: 56px; height: 56px; flex: none; border: 3px solid #0f1f45; }
+.gp-head .gp-fig img { border: 0; width: 100%; height: 100%; background: none; }
+:root[data-garage] .gfig-av { border: 2px solid var(--g-edge); }
+/* Cirkeln i röstläget krymper aldrig, så att den alltid är rund (eller kvadratisk i Glenns teman). */
+.voice-orb { flex: none; aspect-ratio: 1; height: auto; max-height: 38vh; width: auto; }
+.voice-orb { width: min(170px, 38vh); }
