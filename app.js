@@ -1094,6 +1094,21 @@ function carContext(c) {
     for (const m of months) { const mt = trips.filter((t) => t.date.startsWith(m)); L.push(`${m}: tjänst ${fmt(sumMil(mt, "tjanst"), 1)}, privat ${fmt(sumMil(mt, "privat"), 1)}`); }
   }
 
+  // Sparade platser och resorna (vart och när), så att Glenn kan svara på frågor om körningen.
+  if (S.places?.length) {
+    L.push("", "# Sparade platser");
+    for (const pl of S.places) L.push(`- ${pl.name}${pl.addr ? `, ${pl.addr}` : ""}${pl.kind ? ` (oftast ${pl.kind === "tjanst" ? "tjänst" : "privat"})` : ""}`);
+  }
+  const tripList = carTrips(c.id).filter((t) => t.date).sort((a, b) => tsMs(b.startedAt) - tsMs(a.startedAt));
+  if (tripList.length) {
+    const goals = {};
+    for (const t of tripList) if (t.to) goals[t.to] = (goals[t.to] || 0) + 1;
+    const top = Object.entries(goals).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    if (top.length) L.push("", "# Vanligaste målen i körjournalen", ...top.map(([k, n]) => `- ${k}: ${n} resor`));
+    L.push("", "# Resor (nyast först, högst 150)");
+    for (const t of tripList.slice(0, 150)) L.push([t.date, [t.from, t.to].filter(Boolean).join(" → ") || "okänd sträcka", tripMil(t) != null ? `${fmt(tripMil(t), 1)} mil` : "", t.kind ? TRIP_KINDS[t.kind] : "ej genomgången", t.purpose || "", t.driver ? `förare ${memberName(t.driver)}` : ""].filter(Boolean).join(" | "));
+  }
+
   // Hela loggen, nyast först (högst 500 rader).
   L.push("", "# Loggen (nyast först)");
   for (const e of sortEntries([...ents]).slice(0, 500)) {
@@ -1304,6 +1319,11 @@ function tankCardHtml(m, i) {
   return `<div class="glenn-card${m.actionDone === "saved" ? " done" : ""}"><div class="gc-t">${icon("fuel", 18)} Tankning</div><div class="gc-s">${esc(sum)}</div>
     ${m.actionDone === "saved" ? `<div class="gc-ok">${icon("check", 16)} Sparad</div>` : `<div class="review-btns"><button class="btn-soft" type="button" data-act="glenn-save" data-i="${i}">Spara</button><button class="link" type="button" data-act="glenn-edit" data-i="${i}">Ändra</button></div>`}</div>`;
 }
+// Ställen som Glenn hittade i närheten, med vägbeskrivning.
+function placesCardHtml(m, i) {
+  if (!m.places?.length) return "";
+  return `<div class="glenn-places">${m.places.map((p, k) => `<div class="gp-row"><div><b>${esc(p.namn || "")}</b><span>${esc([p.km != null ? `${fmt(p.km, 1)} km` : "", p.adress || "", p.oppet === "24/7" ? "Öppet dygnet runt" : ""].filter(Boolean).join(" · "))}</span></div><button class="btn-soft" type="button" data-act="glenn-route" data-i="${i}" data-k="${k}">${icon("pin", 16)} Kör dit</button></div>`).join("")}</div>`;
+}
 function glennTank(i, save) {
   const st = chatState();
   const m = st.msgs[i];
@@ -1329,7 +1349,7 @@ function chatLogHtml(st) {
   return st.msgs.map((m, i) => {
     const bubble = `<div class="msg ${m.role === "user" ? "me" : "ai"}${m.err ? " err" : ""}"${m.err ? "" : " data-notr"}>${esc(m.text).replace(/\n/g, "<br>")}</div>`;
     if (m.role === "user") return bubble;
-    return `<div class="ai-row">${av(i)}${bubble}</div>${tankCardHtml(m, i)}${!m.err ? `<button class="link chat-play" type="button" data-act="chat-play" data-i="${i}">${speakerSvg} Lyssna</button>` : ""}`;
+    return `<div class="ai-row">${av(i)}${bubble}</div>${tankCardHtml(m, i)}${placesCardHtml(m, i)}${!m.err ? `<button class="link chat-play" type="button" data-act="chat-play" data-i="${i}">${speakerSvg} Lyssna</button>` : ""}`;
   }).join("")
     + (st.busy ? `<div class="ai-row">${av(null)}<div class="msg ai busy" aria-label="${esc(`${AI_NAME} tänker`)}"><span></span><span></span><span></span></div></div>` : "")
     + (st.left != null && st.left <= 5 ? `<p class="hint chat-left">${esc(`${st.left} frågor kvar den här månaden.`)}</p>` : "");
@@ -1346,6 +1366,19 @@ function chatInputChanged() {
   i.style.height = "auto";
   i.style.height = Math.min(i.scrollHeight, 140) + "px";
 }
+// Var användaren är just nu, för Glenn (vädret och det som finns i närheten). Sparas i fem minuter.
+// Får appen inte använda platsen svarar Glenn utan den.
+let chatHere = null;
+async function hereForChat() {
+  if (window.__hereMock) return window.__hereMock;
+  if (chatHere && Date.now() - chatHere.at < 300000) return chatHere.v;
+  const loc = await Promise.race([tripPosition(), new Promise((r) => setTimeout(() => r(null), 6000))]);
+  if (!loc) return chatHere?.v || null;
+  const name = await Promise.race([reverseAddress(loc.lat, loc.lon).catch(() => ""), new Promise((r) => setTimeout(() => r(""), 3000))]);
+  const v = { lat: Math.round(loc.lat * 1e4) / 1e4, lon: Math.round(loc.lon * 1e4) / 1e4, name: name || "" };
+  chatHere = { v, at: Date.now() };
+  return v;
+}
 // Skickar frågan och ger svaret (eller null). I röstläget läses svaret upp där, inte här.
 async function askCar(q, { voice = false } = {}) {
   const st = chatState();
@@ -1355,11 +1388,12 @@ async function askCar(q, { voice = false } = {}) {
   st.msgs.push({ role: "user", text: q });
   st.busy = true;
   redrawChat();
-  const payload = { hid: S.hid, context: carContext(car()), messages: st.msgs.filter((m) => !m.err).slice(-12).map((m) => ({ role: m.role, text: m.text })) };
+  const here = await hereForChat().catch(() => null);
+  const payload = { hid: S.hid, context: carContext(car()), here, messages: st.msgs.filter((m) => !m.err).slice(-12).map((m) => ({ role: m.role, text: m.text })) };
   let answer = null;
   try {
     const res = window.__chatMock ? await window.__chatMock(payload) : await callFn("fragaBilen", payload);
-    const m = { role: "assistant", text: res?.answer || "Jag hittade inget svar.", mood: res?.mood === "thumb" || res?.mood === "wink" ? res.mood : null, action: res?.action?.type === "tank" ? res.action : null };
+    const m = { role: "assistant", text: res?.answer || "Jag hittade inget svar.", mood: res?.mood === "thumb" || res?.mood === "wink" ? res.mood : null, action: res?.action?.type === "tank" ? res.action : null, places: Array.isArray(res?.places) ? res.places.slice(0, 3) : null };
     st.msgs.push(m);
     answer = m;
     if (m.mood) m.gestureUntil = Date.now() + 3500;
@@ -6824,6 +6858,10 @@ const ACTIONS = {
   },
   "voice-end"() { endVoice(); },
   "glenn-save"(el) { glennTank(Number(el.dataset.i), true); },
+  "glenn-route"(el) {
+    const p = chatState().msgs[Number(el.dataset.i)]?.places?.[Number(el.dataset.k)];
+    if (p) openMapChooser({ name: p.namn, addr: p.adress || "", lat: p.lat, lon: p.lon, directions: true });
+  },
   "glenn-edit"(el) { glennTank(Number(el.dataset.i), false); },
   "chat-speak"(el) {
     const on = !speakOn();

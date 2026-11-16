@@ -1666,3 +1666,10 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 /* Chatten när tangentbordet är uppe: samtalet blir lägre, den lilla texten under raden göms. */
 .sheet.kb .chat-log { min-height: 80px; max-height: calc(var(--vvh, 60vh) - 190px); }
 .sheet.kb .chat-foot { display: none; }
+/* Ställen som Glenn hittade i närheten. */
+.glenn-places { align-self: stretch; margin-left: 60px; display: grid; gap: 8px; }
+.gp-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--accent-soft); }
+.gp-row b { display: block; font-size: 15px; }
+.gp-row span { display: block; color: var(--ink-2); font-size: 13px; }
+.gp-row .btn-soft { flex: none; font-size: 13px; padding: 8px 10px; }
+:root[data-theme="garage"] .gp-row { border-radius: 0; border: 2px solid var(--edge); background: #26282c; }
