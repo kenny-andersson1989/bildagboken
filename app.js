@@ -532,11 +532,8 @@ function plusSheet() {
 }
 // Hushållets ägare: den som betalar för Plus (plus.by, skrivs av servern vid köpet), annars den som skapade
 // hushållet. Bara ägaren kan ta bort andra (också i säkerhetsreglerna).
-const ownerUid = (h = S.house) => h?.plus?.by || h?.owner || h?.members?.[0] || null;
+const ownerUid = (h = S.house) => h?.owner || h?.members?.[0] || null;
 const isOwner = () => ownerUid() === uid();
-// Den som skapade hushållet. Bara den får ta bort bilar, oavsett vem som betalar för Plus.
-const creatorUid = (h = S.house) => h?.owner || h?.members?.[0] || null;
-const isCreator = () => creatorUid() === uid();
 const memberName = (u) => S.house?.memberInfo?.[u]?.name || "Någon";
 const whoName = (u) => (u === uid() ? "Du" : memberName(u));
 const myName = () => memberName(uid());
@@ -3746,10 +3743,10 @@ function viewCar() {
       <div class="ask"><button class="btn-soft" type="button" data-act="print-book">${icon("print", 16)} Dela eller spara som PDF</button>
       ${shareCardHtml(c)}</div>
     </div>
-    <!--card:end--><div class="car-danger">${isCreator()
+    <!--card:end--><div class="car-danger">${isOwner()
       ? `<button class="link danger" type="button" data-act="delete-car" data-id="${esc(c.id)}">${icon("close", 14)} ${esc(`Ta bort ${carName(c)}`)}</button>
         <p class="hint">Tar bort bilen och hela dess logg för alla i hushållet. Det går inte att ångra.</p>`
-      : `<p class="hint">${esc(`Bara ${memberName(creatorUid())}, som skapade hushållet, kan ta bort bilen.`)}</p>`}</div>`, "bilen");
+      : `<p class="hint">${esc(`Bara hushållets ägare, ${memberName(ownerUid())}, kan ta bort bilen.`)}</p>`}</div>`, "bilen");
 }
 
 function viewNotifications() {
@@ -3792,11 +3789,11 @@ function viewSettings() {
       <p class="label" style="margin:12px 0 2px">Ni som delar</p>
       <div class="rows">${members.map((m) => `<div class="dl"><div class="avatar${m === uid() ? " me" : ""}">${esc(memberName(m).slice(0, 1).toUpperCase())}</div><div><div class="dl-t">${m === uid()
           ? `<button class="hh-me" type="button" data-act="rename-me" aria-label="Byt ditt namn">${esc(memberName(m))} (du) <span class="hh-pen">${icon("pen", 14)}</span></button>`
-          : esc(memberName(m))}${m === ownerUid() ? ` <span class="pill ok">Ägare</span>` : ""}</div><div class="dl-s">${esc(S.house.memberInfo?.[m]?.email || "")}</div></div>
+          : esc(memberName(m))}${m === ownerUid() ? ` <span class="pill ok">Ägare</span>` : ""}${m === S.house?.plus?.by && hasPlus() ? ` <span class="pill">Betalar för Plus</span>` : ""}</div><div class="dl-s">${esc(S.house.memberInfo?.[m]?.email || "")}</div></div>
         <span class="row-actions">${members.length > 1 ? (m === uid()
           ? `<button class="link danger" type="button" data-act="leave-house">Lämna</button>`
           : isOwner() ? `<button class="link danger" type="button" data-act="remove-member" data-id="${esc(m)}" aria-label="Ta bort ${esc(memberName(m))}">Ta bort</button>` : "") : ""}</span></div>`).join("")}</div>
-      ${members.length > 1 ? `<p class="hint" style="margin-top:6px">${esc(isOwner() ? "Du är hushållets ägare och den enda som kan ta bort andra." : `${memberName(ownerUid())} är hushållets ägare och den enda som kan ta bort andra.`)}${S.house?.plus?.by ? "" : " Den som betalar för Plus blir ägare."}</p>` : ""}
+      ${members.length > 1 ? `<p class="hint" style="margin-top:6px">${esc(isOwner() ? "Du är hushållets ägare och den enda som kan ta bort bilar och andra personer. Lämnar du hushållet väljer du vem som tar över." : `${memberName(ownerUid())} är hushållets ägare och den enda som kan ta bort bilar och andra personer.`)}</p>` : ""}
       ${membersFull() ? `<div class="hh-invite"><div class="hh-grow"><span class="label">Hushållet är fullt</span><span class="dl-s">${esc(caps() === PLUS ? `Bildagboken Plus har plats för ${PLUS.members} personer.` : `Gratisversionen har plats för ${FREE.members} personer. Med Plus kan ni vara upp till ${PLUS.members}.`)}</span></div>${caps() === PLUS ? "" : `<button class="btn-soft" type="button" data-act="plus">Läs om Plus</button>`}</div>` : `      <div class="hh-invite">
         <div class="hh-grow"><span class="label">Inbjudningskod</span><span class="hh-code" data-notr>${esc(S.house?.inviteCode || "")}</span></div>
         <button class="btn-soft" type="button" data-act="copy-invite">Kopiera länk</button>
@@ -6502,13 +6499,17 @@ const ACTIONS = {
       }
     }
   },
-  async "delete-account"() {
+  async "delete-account"(el) {
     const others = (S.house?.members || []).filter((m) => m !== uid());
+    // Ägaren väljer först vem som tar över hushållet.
+    const next = el?.dataset?.next || "";
+    if (isOwner() && others.length && !others.includes(next)) return pickNextOwner("delete-account", others);
+    if (!sheet.hidden) closeSheet();
     const house = S.house?.name || "hushållet";
     const ok = await confirmDialog({
       title: "Radera ditt konto?",
       lines: others.length
-        ? [`Ditt konto och din inloggning tas bort, och du lämnar ${house}.`, "Det du har loggat finns kvar för de andra."]
+        ? [`Ditt konto och din inloggning tas bort, och du lämnar ${house}.`, "Det du har loggat finns kvar för de andra.", next ? `${memberName(next)} blir hushållets ägare.` : null]
         : [`Ditt konto och ${house} tas bort, med allt som är loggat: bilar, logg, bilder, dokument och delade serviceböcker.`, "Ladda gärna ner en säkerhetskopia först, under Säkerhetskopia."],
       okLabel: "Radera",
     });
@@ -6526,7 +6527,7 @@ const ACTIONS = {
     }
     showToast("Raderar …", 20000);
     try {
-      await deleteAccountData(others.length > 0);
+      await deleteAccountData(others.length > 0, next);
       await deleteUser(auth.currentUser);
     } catch (e) {
       console.error(e);
@@ -7165,7 +7166,7 @@ const ACTIONS = {
   async "delete-car"(el) {
     const c = S.cars.find((x) => x.id === el.dataset.id) || car();
     if (!c) return;
-    if (!isCreator()) return showToast("Bara den som skapade hushållet kan ta bort bilen.");
+    if (!isOwner()) return showToast("Bara hushållets ägare kan ta bort bilen.");
     const n = S.entries.filter((e) => e.carId === c.id).length;
     const ok = await confirmDialog({
       title: `Ta bort ${carName(c)}?`,
@@ -7233,18 +7234,21 @@ const ACTIONS = {
       showToast(`${memberName(m)} är borttagen`);
     } catch (e) { onWriteError(e); }
   },
-  async "leave-house"() {
+  async "leave-house"(el) {
+    const rest = (S.house.members || []).filter((x) => x !== uid());
+    // Ägaren väljer först vem som tar över.
+    let next = el?.dataset?.next || "";
+    if (isOwner() && rest.length && !rest.includes(next)) return pickNextOwner("leave-house", rest);
+    if (!sheet.hidden) closeSheet();
     const ok = await confirmDialog({
       title: "Lämna hushållet?",
-      lines: [`Du kommer inte längre åt ${S.house?.name || "hushållets"} bilar och logg. Det du har loggat finns kvar för de andra.`, "Vill du komma tillbaka behöver du en ny inbjudningskod."],
+      lines: [`Du kommer inte längre åt ${S.house?.name || "hushållets"} bilar och logg. Det du har loggat finns kvar för de andra.`, next ? `${memberName(next)} blir hushållets ägare.` : null, "Vill du komma tillbaka behöver du en ny inbjudningskod."],
       okLabel: "Lämna",
     });
     if (!ok) return;
     try {
-      // Lämnar ägaren går ägarskapet till nästa person i hushållet (om ingen annan betalar för Plus).
-      const rest = (S.house.members || []).filter((x) => x !== uid());
       const upd = { members: rest };
-      if (isOwner() && !S.house?.plus?.by && rest.length) upd.owner = rest[0];
+      if (next) upd.owner = next;
       await updateDoc(doc(db, "households", S.hid), upd);
       cleanup();
       renderOnboarding();
@@ -7441,7 +7445,13 @@ async function loadJoinInfo(code) {
 }
 
 // Raderar det som hör till kontot. Är man inte ensam lämnar man bara hushållet, annars tas hela hushållet bort.
-async function deleteAccountData(hasOthers) {
+// Ägaren som lämnar (eller raderar sitt konto) väljer vem som blir ny ägare.
+function pickNextOwner(act, rest) {
+  openSheet("Vem tar över?", `<p>Du är hushållets ägare. Välj vem som blir ägare när du lämnar. Ägaren är den enda som kan ta bort bilar och andra personer.</p>
+    <div class="rows">${rest.map((m) => `<button class="dl as-btn" type="button" data-act="${act}" data-next="${esc(m)}"><span class="dl-ic">${icon("home", 20)}</span>
+      <span><span class="dl-t">${esc(memberName(m))}</span><span class="dl-s">${esc(S.house.memberInfo?.[m]?.email || "")}</span></span><span class="dl-v">›</span></button>`).join("")}</div>`);
+}
+async function deleteAccountData(hasOthers, next = "") {
   const hid = S.hid;
   if (!hid) return;
   const myTokens = await getDocs(query(collection(db, "households", hid, "tokens"), where("uid", "==", uid()))).catch(() => null);
@@ -7451,6 +7461,7 @@ async function deleteAccountData(hasOthers) {
     await updateDoc(doc(db, "households", hid), {
       members: (S.house.members || []).filter((x) => x !== uid()),
       [`memberInfo.${uid()}`]: deleteField(),
+      ...(next ? { owner: next } : {}),
     });
     return;
   }

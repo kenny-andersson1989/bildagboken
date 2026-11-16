@@ -219,7 +219,7 @@ exports.glomdResa = onSchedule({ schedule: "every 60 minutes", timeZone: TZ }, a
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 const ADMIN_UID = "mjQJQzsMCpVURkuVSyK5ctKVhG23";
 const AI_MONTHLY_LIMIT = 60;   // läsningar av dokument per hushåll och månad
-const CHAT_MONTHLY_LIMIT = 30; // frågor om bilen per hushåll och månad
+const CHAT_MONTHLY_LIMIT = 30; // frågor till Glenn per person och månad
 // Claude Haiku 5.5: billig nog att Plus alltid täcker kostnaden, även för den som använder allt varje månad.
 const AI_MODEL = "claude-haiku-5-5";
 
@@ -353,12 +353,14 @@ exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120,
 
   const usageRef = db.doc(`households/${hid}/ai/${todayStr().slice(0, 7)}`);
   const used = await db.runTransaction(async (tx) => {
-    const n = ((await tx.get(usageRef)).data()?.chat || 0) + 1;
+    // Gränsen gäller per person, så att ingen gör slut på de andras frågor. chat är hushållets summa.
+    const d = (await tx.get(usageRef)).data() || {};
+    const n = (d.chatBy?.[uid] || 0) + 1;
     if (n > CHAT_MONTHLY_LIMIT) return n;
-    tx.set(usageRef, { chat: n, updatedAt: Date.now() }, { merge: true });
+    tx.set(usageRef, { chat: (d.chat || 0) + 1, chatBy: { [uid]: n }, updatedAt: Date.now() }, { merge: true });
     return n;
   });
-  if (used > CHAT_MONTHLY_LIMIT) throw new HttpsError("resource-exhausted", `Ni har ställt ${CHAT_MONTHLY_LIMIT} frågor den här månaden. Det fylls på nästa månad.`);
+  if (used > CHAT_MONTHLY_LIMIT) throw new HttpsError("resource-exhausted", `Du har ställt ${CHAT_MONTHLY_LIMIT} frågor den här månaden. Det fylls på nästa månad.`);
 
   // Var användaren är just nu (om appen fick lov), för vädret och för att hitta något i närheten.
   const h = req.data?.here;
