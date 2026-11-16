@@ -2522,16 +2522,25 @@ async function regLookup(box, plate, onFound) {
   const key = plateKey(plate);
   box.dataset.plate = key;
   box.innerHTML = `<div class="reg-busy" role="status"><span class="reg-spin" aria-hidden="true"></span><span>${esc(`Söker efter ${fmtPlate(key)} …`)}</span></div>`;
-  let res;
-  try {
-    res = await Promise.race([window.__regMock ? window.__regMock(key) : callFn("hamtaFordon", { hid: S.hid, plate: key }), new Promise((r) => setTimeout(() => r({ ok: false, reason: "timeout" }), 25000))]);
-  } catch { res = { ok: false, reason: "error" }; }
+  // Samma regnummer i den här sessionen: använd svaret igen. Pågår redan en sökning på numret: vänta på den.
+  let res = regMemo.get(key);
+  if (!res) {
+    let job = regPending.get(key);
+    if (!job) {
+      job = Promise.race([window.__regMock ? window.__regMock(key) : callFn("hamtaFordon", { hid: S.hid, plate: key }), new Promise((r) => setTimeout(() => r({ ok: false, reason: "timeout" }), 25000))]).catch(() => ({ ok: false, reason: "error" }));
+      regPending.set(key, job);
+    }
+    res = await job;
+    regPending.delete(key);
+    if (res?.ok || res?.reason === "notfound") regMemo.set(key, res);
+  }
   if (box.dataset.plate !== key) return; // man har hunnit skriva ett annat nummer
   if (res?.ok && res.fields?.length) return onFound(res.fields);
-  const why = { limit: "Ni har gjort många sökningar den här månaden.", notfound: `Hittade inga uppgifter om ${fmtPlate(key)}.` }[res?.reason] || "Det gick inte att hämta uppgifterna just nu.";
+  const why = { limit: "Ni har gjort många sökningar på sistone.", notfound: `Hittade inga uppgifter om ${fmtPlate(key)}.` }[res?.reason] || "Det gick inte att hämta uppgifterna just nu.";
   box.innerHTML = `<div class="reg-fail"><p>${esc(`${why} Fyll i uppgifterna själv.`)}</p></div>`;
 }
 let regTimer = null;
+const regMemo = new Map(), regPending = new Map();
 function regFormLookup(force = false) {
   const inp = $("#cf-plate"), box = $("#cf-reg-status");
   if (!inp || !box) return;
@@ -4425,7 +4434,8 @@ async function loadAdmin() {
       return { id: h.id, ...h.data(), cars: cars.docs.map((d) => ({ id: d.id, ...d.data() })), entries: ents.docs.map((d) => ({ id: d.id, ...d.data() })) };
     }));
     const errs = await getDocs(collection(db, "errors")).then((q) => q.docs.map((d) => ({ id: d.id, ...d.data() }))).catch(() => []);
-    S.adminData = { houses, errors: errs.sort((x, y) => tsMs(y.at) - tsMs(x.at)), at: Date.now() };
+    const regStats = await getDoc(doc(db, "regstats", todayStr().slice(0, 7))).then((d) => d.data() || {}).catch(() => null);
+    S.adminData = { houses, regStats, errors: errs.sort((x, y) => tsMs(y.at) - tsMs(x.at)), at: Date.now() };
   } catch (e) {
     console.error(e);
     S.adminData = { error: e.code === "permission-denied" ? "Firestore-reglerna ger inte ditt konto läsrätt till alla hushåll än. Publicera de nya reglerna och försök igen." : (e.code || e.message) };
@@ -4487,6 +4497,10 @@ function viewAdmin() {
       <div class="admin-stats">${stat("Hushåll", H.length)}${stat("Användare", users.length)}${stat("Bilar", H.reduce((x, h) => x + h.cars.length, 0))}${stat("Poster", H.reduce((x, h) => x + h.entries.length, 0))}${stat("Aktiva 7 dagar", ago(7))}${stat("Aktiva 30 dagar", ago(30))}</div>
       <p class="hint" style="margin-top:10px">Aktiv betyder att personen har öppnat appen. Hämtat ${esc(timeAgo(a.at)).toLowerCase()}.</p>
     </div>
+    ${a.regStats ? `<div class="card"><h2>Sökningar på regnummer</h2>
+      <div class="admin-stats">${stat("I dag", a.regStats.days?.[todayStr()] || 0)}${stat("Den här månaden", a.regStats.n || 0)}${stat("Kostnad i månaden (ca kr)", (a.regStats.n || 0) * 2)}</div>
+      ${a.regStats.lastError ? `<p class="err" style="margin-top:8px">${esc(`${a.regStats.lastError} (${timeAgo(a.regStats.lastErrorAt).toLowerCase()})`)}</p>` : ""}
+      <p class="hint" style="margin-top:8px">Räknar varje fråga till registreringsnummerapi.se. Samma regnummer igen inom 30 dagar kostar inget. Tak: 10 per hushåll och månad, 15 per person och dag, 150 om dagen totalt.</p></div>` : ""}
     ${adminErrorsCard(a.errors || [], users)}
     <div class="card"><h2>Funktioner</h2><p class="muted" style="margin-bottom:8px">Hur många hushåll som har använt varje funktion.</p>
       <div class="rows">${features.map(([l, v]) => `<div class="admin-feat"><span>${esc(l)}</span><span class="wear ok"><i style="width:${Math.round((v / n) * 100)}%"></i></span><b>${v} av ${H.length}</b></div>`).join("")}</div>

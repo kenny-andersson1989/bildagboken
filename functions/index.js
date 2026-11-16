@@ -775,37 +775,74 @@ function parseRegResponse(body) {
   for (const m of body.matchAll(/<([A-Za-z][\w.]*)>([^<]{1,300})<\/\1>/g)) out.push({ k: m[1], v: xmlText(m[2]).trim() });
   return out.filter((x) => x.v);
 }
+// Spärrar så att krediterna inte tar slut i onödan:
+// - samma regnummer: svaret sparas i 30 dagar, "hittades inte" i 7 dagar (kostar inget att fråga igen)
+// - samma regnummer samtidigt (dubbeltryck): bara en fråga till tjänsten
+// - per hushåll: REGNR_PER_MONTH i månaden, per person: REGNR_PER_DAY om dagen
+// - totalt för hela appen: REGNR_TOTAL_PER_DAY om dagen, som en nödbroms
+// Varje fråga till tjänsten räknas i regstats/{månad}, som administratörssidan visar.
+const REGNR_PER_DAY = 15;
+const REGNR_TOTAL_PER_DAY = 150;
+const regInflight = new Map();
 exports.hamtaFordon = onCall({ secrets: [REGNR_USERNAME], timeoutSeconds: 30, memory: "256MiB", maxInstances: 3 }, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
   const { hid } = req.data || {};
   const plate = String(req.data?.plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (!/^[A-Z0-9]{2,7}$/.test(plate)) throw new HttpsError("invalid-argument", "Registreringsnumret ser fel ut.");
+  if (!/^[A-Z]{3}[0-9]{2}[A-Z0-9]$/.test(plate) && !/^[A-Z0-9]{2,7}$/.test(plate)) throw new HttpsError("invalid-argument", "Registreringsnumret ser fel ut.");
   if (typeof hid !== "string") throw new HttpsError("invalid-argument", "Hushållet saknas.");
   const house = (await db.doc(`households/${hid}`).get()).data();
   if (!house || !(house.members || []).includes(uid)) throw new HttpsError("permission-denied", "Du hör inte till hushållet.");
   // Samma bil nyligen: svaret finns redan, och kostar inget.
   const cacheRef = db.doc(`regcache/${plate}`);
   const cached = (await cacheRef.get()).data();
-  if (cached && cached.at > Date.now() - 30 * 864e5 && cached.fields?.length) return { ok: true, fields: cached.fields, cached: true };
-  const usageRef = db.doc(`households/${hid}/ai/${todayStr().slice(0, 7)}`);
-  const used = (await usageRef.get()).data()?.regnr || 0;
-  if (used >= REGNR_PER_MONTH && uid !== ADMIN_UID) return { ok: false, reason: "limit" };
+  if (cached?.fields?.length && cached.at > Date.now() - 30 * 864e5) return { ok: true, fields: cached.fields, cached: true };
+  if (cached?.notFound && cached.at > Date.now() - 7 * 864e5) return { ok: false, reason: "notfound", cached: true };
+  // Samma regnummer frågas redan just nu: vänta på det svaret.
+  if (regInflight.has(plate)) return regInflight.get(plate);
+  const month = todayStr().slice(0, 7), day = todayStr();
+  const statsRef = db.doc(`regstats/${month}`);
+  const usageRef = db.doc(`households/${hid}/ai/${month}`);
+  const userRef = db.doc(`regusers/${uid}`);
+  const [usage, stats, userUse] = await Promise.all([usageRef.get(), statsRef.get(), userRef.get()]);
+  const isAdmin = uid === ADMIN_UID;
+  if (!isAdmin && (usage.data()?.regnr || 0) >= REGNR_PER_MONTH) return { ok: false, reason: "limit" };
+  if (!isAdmin && userUse.data()?.day === day && (userUse.data()?.n || 0) >= REGNR_PER_DAY) return { ok: false, reason: "limit" };
+  if ((stats.data()?.days?.[day] || 0) >= REGNR_TOTAL_PER_DAY) { logger.error("Regnummer: dagens tak för hela appen är nått", { day }); return { ok: false, reason: "busy" }; }
   const user = REGNR_USERNAME.value();
   if (!user) { logger.error("REGNR_USERNAME saknas"); return { ok: false, reason: "config" }; }
-  let body;
-  try {
-    const r = await fetch(`https://www.registreringsnummerapi.se/API/reg.asmx/CheckSweden?RegistrationNumber=${encodeURIComponent(plate)}&username=${encodeURIComponent(user)}`, { signal: AbortSignal.timeout(15000) });
-    body = await r.text();
-    if (!r.ok) { logger.info("Regnummer svarade med fel", { status: r.status, body: body.slice(0, 300) }); return { ok: false, reason: /credit|kredit|saldo|balance/i.test(body) ? "credits" : "notfound" }; }
-  } catch (e) {
-    logger.warn("Regnummer gick inte att nå", { message: String(e?.message || e).slice(0, 150) });
-    return { ok: false, reason: "network" };
-  }
-  await usageRef.set({ regnr: admin.firestore.FieldValue.increment(1), updatedAt: Date.now() }, { merge: true });
-  const fields = parseRegResponse(body).filter((x) => !/owner|ägare|address|adress|personnummer/i.test(x.k));
-  if (fields.length < 2) { logger.info("Regnummer utan uppgifter", { body: body.slice(0, 300) }); return { ok: false, reason: "notfound" }; }
-  await cacheRef.set({ fields, at: Date.now() }).catch(() => {});
-  logger.info("Regnummer hämtat", { keys: fields.map((x) => x.k).join(",").slice(0, 900) });
-  return { ok: true, fields };
+  const job = (async () => {
+    // Räknas innan frågan skickas, så att också misslyckade frågor räknas.
+    await Promise.all([
+      usageRef.set({ regnr: admin.firestore.FieldValue.increment(1), updatedAt: Date.now() }, { merge: true }),
+      statsRef.set({ n: admin.firestore.FieldValue.increment(1), days: { [day]: admin.firestore.FieldValue.increment(1) }, updatedAt: Date.now() }, { merge: true }),
+      userRef.set(userUse.data()?.day === day ? { n: admin.firestore.FieldValue.increment(1) } : { day, n: 1 }, { merge: true }),
+    ]);
+    let body, status;
+    try {
+      const r = await fetch(`https://www.registreringsnummerapi.se/API/reg.asmx/CheckSweden?RegistrationNumber=${encodeURIComponent(plate)}&username=${encodeURIComponent(user)}`, { signal: AbortSignal.timeout(15000) });
+      status = r.status;
+      body = await r.text();
+    } catch (e) {
+      logger.warn("Regnummer gick inte att nå", { message: String(e?.message || e).slice(0, 150) });
+      return { ok: false, reason: "network" };
+    }
+    if (status !== 200) {
+      const credits = /credit|kredit|saldo|balance|out of/i.test(body);
+      logger[credits ? "error" : "info"]("Regnummer svarade med fel", { status, body: body.slice(0, 300) });
+      if (credits) { await statsRef.set({ lastError: "Krediterna är slut", lastErrorAt: Date.now() }, { merge: true }); return { ok: false, reason: "credits" }; }
+      await cacheRef.set({ notFound: true, at: Date.now() }).catch(() => {});
+      return { ok: false, reason: "notfound" };
+    }
+    const fields = parseRegResponse(body).filter((x) => !/owner|ägare|address|adress|personnummer/i.test(x.k));
+    if (fields.length < 2) {
+      logger.info("Regnummer utan uppgifter", { body: body.slice(0, 300) });
+      await cacheRef.set({ notFound: true, at: Date.now() }).catch(() => {});
+      return { ok: false, reason: "notfound" };
+    }
+    await cacheRef.set({ fields, at: Date.now() }).catch(() => {});
+    return { ok: true, fields };
+  })();
+  regInflight.set(plate, job);
+  try { return await job; } finally { regInflight.delete(plate); }
 });
