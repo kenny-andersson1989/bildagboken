@@ -2092,7 +2092,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       <label for="cf-plate">Registreringsnummer</label>
       <span class="geo-row"><input name="plate" id="cf-plate" value="${esc(c.plate || "")}" placeholder="ABC 123" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="8">
         <button class="btn-soft" type="button" data-act="reg-lookup">${icon("search", 16)} Hämta</button></span>
-      <div id="cf-reg-status" class="reg-status" aria-live="polite"><small>Skriv registreringsnumret, så hämtar appen bilens uppgifter.</small></div>
+      <div id="cf-reg-status" class="reg-status" aria-live="polite"><small>Skriv registreringsnumret, så kan du hämta bilens uppgifter gratis från Transportstyrelsen. Eller fyll i dem själv nedan.</small></div>
       <input type="hidden" name="regJson" id="cf-regJson">
     </div>` : ""}
     <div class="row2">
@@ -2188,10 +2188,10 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
 }
 
 /* ------------------------------------------- uppgifter från registret */
-// Bilens uppgifter från registreringsnumret. Appen försöker först själv (funktionen hamtaFordon läser
-// Transportstyrelsens publika sida). Går det inte kan man öppna sidan, kopiera texten och klistra in den här,
-// eller fylla i själv. Uppgifterna sparas på bilen som reg = { f: [{ k, v }], at, src }.
-const TS_PAGE = (plate) => `https://fordon-fu-regnr.transportstyrelsen.se/UppgifterAnnatFordon/TillbakaTillFordonsuppgifter?Registreringsnummer=${encodeURIComponent(plateKey(plate))}`;
+// Bilens uppgifter från Transportstyrelsen: man söker på deras sida, kopierar texten och klistrar in den här,
+// eller fyller i själv. Uppgifterna sparas på bilen som reg = { f: [{ k, v }], at, src }.
+// Startsidan för sökningen. Numret går inte att skicka med, man skriver in det där.
+const TS_PAGE = () => "https://fordon-fu-regnr.transportstyrelsen.se/";
 const plateKey = (p) => String(p || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 const plateOk = (p) => /^[A-Z]{3}[0-9]{2}[A-Z0-9]$/.test(plateKey(p));
 const fmtPlate = (p) => (plateOk(p) ? `${plateKey(p).slice(0, 3)} ${plateKey(p).slice(3)}` : String(p || "").toUpperCase().trim());
@@ -2294,27 +2294,15 @@ function regToCar(f) {
 }
 const regOk = (f) => Array.isArray(f) && f.length >= 3 && !!(regVal(f, /^fabrikat/, /^märke$/, /^handelsbeteckning/) || regVal(f, /^besikt/));
 
-// Söker automatiskt och visar en laddningssymbol i box. Lyckas det: onFields(fields, "auto"). Annars en ruta
-// där man kan öppna Transportstyrelsen och klistra in texten, eller fylla i själv.
-async function regLookup(box, plate, onFields, { manualHint = "Fyll i uppgifterna själv nedan, eller hämta dem från Transportstyrelsen:" } = {}) {
+// Transportstyrelsen har en robotkontroll på sin sökning, så appen kan inte hämta uppgifterna själv.
+// I stället söker man på deras sida, kopierar allt och klistrar in det här. Texten läses i telefonen.
+function regPasteBox(box, plate, onFields, intro) {
   const key = plateKey(plate);
   box.dataset.plate = key;
-  box.innerHTML = `<div class="reg-busy" role="status"><span class="reg-spin" aria-hidden="true"></span><span>${esc(`Söker efter ${fmtPlate(key)} hos Transportstyrelsen …`)}</span></div>`;
-  let res = null;
-  try {
-    res = await Promise.race([window.__regMock ? window.__regMock(key) : callFn("hamtaFordon", { plate: key }), new Promise((r) => setTimeout(() => r({ ok: false, reason: "timeout" }), 20000))]);
-  } catch { res = { ok: false, reason: "error" }; }
-  if (box.dataset.plate !== key) return; // man har hunnit skriva ett annat nummer
-  const fields = res?.ok ? (res.fields || []).map(([k, v]) => ({ k: String(k), v: String(v) })).filter((x) => !OWNER_LABEL.test(x.k)) : null;
-  if (fields && regOk(fields)) return onFields(fields, "auto");
-  regFallback(box, key, onFields, res?.reason === "limit" ? "Du har sökt många gånger i dag. Fyll i själv nedan, eller hämta uppgifterna från Transportstyrelsen:" : `Det gick inte att hämta uppgifterna automatiskt. ${manualHint}`);
-}
-function regFallback(box, key, onFields, text) {
   box.innerHTML = `<div class="reg-fail">
-    <p>${esc(text)}</p>
-    <ol class="steps"><li>Öppna Transportstyrelsen och sök på bilen.</li><li>Markera all text på sidan och kopiera den.</li><li>Klistra in den i rutan här under.</li></ol>
-    <div class="ask"><a class="btn-soft" href="${esc(TS_PAGE(key))}" target="_blank" rel="noopener">${icon("search", 16)} Öppna Transportstyrelsen</a>
-      <button class="hh-ghost" type="button" data-act="reg-retry">Försök igen</button></div>
+    <p><b>${esc(intro)}</b></p>
+    <ol class="steps"><li>${esc(`Tryck på Öppna Transportstyrelsen och sök på ${fmtPlate(key)}.`)}</li><li>Markera all text på sidan och kopiera den.</li><li>Kom tillbaka hit och klistra in den i rutan.</li></ol>
+    <div class="ask"><a class="btn-soft" href="${esc(TS_PAGE(key))}" target="_blank" rel="noopener">${icon("search", 16)} Öppna Transportstyrelsen</a></div>
     <textarea class="reg-paste" rows="3" placeholder="Klistra in texten från Transportstyrelsen här" aria-label="Klistra in texten från Transportstyrelsen"></textarea>
     <p class="err reg-paste-err" hidden>Hittade inga uppgifter om bilen i texten. Kopiera hela sidan med uppgifterna och försök igen.</p>
   </div>`;
@@ -2328,18 +2316,21 @@ document.addEventListener("input", (ev) => {
   if (!regOk(f)) { if (errEl) errEl.hidden = ev.target.value.trim().length < 20; return; }
   const want = plateKey(box.dataset.plate), got = plateKey(regVal(f, /^registreringsnummer/));
   if (want && got && want !== got) { if (errEl) { errEl.textContent = `Texten gäller ${fmtPlate(got)}, inte ${fmtPlate(want)}.`; errEl.hidden = false; } return; }
-  box._onFields?.(f, "paste");
+  // En kort laddningssymbol medan texten läses, så att man ser att något händer.
+  const cb = box._onFields;
+  box.innerHTML = `<div class="reg-busy" role="status"><span class="reg-spin" aria-hidden="true"></span><span>Läser uppgifterna …</span></div>`;
+  setTimeout(() => cb?.(f, "paste"), 600);
 });
 
-// Nytt bil-formulär: när registreringsnumret är ifyllt söker appen själv, och fyller i det den hittar.
+// Nytt bil-formulär: när registreringsnumret är ifyllt visas hur man hämtar uppgifterna, och det som klistras in fylls i.
 let regTimer = null;
 function regFormLookup(force = false) {
   const inp = $("#cf-plate"), box = $("#cf-reg-status");
   if (!inp || !box) return;
   const key = plateKey(inp.value);
-  if (!plateOk(key)) { box.dataset.plate = ""; box.innerHTML = `<small>Skriv registreringsnumret, så hämtar appen bilens uppgifter.</small>`; return; }
+  if (!plateOk(key)) { box.dataset.plate = ""; box.innerHTML = `<small>Skriv registreringsnumret, så kan du hämta bilens uppgifter gratis från Transportstyrelsen. Eller fyll i dem själv nedan.</small>`; return; }
   if (!force && box.dataset.plate === key) return;
-  regLookup(box, key, (f, src) => regFillForm(f, src), { manualHint: "Fyll i uppgifterna själv nedan, eller hämta dem från Transportstyrelsen:" });
+  regPasteBox(box, key, (f, src) => regFillForm(f, src), "Hämta bilens uppgifter gratis från Transportstyrelsen, eller fyll i dem själv nedan.");
 }
 document.addEventListener("input", (ev) => {
   if (ev.target.id !== "cf-plate") return;
@@ -2415,8 +2406,7 @@ function regRefreshSheet(c) {
       render();
     } catch (e) { onWriteError(e); }
   };
-  box._save = save;
-  regLookup(box, c.plate, save, { manualHint: "Hämta dem från Transportstyrelsen i stället:" });
+  regPasteBox(box, c.plate, save, `Hämta uppgifterna för ${fmtPlate(c.plate)} från Transportstyrelsen. Det är gratis.`);
 }
 
 // Släpvagn: vad bilen får dra, enligt registret, och en räknare för ett visst släp.
@@ -7530,11 +7520,6 @@ const ACTIONS = {
   },
   "reg-lookup"() { regFormLookup(true); },
   "reg-refresh"() { const c = car(); if (!c?.plate) return showToast("Fyll i registreringsnumret först, under Uppgifter."); regRefreshSheet(c); },
-  "reg-retry"(el) {
-    const box = el.closest("[data-plate]");
-    if (box?.id === "cf-reg-status") return regFormLookup(true);
-    if (box?._save) regLookup(box, box.dataset.plate, box._save, { manualHint: "Hämta dem från Transportstyrelsen i stället:" });
-  },
   "car-switch"() {
     openSheet("Byt bil", `<div class="rows car-switch">${S.cars.map((x) => `<button class="dl as-btn" type="button" data-act="pick-car" data-id="${esc(x.id)}"><span class="dl-ic">${icon("car", 20)}</span>
       <span><span class="dl-t">${esc(carName(x))}</span><span class="dl-s">${esc([x.year, x.plate, carLocked(x) ? "Låst utan Plus" : ""].filter(Boolean).join(" · "))}</span></span>${x.id === S.carId ? `<span class="pill ok">Vald</span>` : carLocked(x) ? icon("lock", 18) : "<span></span>"}</button>`).join("")}</div>
