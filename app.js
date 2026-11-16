@@ -2207,13 +2207,13 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
   const head = (k) => (sections.length > 1 ? `<p class="section-t">${CAR_SECTIONS[k]}</p>` : "");
   const parts = {};
   parts.basic = `
-    ${isNew ? `<div class="field reg-look">
+    <div class="field reg-look">
       <label for="cf-plate">Registreringsnummer</label>
       <span class="geo-row"><input name="plate" id="cf-plate" value="${esc(c.plate || "")}" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="8">
         <button class="btn-soft" type="button" data-act="reg-lookup">${icon("search", 16)} Hämta</button></span>
-      <div id="cf-reg-status" class="reg-status" aria-live="polite"><small>Skriv registreringsnumret, så hämtar appen bilens uppgifter.</small></div>
+      <div id="cf-reg-status" class="reg-status" aria-live="polite"${isNew ? "" : ` data-plate="${esc(plateKey(c.plate))}"`}><small>${isNew ? "Skriv registreringsnumret, så hämtar appen bilens uppgifter." : "Tryck på Hämta för att fylla i uppgifterna från registret igen."}</small></div>
       <input type="hidden" name="regJson" id="cf-regJson">
-    </div>` : ""}
+    </div>
     <div class="row2">
       ${inp("make", "Märke", c.make, 'required list="dl-make" autocomplete="off"')}
       ${inp("model", "Modell", c.model, 'required list="dl-model" autocomplete="off"')}
@@ -2225,10 +2225,15 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       ${inp("engine", "Motor", c.engine, '')}
     </div>
     <label class="field"><span>Drivmedel</span>${sel("fuel", FUELS, c.fuel || "Bensin")}</label>
-    ${isNew ? inp("color", "Färg", c.color, '') : `<div class="row2">
+    <div class="row2">
       ${inp("color", "Färg", c.color, '')}
-      ${inp("plate", "Registreringsnummer", c.plate, 'autocapitalize="characters"')}
-    </div>`}
+      ${inp("bodyStyle", "Kaross", c.bodyStyle, 'autocomplete="off"')}
+    </div>
+    <div class="row2">
+      ${inp("seats", "Antal säten", c.seats, 'inputmode="numeric" autocomplete="off"')}
+      ${inp("co2", "Koldioxid (g/km)", c.co2, 'inputmode="numeric" autocomplete="off"')}
+    </div>
+    ${inp("firstReg", "I trafik sedan", c.firstReg, 'type="date"')}
     <label class="field"><span>Chassinummer (VIN)</span>
       <span class="geo-row"><input name="vin" id="cf-vin" value="${esc(c.vin || "")}" placeholder="17 tecken, valfritt" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="24">
       <label class="geo-btn" id="cf-vin-scan" aria-label="Läs av chassinumret med kameran" title="Läs av med kameran">${icon("camera", 20)}<input type="file" id="cf-vin-file" accept="image/*" class="vh"></label></span>
@@ -2531,7 +2536,11 @@ function regFormLookup(force = false) {
   const inp = $("#cf-plate"), box = $("#cf-reg-status");
   if (!inp || !box) return;
   const key = plateKey(inp.value);
-  if (!plateOk(key)) { if (!force) { box.dataset.plate = ""; box.innerHTML = `<small>Skriv registreringsnumret, så hämtar appen bilens uppgifter.</small>`; } return; }
+  if (!plateOk(key)) {
+    if (force) { box.dataset.plate = ""; box.innerHTML = `<div class="reg-fail"><p>Skriv ett registreringsnummer, till exempel ABC 123.</p></div>`; }
+    else { box.dataset.plate = ""; box.innerHTML = `<small>Skriv registreringsnumret, så hämtar appen bilens uppgifter.</small>`; }
+    return;
+  }
   if (!force && box.dataset.plate === key) return;
   regLookup(box, key, regFillForm);
 }
@@ -2552,7 +2561,7 @@ function regFillForm(f) {
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
   };
-  ["make", "model", "year", "engine", "color", "vin", "fuel"].forEach((k) => set(k, d[k]));
+  ["make", "model", "year", "engine", "color", "vin", "fuel", "bodyStyle", "seats", "co2", "firstReg", "gearbox"].forEach((k) => set(k, d[k]));
   if (d.lastInspection) set("lastInspection", d.lastInspection.slice(0, 7));
   form.elements.namedItem("regJson").value = JSON.stringify(f);
   updateInspectionEstimate();
@@ -6872,6 +6881,7 @@ function readCarForm(form) {
       make: str("make"), model: str("model"), year: str("year") || null, engine: str("engine") || null,
       fuel: str("fuel"), color: str("color") || null, plate: (plateOk(str("plate")) ? fmtPlate(str("plate")) : str("plate").toUpperCase()) || null,
       vin: cleanVin(str("vin")) || null, vinShare: fd.get("vinShare") === "on" || null,
+      bodyStyle: str("bodyStyle") || null, seats: num(fd.get("seats")), co2: num(fd.get("co2")), firstReg: str("firstReg") || null,
     });
   }
   // Bara för en ny bil: blir bilens första loggpost.
@@ -8130,6 +8140,13 @@ async function saveCarEdit(form, { keepOpen = false } = {}) {
   const c = car();
   const fd = new FormData(form);
   const payload = clean(data);
+  const reg = regFromForm(form);
+  if (reg) {
+    const d = regToCar(reg.f);
+    payload.reg = reg;
+    for (const k of ["gearbox", "towMax", "totalWeight", "trainWeight", "skattBelopp"]) if (d[k] != null && payload[k] == null && (c[k] == null || c[k] === "")) payload[k] = d[k];
+    if (d.besiktning && !c.besiktning) payload.besiktning = d.besiktning;
+  }
   if ("make" in data && `${c.make}|${c.model}`.toLowerCase() !== `${data.make}|${data.model}`.toLowerCase()) {
     Object.assign(payload, { imageUrl: null, imageCredit: null, imageChecked: null });
   }
