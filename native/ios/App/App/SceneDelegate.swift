@@ -34,7 +34,9 @@ public class SpeechInputPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
     ]
-    private let engine = AVAudioEngine()
+    // En ny ljudmotor för varje gång man pratar. Efter att Glenn har läst upp ett svar har ljudet bytt läge
+    // (uppspelning), och en gammal motor kan då fortsätta med fel ljudformat utan att något når taligenkänningen.
+    private var engine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var recognizer: SFSpeechRecognizer?
@@ -81,14 +83,18 @@ public class SpeechInputPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         recognizer = rec
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .mixWithOthers])
-        try session.setActive(true)
+        try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .mixWithOthers])
+        try session.setActive(true, options: .notifyOthersOnDeactivation)
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
         request = req
+        engine = AVAudioEngine()
         let input = engine.inputNode
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { [weak self] buffer, _ in
+        // Formatet läses efter att ljudet har ställts om till inspelning, så att det stämmer med mikrofonen just nu.
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { throw NSError(domain: "SpeechInput", code: 2) }
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             self?.request?.append(buffer)
         }
         engine.prepare()
