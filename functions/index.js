@@ -304,6 +304,24 @@ exports.lasDokument = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120
 // För test: reminders() kan provas lokalt utan Firebase.
 exports._reminders = reminders;
 
+// Glenn kan fylla i en tankning. Appen visar den som ett kort med Spara och Ändra, och sparar som en vanlig tankning.
+const TANK_TOOL = {
+  name: "logga_tankning",
+  description: "Fyller i en tankning åt användaren. Anropa bara när station, belopp och full tank är kända.",
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["station", "belopp_kr", "full_tank"],
+    properties: {
+      station: { type: "string", description: "Var användaren tankade, till exempel Circle K Mölndal" },
+      belopp_kr: { type: "number", description: "Vad tankningen kostade totalt, i kronor" },
+      full_tank: { type: "boolean", description: "Om användaren tankade fullt" },
+      datum: { type: "string", description: "YYYY-MM-DD. Utelämna om det var i dag." },
+      matarstallning_mil: { type: "number", description: "Mätarställning i svenska mil, bara om användaren sa den" },
+    },
+  },
+};
+
 // Fråga om bilen (Bildagboken Plus): svarar på frågor utifrån det hushållet har loggat om bilen.
 // Appen skickar bilens uppgifter som text (med summor och snitt redan uträknade) och samtalet hittills.
 const CHAT_SYSTEM = [
@@ -315,6 +333,7 @@ const CHAT_SYSTEM = [
   "Säg tydligt när något inte finns i loggen. Du får använda allmän kunskap om bilmodellen och bilskötsel, men säg då att det är allmänna råd och inte från loggen.",
   "Svara kort: oftast två till fyra meningar, om användaren inte ber om mer. Skriv i hela meningar, utan rubriker, listor, tabeller, fetstil eller tecken som * och #, eftersom svaret ofta läses upp.",
   "Svara på svenska, eller på engelska om användaren skriver på engelska (då som en glad göteborgare som pratar engelska).",
+  "Du kan logga en tankning åt användaren med verktyget logga_tankning. Vill användaren logga en tankning: fråga först efter det som saknas, en sak i taget och kort: var hen tankade, vad det kostade totalt och om det var full tank. Mätarställning är frivillig, så fråga inte efter den, men ta med den om användaren säger den. Datum är i dag om användaren inte säger något annat. Anropa verktyget först när du vet station, belopp och full tank, och skriv samtidigt en kort mening om att du har fyllt i det. Användaren sparar själv med en knapp i appen.",
   "Glenn syns som en liten figur i appen. Är svaret goda nyheter, beröm eller något som ser bra ut, avsluta med taggen [tumme]. Skämtar du eller säger något med glimten i ögat, avsluta med [blink]. Annars ingen tagg. Högst en tagg, och inte i varje svar.",
 ].join(" ");
 
@@ -349,6 +368,7 @@ exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120,
       output_config: { effort: "medium" },
       // Bilens uppgifter sparas tillfälligt hos Anthropic, så att följdfrågor i samma samtal kostar nästan inget.
       system: [{ type: "text", text: CHAT_SYSTEM }, { type: "text", text: context, cache_control: { type: "ephemeral" } }],
+      tools: [TANK_TOOL],
       messages: msgs,
     });
   } catch (e) {
@@ -359,10 +379,25 @@ exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120,
   }
   if (res.stop_reason === "refusal") return { ok: true, answer: "Det kan jag tyvärr inte svara på. Fråga gärna något annat om bilen.", left: CHAT_MONTHLY_LIMIT - used };
   let answer = res.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  // Tankningen som Glenn har fyllt i, kontrollerad innan den skickas till appen.
+  let action = null;
+  const use = res.content.find((b) => b.type === "tool_use" && b.name === "logga_tankning");
+  if (use) {
+    const i = use.input || {};
+    const amount = Number(i.belopp_kr);
+    if (i.station && amount > 0 && amount < 100000) {
+      action = {
+        type: "tank", station: String(i.station).slice(0, 80), amount: Math.round(amount * 100) / 100, full: i.full_tank !== false,
+        date: /^\d{4}-\d{2}-\d{2}$/.test(i.datum || "") && i.datum <= todayStr() ? i.datum : todayStr(),
+        odometer: Number(i.matarstallning_mil) > 0 ? Math.round(Number(i.matarstallning_mil)) : null,
+      };
+    }
+    if (!answer) answer = "Gött, jag har fyllt i tankningen. Tryck på Spara så är den loggad!";
+  }
   // Taggen styr Glenns figur i appen (tummen upp eller blinkning) och tas bort ur texten.
   const tag = answer.match(/\[(tumme|blink)\]/i);
   answer = answer.replace(/\s*\[(tumme|blink)\]\s*/gi, " ").trim();
-  return { ok: true, answer: answer || "Jag hittade inget svar. Försök fråga på ett annat sätt.", mood: tag ? (tag[1].toLowerCase() === "tumme" ? "thumb" : "wink") : null, left: CHAT_MONTHLY_LIMIT - used };
+  return { ok: true, answer: answer || "Jag hittade inget svar. Försök fråga på ett annat sätt.", mood: tag ? (tag[1].toLowerCase() === "tumme" ? "thumb" : "wink") : null, action, left: CHAT_MONTHLY_LIMIT - used };
 });
 
 // Glenns röst: Googles text-till-tal med en naturlig svensk mansröst. Kräver att Cloud Text-to-Speech API är
