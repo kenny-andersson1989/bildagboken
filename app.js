@@ -514,6 +514,42 @@ function activeCarId() {
 const carLocked = (c) => { const a = activeCarId(); return !!(a && c && c.id !== a); };
 // När ägaren får byta bil nästa gång (0 = nu).
 const activeCarNext = () => { const t = tsMs(S.house?.activeCarAt); return t && Date.now() - t < ACTIVE_CAR_DAYS * 864e5 ? t + ACTIVE_CAR_DAYS * 864e5 : 0; };
+// Papperskorgen: en borttagen bil (deletedAt) ligger kvar i TRASH_DAYS dagar och kan återställas av ägaren.
+// Funktionen rensaPapperskorg raderar den sedan för gott. Loggen och resorna för bilen döljs under tiden.
+const TRASH_DAYS = 30;
+function syncTrash() {
+  const gone = new Set((S.trash || []).map((c) => c.id));
+  if (S.allEntries) S.entries = gone.size ? S.allEntries.filter((e) => !gone.has(e.carId)) : S.allEntries;
+  if (S.allTrips) S.trips = gone.size ? S.allTrips.filter((t) => !gone.has(t.carId)) : S.allTrips;
+  if (S.carId && !S.cars.some((c) => c.id === S.carId)) {
+    const saved = pref.get("car");
+    S.carId = S.cars.find((c) => c.id === saved)?.id || S.cars[0]?.id || null;
+  }
+}
+const trashUntil = (c) => new Date(tsMs(c.deletedAt) + TRASH_DAYS * 864e5);
+async function restoreCar(id) {
+  const c = (S.trash || []).find((x) => x.id === id);
+  if (!c) return;
+  if (!isOwner()) return showToast("Bara hushållets ägare kan återställa bilen.");
+  if (caps() && S.cars.length >= caps().cars) return limitSheet("cars");
+  try {
+    await updateDoc(ref("cars", id), { deletedAt: deleteField(), deletedBy: deleteField() });
+    pref.set("car", id);
+    if (S.cars.some((x) => x.id === id)) S.carId = id;
+    showToast(`${carName(c)} är återställd`);
+    render();
+  } catch (e) { onWriteError(e); }
+}
+function trashCard() {
+  const t = S.trash || [];
+  if (!t.length) return "";
+  return `<div class="card"><h2>Papperskorg</h2>
+    <div class="rows">${t.map((c) => `<div class="dl"><span class="dl-ic">${icon("car", 20)}</span>
+      <span><span class="dl-t">${esc(carName(c))}</span><span class="dl-s">${esc(`Raderas för gott ${fmtDate(ymd(trashUntil(c)))}`)}</span></span>
+      ${isOwner() ? `<span class="trash-acts"><button class="btn-soft" type="button" data-act="trash-restore" data-id="${esc(c.id)}">Återställ</button><button class="link danger" type="button" data-act="trash-delete" data-id="${esc(c.id)}">Radera nu</button></span>` : "<span></span>"}</div>`).join("")}</div>
+    <p class="hint" style="margin-top:8px">${esc(isOwner() ? `Borttagna bilar ligger här i ${TRASH_DAYS} dagar med hela loggen, så att de går att få tillbaka.` : `Borttagna bilar ligger här i ${TRASH_DAYS} dagar. Hushållets ägare, ${memberName(ownerUid())}, kan återställa dem.`)}</p>
+  </div>`;
+}
 // Raden med bilarna (tryck för att byta) och Lägg till bil. Samma på Översikt och Bilen.
 function carChips(c, add = true) {
   return `<div class="car-chips" role="group" aria-label="Välj bil">
@@ -1938,6 +1974,8 @@ function render() {
     return setScreen("loading", `<p class="loading">Hämtar er bil …</p>`);
   }
   if (!S.cars.length) return renderCarSetup();
+  // Den valda bilen kan ha lagts i papperskorgen (eller tagits bort) på en annan telefon.
+  if (!car()) S.carId = S.cars.find((c) => c.id === pref.get("car"))?.id || S.cars[0].id;
   const views = { oversikt: viewOverview, logg: viewLog, ekonomi: viewEconomy, bilen: viewCar, resor: viewTrips, aviseringar: viewNotifications, installningar: viewSettings, admin: viewAdmin };
   if (S.view === "resor" && !tripsVisible()) S.view = "oversikt";
   // En låst bil visas bara om man själv har valt den. Annars hoppar appen till bilen som fungerar.
@@ -2394,6 +2432,7 @@ function renderCarSetup() {
       <button class="btn primary block" type="submit">Spara bilen</button>
       <p class="hint">Försäkring, skatt och däck lägger du till under Bilen efteråt.</p>
     </form>
+    ${trashCard()}
     ${inviteCard()}
     <button class="link" type="button" data-act="logout" style="align-self:center;margin:6px auto 20px;display:block">Logga ut (${esc(S.user?.email || "")})</button>`, { keepForm: true });
 }
@@ -3998,7 +4037,7 @@ function viewCar() {
     </div>
     <!--card:end--><div class="car-danger">${isOwner()
       ? `<button class="link danger" type="button" data-act="delete-car" data-id="${esc(c.id)}">${icon("close", 14)} ${esc(`Ta bort ${carName(c)}`)}</button>
-        <p class="hint">Tar bort bilen och hela dess logg för alla i hushållet. Det går inte att ångra.</p>`
+        <p class="hint">${esc(`Bilen flyttas till papperskorgen under Inställningar och kan återställas i ${TRASH_DAYS} dagar.`)}</p>`
       : `<p class="hint">${esc(`Bara hushållets ägare, ${memberName(ownerUid())}, kan ta bort bilen.`)}</p>`}</div>`, "bilen");
 }
 
@@ -4084,6 +4123,7 @@ function viewSettings() {
         ${[["sv", "Svenska"], ["en", "English"]].map(([k, l]) => `<button type="button" data-act="lang" data-v="${k}" aria-pressed="${LANG === k}" data-notr>${l}</button>`).join("")}
       </div>
     </div>
+    ${trashCard()}
     ${cardsSettingsCard(S.cardsView || "oversikt")}
     ${shortcutsCard()}
     <div class="card">
@@ -6608,8 +6648,8 @@ function carSheet(edit, sections = ["basic"]) {
 }
 
 async function deleteCar(carId) {
-  const ents = S.entries.filter((e) => e.carId === carId);
-  const carPhoto = S.cars.find((x) => x.id === carId)?.photoId;
+  const ents = (S.allEntries || S.entries).filter((e) => e.carId === carId);
+  const carPhoto = [...S.cars, ...(S.trash || [])].find((x) => x.id === carId)?.photoId;
   const ops = [ref("cars", carId), ...ents.map((e) => ref("entries", e.id)), ...ents.flatMap((e) => photosOf(e).map((pid) => ref("photos", pid)))];
   if (carPhoto) ops.push(ref("photos", carPhoto));
   for (let i = 0; i < ops.length; i += 400) {
@@ -7462,26 +7502,28 @@ const ACTIONS = {
     const c = S.cars.find((x) => x.id === el.dataset.id) || car();
     if (!c) return;
     if (!isOwner()) return showToast("Bara hushållets ägare kan ta bort bilen.");
-    const n = S.entries.filter((e) => e.carId === c.id).length;
     const ok = await confirmDialog({
       title: `Ta bort ${carName(c)}?`,
-      lines: [
-        `Bilen${n ? ` och hela dess logg (${n} ${n === 1 ? "post" : "poster"})` : ""} tas bort för alla ni som delar bilen.`,
-        c.plate ? `Reg.nr ${c.plate}` : null,
-      ],
+      lines: [`Bilen och hela dess logg flyttas till papperskorgen och försvinner för alla i hushållet.`, `Du kan återställa den under Inställningar i ${TRASH_DAYS} dagar. Sedan raderas den för gott.`],
       okLabel: "Ta bort bilen",
+      warn: "",
     });
     if (!ok) return;
-    el.disabled = true;
-    el.textContent = "Tar bort …";
     try {
-      await deleteCar(c.id);
+      await updateDoc(ref("cars", c.id), { deletedAt: serverTimestamp(), deletedBy: uid() });
       if (!sheet.hidden) closeSheet();
-      showToast(`${carName(c)} är borttagen`);
-    } catch (e) {
-      onWriteError(e);
-      el.disabled = false;
-    }
+      showToast(`${carName(c)} ligger i papperskorgen`, 6000, () => restoreCar(c.id));
+    } catch (e) { onWriteError(e); }
+  },
+  async "trash-restore"(el) { await restoreCar(el.dataset.id); },
+  async "trash-delete"(el) {
+    const c = (S.trash || []).find((x) => x.id === el.dataset.id);
+    if (!c || !isOwner()) return;
+    const n = (S.allEntries || []).filter((e) => e.carId === c.id).length;
+    const ok = await confirmDialog({ title: `Radera ${carName(c)} för gott?`, lines: [`Bilen${n ? ` och hela dess logg (${n} ${n === 1 ? "post" : "poster"})` : ""} raderas för alla i hushållet.`], okLabel: "Radera för gott" });
+    if (!ok) return;
+    el.disabled = true;
+    try { await deleteCar(c.id); showToast(`${carName(c)} är raderad`); } catch (e) { onWriteError(e); el.disabled = false; }
   },
   "cards-view"(el) { S.cardsView = el.dataset.v; render(); },
   lang(el) {
@@ -8141,7 +8183,7 @@ function checkNewBookings(cars, first) {
 function cleanup() {
   S.unsubs.forEach((u) => { try { u(); } catch { /* redan stängd */ } });
   S.unsubs = [];
-  S.hid = null; S.house = null; S.cars = []; S.entries = []; S.trips = []; S.places = []; S.carId = null;
+  S.hid = null; S.house = null; S.cars = []; S.entries = []; S.trips = []; S.places = []; S.carId = null; S.trash = []; S.allEntries = []; S.allTrips = [];
   S.loaded = { house: false, cars: false, entries: false };
   closeSheet();
 }
@@ -8164,7 +8206,8 @@ function subscribe(hid) {
   S.trips = [];
   // Körjournalen (Plus). Tom för de flesta hushåll, och påverkar inte när appen räknas som laddad.
   S.unsubs.push(onSnapshot(collection(db, "households", hid, "trips"), (s) => {
-    S.trips = s.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+    S.allTrips = s.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+    syncTrash();
     if (S.loaded.entries) render();
   }, () => {}));
   // Sparade platser för körjournalen, som Hem och Kontoret.
@@ -8199,8 +8242,12 @@ function subscribe(hid) {
   S.unsubs.push(onSnapshot(collection(db, "households", hid, "cars"), { includeMetadataChanges: true }, (s) => {
     S.pending.cars = s.docs.filter((d) => d.metadata?.hasPendingWrites).length;
     updateNetBanner();
-    S.cars = s.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }))
+    const all = s.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }))
       .sort((a, b) => tsMs(a.createdAt) - tsMs(b.createdAt));
+    // Bilar i papperskorgen syns bara där, tills de återställs eller raderas för gott.
+    S.cars = all.filter((c) => !c.deletedAt);
+    S.trash = all.filter((c) => c.deletedAt);
+    syncTrash();
     if (!S.cars.find((c) => c.id === S.carId)) {
       const saved = pref.get("car");
       S.carId = S.cars.find((c) => c.id === saved)?.id || S.cars[0]?.id || null;
@@ -8216,7 +8263,8 @@ function subscribe(hid) {
   S.unsubs.push(onSnapshot(query(collection(db, "households", hid, "entries"), orderBy("date", "desc")), { includeMetadataChanges: true }, (s) => {
     S.pending.entries = s.docs.filter((d) => d.metadata?.hasPendingWrites).length;
     updateNetBanner();
-    S.entries = sortEntries(s.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })));
+    S.allEntries = sortEntries(s.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })));
+    syncTrash();
     if (!first) {
       for (const ch of s.docChanges()) {
         if (ch.type !== "added" || ch.doc.metadata.hasPendingWrites) continue;
