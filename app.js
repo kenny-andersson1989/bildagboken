@@ -460,7 +460,8 @@ const plusUntilText = () => { const u = tsMs(S.house?.plus?.until); return u > D
 // Fördelarna med Plus, i den ordning de visas överallt.
 const PLUS_PERKS = [
   ["route", "Körjournal", "Logga tjänsteresor och privata resor. Milersättningen räknas ut, och iPhone-appen kan logga resorna själv."],
-  ["spark", "Läsning med AI", "Fota kvittot, servicefakturan eller besiktningsprotokollet, så fylls allt i åt dig."],
+  ["spark", "Fråga om bilen", "Skriv eller prata med AI om allt ni har loggat: kostnader, service, däck och förbrukning."],
+  ["camera", "Läsning med AI", "Fota kvittot, servicefakturan eller besiktningsprotokollet, så fylls allt i åt dig."],
   ["car", "Upp till 6 bilar", "Hela familjens bilar i samma app."],
   ["home", "Upp till 6 personer", "Alla i familjen som kör bilarna."],
   ["image", "2 000 bilder", "Plats för kvitton, dokument och bilder på bilen."],
@@ -508,6 +509,7 @@ function plusSheet() {
     ["Bilder", `${FREE.photos}`, fmt(PLUS.photos)],
     ["Körjournal", "–", "Ingår"],
     ["Läsning med AI", "–", "Ingår"],
+    ["Fråga om bilen", "–", "Ingår"],
   ];
   openSheet("Bildagboken Plus", `
     <p>${hasPlus() ? esc(`${plusUntilText()}. Det gäller alla i hushållet.`) : "Ett köp gäller alla i hushållet. Allt ni har loggat finns kvar, vad ni än väljer."}</p>
@@ -516,7 +518,7 @@ function plusSheet() {
       <tbody>${rows.map(([a, b, c]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td><td><b>${esc(c)}</b></td></tr>`).join("")}</tbody></table>
     ${hasPlus() && !tripsVisible() ? `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="trips-on">${icon("route", 18)} Slå på körjournalen</button></div>` : ""}
     ${hasPlus() ? "" : `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="plus-buy">Skaffa Plus</button>
-      <p class="hint">279 kr per år eller 35 kr per månad. Prova gratis i 14 dagar.</p></div>`}`);
+      <p class="hint">39 kr per månad. Prova gratis i 14 dagar. Avsluta när du vill.</p></div>`}`);
 }
 const memberName = (u) => S.house?.memberInfo?.[u]?.name || "Någon";
 const whoName = (u) => (u === uid() ? "Du" : memberName(u));
@@ -1023,6 +1025,163 @@ function claudePrompt(c) {
   if (own.length) lines.push(`Saker vi gjort själva nyligen: ${own.map((e) => `${e.title || "eget jobb"} (${fmtDateShort(e.date)})`).join("; ")}.`);
   lines.push("Vad bör jag hålla extra koll på med just den här bilen, och vad är det snart dags att byta eller kontrollera? Svara kort och konkret på svenska.");
   return lines.join("\n");
+}
+
+/* ------------------------------------------------------- fråga om bilen */
+// Fråga om bilen (Bildagboken Plus): en chatt med AI om det ni har loggat. Appen räknar ut summor, snitt och
+// förbrukning här, så att AI:n bara behöver läsa och förklara. Funktionen fragaBilen skickar det till Claude.
+const CHAT_SUGGESTIONS = ["Vad har bilen kostat i år?", "När är det dags för service?", "Drar bilen mer bränsle än förut?", "Vad gjordes vid senaste servicen?"];
+function carContext(c) {
+  const ents = carEntries().filter((e) => e.date);
+  const L = [];
+  const v = (x) => x != null && x !== "";
+  L.push(`Dagens datum: ${todayStr()}.`, "", "# Bilen");
+  const facts = [["Bil", carName(c)], ["Årsmodell", c.year], ["Drivmedel", c.fuel], ["Registreringsnummer", c.plate], ["Färg", c.color],
+    ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : null], ["Sista dag för besiktning", c.besiktning],
+    ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${c.forsakringDatum}` : ""].filter(Boolean).join(", ")],
+    ["Fordonsskatt betalas", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : null]];
+  for (const [k, x] of facts) if (v(x)) L.push(`${k}: ${x}`);
+  for (const t of c.tires || []) L.push(`${t.kind === "vinter" ? "Vinterdäck" : "Sommardäck"}${t.on ? " (sitter på)" : ""}: ${[t.brand, t.size, t.year ? `tillverkade ${t.year}` : "", t.depth != null ? `${fmt(t.depth, 1)} mm mönster` : ""].filter(Boolean).join(", ") || "inga uppgifter"}`);
+
+  L.push("", "# Underhåll");
+  for (const s of allItemStatus(c)) {
+    const iv = [s.item.mil ? `var ${fmt(s.item.mil)} mil` : "", s.item.months ? `var ${s.item.months} månad${s.item.months === 1 ? "" : "er"}` : ""].filter(Boolean).join(" eller ");
+    L.push(`- ${s.item.name}${iv ? ` (${iv})` : ""}: ${s.unknown && !s.lastDate ? "senaste byte okänt" : `senast ${s.lastDate || "okänt datum"}${s.lastMil != null ? ` vid ${fmt(s.lastMil)} mil` : ""}`}${s.label ? `. Status: ${s.label}` : ""}`);
+  }
+  const dl = deadlines(c);
+  if (dl.length) { L.push("", "# Datum att hålla koll på"); for (const d of dl) L.push(`- ${d.title}: ${d.date instanceof Date ? ymd(d.date) : d.date || ""}${d.sub ? ` (${d.sub})` : ""}`); }
+  const books = sortedBookings(c).filter((b) => b.date >= todayStr());
+  if (books.length) { L.push("", "# Bokade tider"); for (const b of books) L.push(`- ${b.date}${b.time ? ` kl ${b.time}` : ""}: ${BOOK_KINDS[b.kind] || "Bokning"}${b.place ? ` hos ${b.place}` : ""}${b.note ? `. ${b.note}` : ""}`); }
+  const todos = (c.todos || []).filter((t) => !t.done);
+  if (todos.length) { L.push("", "# Att göra"); for (const t of todos) L.push(`- ${t.text}`); }
+
+  // Kostnader och körsträcka per år.
+  const years = [...new Set(ents.map((e) => e.date.slice(0, 4)))].sort().reverse();
+  if (years.length) {
+    L.push("", "# Kostnader per år (uträknade av appen)");
+    for (const y of years) {
+      const ye = ents.filter((e) => e.date.startsWith(y));
+      const paid = ye.filter((e) => e.amount > 0);
+      const total = paid.reduce((a, e) => a + e.amount, 0);
+      const cats = {};
+      for (const e of paid) cats[catOf(e)] = (cats[catOf(e)] || 0) + e.amount;
+      const odos = ye.filter((e) => e.odometer != null).map((e) => e.odometer);
+      const driven = odos.length >= 2 ? Math.max(...odos) - Math.min(...odos) : null;
+      L.push(`${y}: totalt ${fmt(Math.round(total))} kr${driven ? `, körsträcka ungefär ${fmt(driven)} mil, ${fmt(total / driven, 1)} kr per mil` : ""}. ${Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([k, x]) => `${k} ${fmt(Math.round(x))} kr`).join(", ")}.`);
+    }
+    // Förbrukning: tankad mängd delad med sträckan sedan förra tankningen, per år.
+    const tanks = ents.filter((e) => e.type === "tank" && e.odometer != null && e.liters > 0).sort((a, b) => a.odometer - b.odometer);
+    const per = {};
+    for (let i = 1; i < tanks.length; i++) {
+      const dist = tanks[i].odometer - tanks[i - 1].odometer;
+      if (dist <= 0 || dist > 200) continue;
+      const y = tanks[i].date.slice(0, 4);
+      per[y] = per[y] || { l: 0, mil: 0, n: 0 };
+      per[y].l += tanks[i].liters; per[y].mil += dist; per[y].n++;
+    }
+    const fy = Object.keys(per).sort().reverse();
+    if (fy.length) {
+      const unit = /kWh/.test(tanks[0]?.fuel || "") ? "kWh" : "liter";
+      L.push("", "# Förbrukning (uträknad av appen från tankningarna)");
+      for (const y of fy) L.push(`${y}: ungefär ${fmt(per[y].l / per[y].mil, 2)} ${unit} per mil (${per[y].n} tankningar)`);
+    }
+  }
+  // Körjournalen per månad, det senaste året.
+  const trips = carTrips(c.id).filter((t) => t.date && tripMil(t) != null);
+  if (trips.length) {
+    L.push("", "# Körjournal per månad (mil)");
+    const months = [...new Set(trips.map((t) => t.date.slice(0, 7)))].sort().reverse().slice(0, 12);
+    for (const m of months) { const mt = trips.filter((t) => t.date.startsWith(m)); L.push(`${m}: tjänst ${fmt(sumMil(mt, "tjanst"), 1)}, privat ${fmt(sumMil(mt, "privat"), 1)}`); }
+  }
+
+  // Hela loggen, nyast först (högst 500 rader).
+  L.push("", "# Loggen (nyast först)");
+  for (const e of sortEntries([...ents]).slice(0, 500)) {
+    const bits = [e.date, entryTitle(e), e.amount > 0 ? `${fmtKr(e.amount)} kr` : "", e.odometer != null ? `${fmt(e.odometer)} mil` : "", entryDetail(e, c), e.note || "", e.createdBy ? `av ${memberName(e.createdBy)}` : ""];
+    L.push(bits.filter(Boolean).join(" | "));
+  }
+  return L.join("\n").slice(0, 280000);
+}
+
+const chatOn = () => aiOn();
+const chatState = () => { if (!S.chat || S.chat.carId !== S.carId) S.chat = { carId: S.carId, msgs: [], busy: false }; return S.chat; };
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+// Röststyrning i webbläsaren. I iPhone-appen pratar man med mikrofonen på tangentbordet.
+const canListen = () => !!SpeechRec && !NATIVE;
+const canSpeak = () => "speechSynthesis" in window;
+const micSvg = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>`;
+function chatSheet() {
+  if (!chatOn()) return plusOnSale() ? plusSheet() : null;
+  const st = chatState();
+  openSheet("Fråga om bilen", `<div class="chat">
+    <div class="chat-log" id="chat-log" aria-live="polite">${chatLogHtml(st)}</div>
+    <form class="chat-form" data-form="chat" novalidate>
+      <textarea id="chat-in" name="q" rows="1" placeholder="Skriv din fråga" enterkeyhint="send"></textarea>
+      ${canListen() ? `<button class="chat-mic" type="button" data-act="chat-mic" aria-label="Prata">${micSvg}</button>` : ""}
+      <button class="chat-send" type="submit" aria-label="Skicka">${icon("next", 20)}</button>
+    </form>
+    <div class="chat-foot">
+      ${canSpeak() ? `<label class="check"><input type="checkbox" id="chat-speak"${pref.get("chatSpeak") === "1" ? " checked" : ""} data-act="chat-speak"> Läs upp svaren</label>` : ""}
+      <p class="hint">${esc(`${canListen() || !NATIVE ? "" : "Vill du prata? Tryck på mikrofonen på tangentbordet. "}Svaren bygger på det ni har loggat om ${carName(car())}. AI kan ha fel, så kontrollera viktiga saker.`)}</p>
+    </div></div>`);
+  scrollChat();
+}
+function chatLogHtml(st) {
+  if (!st.msgs.length) return `<p class="muted chat-intro">Fråga vad du vill om bilen: kostnader, service, däck, förbrukning eller resor.</p>
+    <div class="chat-sugg">${CHAT_SUGGESTIONS.map((q) => `<button class="chip-btn" type="button" data-act="chat-ask" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
+  return st.msgs.map((m) => `<div class="msg ${m.role === "user" ? "me" : "ai"}${m.err ? " err" : ""}"${m.err ? "" : " data-notr"}>${esc(m.text).replace(/\n/g, "<br>")}</div>`).join("")
+    + (st.busy ? `<div class="msg ai busy" aria-label="AI tänker"><span></span><span></span><span></span></div>` : "")
+    + (st.left != null && st.left <= 5 ? `<p class="hint chat-left">${esc(`${st.left} frågor kvar den här månaden.`)}</p>` : "");
+}
+function scrollChat() { const l = $("#chat-log"); if (l) l.scrollTop = l.scrollHeight; }
+function redrawChat() { const l = $("#chat-log"); if (l) { l.innerHTML = chatLogHtml(chatState()); if (EN && typeof trTree === "function") trTree(l); scrollChat(); } }
+async function askCar(q) {
+  const st = chatState();
+  q = String(q || "").trim();
+  if (!q || st.busy) return;
+  st.msgs.push({ role: "user", text: q });
+  st.busy = true;
+  redrawChat();
+  const payload = { hid: S.hid, context: carContext(car()), messages: st.msgs.filter((m) => !m.err).slice(-12).map((m) => ({ role: m.role, text: m.text })) };
+  try {
+    let res;
+    if (window.__chatMock) res = await window.__chatMock(payload);
+    else {
+      const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-functions.js");
+      res = (await httpsCallable(getFunctions(fb, "europe-west1"), "fragaBilen", { timeout: 120000 })(payload)).data;
+    }
+    st.msgs.push({ role: "assistant", text: res?.answer || "Jag hittade inget svar." });
+    if (res?.left != null) st.left = res.left;
+    if ($("#chat-speak")?.checked) speak(res?.answer || "");
+  } catch (e) {
+    const code = String(e?.code || e?.message || "").replace(/^functions\//, "");
+    st.msgs.push({ role: "assistant", err: true, text: /resource-exhausted|permission-denied|failed-precondition|unavailable/.test(code) ? e.message : !navigator.onLine ? "Fråga om bilen behöver nät." : `Det gick inte att få ett svar (${code || "okänt fel"}). Försök igen.` });
+  } finally {
+    st.busy = false;
+    redrawChat();
+  }
+}
+function speak(text) {
+  if (!canSpeak() || !text) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text.replace(/[*#_`]/g, ""));
+  u.lang = EN ? "en-GB" : "sv-SE";
+  speechSynthesis.speak(u);
+}
+let listening = null;
+function listen(btn) {
+  if (listening) { listening.stop(); return; }
+  const input = $("#chat-in");
+  const rec = new SpeechRec();
+  rec.lang = EN ? "en-GB" : "sv-SE";
+  rec.interimResults = true;
+  let text = "";
+  rec.onresult = (ev) => { text = [...ev.results].map((r) => r[0].transcript).join(""); if (input) input.value = text; };
+  rec.onerror = (ev) => { if (ev.error === "not-allowed" || ev.error === "service-not-allowed") showToast("Tillåt mikrofonen för att prata med appen.", 5000); };
+  rec.onend = () => { listening = null; btn?.classList.remove("on"); if (text.trim()) { if (input) input.value = ""; askCar(text); } };
+  listening = rec;
+  btn?.classList.add("on");
+  try { rec.start(); } catch { listening = null; btn?.classList.remove("on"); }
 }
 
 /* -------------------------------------------------------------- rendering */
@@ -1657,6 +1816,7 @@ function headerMain() {
 function topActions() {
   const n = unseenFromOthers().length;
   return `<div class="top-actions">
+      ${chatOn() || plusOnSale() ? `<button class="icon-btn ai-btn" type="button" data-act="chat" aria-label="Fråga om bilen">${icon("spark")}</button>` : ""}
       <button class="icon-btn" type="button" data-go="aviseringar" aria-label="Aviseringar${n ? `, ${n} nya` : ""}">${icon("bell")}${n ? `<span class="badge">${n > 9 ? "9+" : n}</span>` : ""}</button>
       <button class="icon-btn" type="button" data-go="installningar" aria-label="Inställningar">${icon("gear")}</button>
     </div>`;
@@ -6303,6 +6463,10 @@ const ACTIONS = {
     render();
   },
   "trip-here"() { fillTripFrom(true); },
+  chat() { chatSheet(); },
+  "chat-ask"(el) { askCar(EN ? el.textContent : el.dataset.q); },
+  "chat-mic"(el) { listen(el); },
+  "chat-speak"(el) { pref.set("chatSpeak", el.checked ? "1" : "0"); if (!el.checked && canSpeak()) speechSynthesis.cancel(); },
   "new-place"() { placeForm(); },
   "edit-place"(el) { const p = S.places.find((x) => x.id === el.dataset.id); if (p) placeForm(p); },
   async "place-here"(el) {
@@ -6628,6 +6792,7 @@ async function onSubmit(ev) {
     if (kind === "rec-price") return saveRecPrice(form);
     if (kind === "trip") return saveTrip(form);
     if (kind === "place") return savePlace(form);
+    if (kind === "chat") { const i = $("#chat-in"); const q = i?.value || ""; if (i) i.value = ""; return askCar(q); }
     if (kind === "doc") return await saveDoc(form);
     if (kind === "rename-one") {
       const v = String(new FormData(form).get("v") || "").trim();
@@ -7219,6 +7384,10 @@ document.addEventListener("click", (ev) => {
   fn(a, ev);
 });
 document.addEventListener("focusin", (ev) => { if ((ev.target.id === "tr-to" || ev.target.id === "tr-from") && !ev.target.value.trim()) recentTripTargets(ev.target.id); });
+// Fråga om bilen: Enter skickar frågan, Skift+Enter ger en ny rad.
+document.addEventListener("keydown", (ev) => {
+  if (ev.target.id === "chat-in" && ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ev.target.form?.requestSubmit(); }
+});
 document.addEventListener("submit", onSubmit);
 document.addEventListener("input", onInput);
 document.addEventListener("change", onChange);

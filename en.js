@@ -1,6 +1,22 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Fråga om bilen": "Ask about the car",
+  "Skriv eller prata med AI om allt ni har loggat: kostnader, service, däck och förbrukning.": "Write or talk to AI about everything you have logged: costs, service, tyres and fuel use.",
+  "Vad har bilen kostat i år?": "What has the car cost this year?",
+  "När är det dags för service?": "When is the next service due?",
+  "Drar bilen mer bränsle än förut?": "Is the car using more fuel than before?",
+  "Vad gjordes vid senaste servicen?": "What was done at the last service?",
+  "Fråga vad du vill om bilen: kostnader, service, däck, förbrukning eller resor.": "Ask anything about the car: costs, service, tyres, fuel use or trips.",
+  "Skriv din fråga": "Type your question",
+  "Läs upp svaren": "Read answers aloud",
+  "Prata": "Talk",
+  "Skicka": "Send",
+  "Tillåt mikrofonen för att prata med appen.": "Allow the microphone to talk to the app.",
+  "Fråga om bilen behöver nät.": "Ask about the car needs a connection.",
+  "Jag hittade inget svar.": "I found no answer.",
+  "39 kr per månad. Prova gratis i 14 dagar. Avsluta när du vill.": "39 kr per month. Try it free for 14 days. Cancel any time.",
+  "AI tänker": "AI is thinking",
   "Upp till 6 bilar": "Up to 6 cars",
   "Upp till 6 personer": "Up to 6 people",
   "Alla i familjen som kör bilarna.": "Everyone in the family who drives the cars.",
@@ -1228,6 +1244,11 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Ni har ställt (\d+) frågor den här månaden\. Det fylls på nästa månad\.$/, "You have asked $1 questions this month. More are added next month."],
+  [/^Det kan jag tyvärr inte svara på\. Fråga gärna något annat om bilen\.$/, "I'm afraid I can't answer that. Feel free to ask something else about the car."],
+  [/^(\d+) frågor kvar den här månaden\.$/, "$1 questions left this month."],
+  [/^(Vill du prata\? Tryck på mikrofonen på tangentbordet\. )?Svaren bygger på det ni har loggat om (.+)\. AI kan ha fel, så kontrollera viktiga saker\.$/, (m, a, c) => `${a ? "Want to talk? Tap the microphone on the keyboard. " : ""}The answers are based on what you have logged about ${c}. AI can be wrong, so check important things.`],
+  [/^Det gick inte att få ett svar \((.+)\)\. Försök igen\.$/, "Could not get an answer ($1). Try again."],
   [/^Gratisversionen har plats för (\d+) bil\. Med Bildagboken Plus kan ni ha upp till (\d+) bilar\.$/, "The free version has room for $1 car. With Bildagboken Plus you can have up to $2 cars."],
   [/^Gratisversionen har plats för (\d+) personer i hushållet\. Med Bildagboken Plus kan ni vara upp till (\d+)\.$/, "The free version has room for $1 people in the household. With Bildagboken Plus you can be up to $2."],
   [/^Bildagboken Plus har plats för (.+) i ett hushåll\.( Ta bort några bilder för att lägga till nya\.)?$/, (m, w, r) => `Bildagboken Plus has room for ${w.replace("bilar", "cars").replace("personer", "people").replace("bilder", "photos")} in a household.${r ? " Delete some photos to add new ones." : ""}`],
