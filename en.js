@@ -1,6 +1,7 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Tre teman i pixelstil": "Three pixel themes",
   "Föregående": "Previous",
   "Ägare": "Owner",
   "Bara hushållets ägare kan ta bort andra.": "Only the household owner can remove others.",
