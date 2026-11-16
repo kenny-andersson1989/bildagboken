@@ -1241,12 +1241,22 @@ function playB64(b64, id) {
     try { voiceAudio.play()?.catch?.(() => resolve()); } catch { resolve(); }
   });
 }
+// Samma som spoken() i functions/index.js: tal och enheter som de ska låta när de läses upp.
+const spokenText = (t) => String(t).replace(/[*#_`]/g, "")
+  .replace(/(\d)[\s\u00a0\u202f](?=\d{3}\b)/g, "$1")
+  .replace(/(\d+),00\s?kr\b/g, "$1 kronor")
+  .replace(/(\d+),(\d\d)\s?kr\b/g, "$1 kronor och $2 öre")
+  .replace(/(\d),(\d)/g, "$1 komma $2")
+  .replace(/\bm\/s\b/g, "meter per sekund")
+  .replace(/(\d)\s?kr\b/g, "$1 kronor")
+  .replace(/(\d)\s?km\b/g, "$1 kilometer")
+  .replace(/(-?\d+)\s?°C?/g, "$1 grader");
 function speakDevice(text, id) {
   return new Promise((resolve) => {
     if (!("speechSynthesis" in window) || id !== sayId) return resolve();
     const lang = EN ? "en" : "sv";
     const voices = speechSynthesis.getVoices().filter((v) => v.lang?.toLowerCase().startsWith(lang));
-    const u = new SpeechSynthesisUtterance(text);
+    const u = new SpeechSynthesisUtterance(EN ? text : spokenText(text));
     u.lang = EN ? "en-GB" : "sv-SE";
     u.voice = voices.find((v) => /premium|enhanced|förbättrad|natural/i.test(v.name)) || voices[0] || null;
     u.onend = () => resolve(); u.onerror = () => resolve();
