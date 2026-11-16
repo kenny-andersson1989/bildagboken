@@ -1839,3 +1839,7 @@ body.car-locked .fab { display: none; }
 .icon-btn.glenn-btn { padding: 0; overflow: hidden; }
 .glenn-btn .gfig.gfig-btn { width: 100%; height: 100%; margin: 0; border: 0; border-radius: inherit; box-shadow: none; }
 .glenn-btn .gfig.gfig-btn img { width: 100%; height: 100%; }
+/* Röstväljaren: den valda rösten markeras tydligt */
+.voice-row.sel { background: var(--accent-soft); border-radius: 14px; padding-left: 10px; padding-right: 10px; }
+.voice-row.sel .dl-ic { color: var(--accent-text); }
+.voice-row .btn-soft.on { background: var(--accent); color: #fff; }
