@@ -2211,7 +2211,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       <label for="cf-plate">Registreringsnummer</label>
       <span class="geo-row"><input name="plate" id="cf-plate" value="${esc(c.plate || "")}" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="8">
         <button class="btn-soft" type="button" data-act="reg-lookup">${icon("search", 16)} Hämta</button></span>
-      <div id="cf-reg-status" class="reg-status" aria-live="polite"${isNew ? "" : ` data-plate="${esc(plateKey(c.plate))}"`}><small>${isNew ? "Skriv registreringsnumret, så hämtar appen bilens uppgifter." : "Tryck på Hämta för att fylla i uppgifterna från registret igen."}</small></div>
+      <div id="cf-reg-status" class="reg-status" aria-live="polite"${isNew ? "" : ` data-plate="${esc(plateKey(c.plate))}"`}><small>${isNew ? "Skriv registreringsnumret och tryck på Hämta, så fylls bilens uppgifter i." : "Tryck på Hämta för att fylla i uppgifterna från registret igen."}</small></div>
       <input type="hidden" name="regJson" id="cf-regJson">
     </div>
     <div class="row2">
@@ -2539,7 +2539,6 @@ async function regLookup(box, plate, onFound) {
   const why = { limit: "Ni har gjort många sökningar på sistone.", notfound: `Hittade inga uppgifter om ${fmtPlate(key)}.` }[res?.reason] || "Det gick inte att hämta uppgifterna just nu.";
   box.innerHTML = `<div class="reg-fail"><p>${esc(`${why} Fyll i uppgifterna själv.`)}</p></div>`;
 }
-let regTimer = null;
 const regMemo = new Map(), regPending = new Map();
 function regFormLookup(force = false) {
   const inp = $("#cf-plate"), box = $("#cf-reg-status");
@@ -2547,16 +2546,17 @@ function regFormLookup(force = false) {
   const key = plateKey(inp.value);
   if (!plateOk(key)) {
     if (force) { box.dataset.plate = ""; box.innerHTML = `<div class="reg-fail"><p>Skriv ett registreringsnummer, till exempel ABC 123.</p></div>`; }
-    else { box.dataset.plate = ""; box.innerHTML = `<small>Skriv registreringsnumret, så hämtar appen bilens uppgifter.</small>`; }
+    else { box.dataset.plate = ""; box.innerHTML = `<small>Skriv registreringsnumret och tryck på Hämta, så fylls bilens uppgifter i.</small>`; }
     return;
   }
   if (!force && box.dataset.plate === key) return;
   regLookup(box, key, regFillForm);
 }
-document.addEventListener("input", (ev) => {
-  if (ev.target.id !== "cf-plate" || !$("#cf-reg-status")) return;
-  clearTimeout(regTimer);
-  regTimer = setTimeout(regFormLookup, 700);
+// Sökningen görs bara när man trycker på Hämta (eller Enter i fältet), aldrig av sig själv.
+document.addEventListener("keydown", (ev) => {
+  if (ev.target.id !== "cf-plate" || ev.key !== "Enter" || !$("#cf-reg-status")) return;
+  ev.preventDefault();
+  regFormLookup(true);
 });
 function regFillForm(f) {
   const form = $("#cf-plate")?.form, box = $("#cf-reg-status");
