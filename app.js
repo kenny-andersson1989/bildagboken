@@ -2217,23 +2217,31 @@ const TRAILERS = [
 ];
 // Tre typer av släp med bild: [namn, egna bromsar, vanlig totalvikt från–till, bild].
 const TRAILER_PICS = {
-  small: `<svg viewBox="0 0 120 64" aria-hidden="true"><path d="M2 56h116" class="tp-ground"/><path d="M6 40h16M4 38v4" class="tp-line"/><rect x="22" y="26" width="74" height="18" rx="2" class="tp-body"/><path d="M26 30h66" class="tp-line"/><circle cx="60" cy="48" r="8" class="tp-wheel"/><circle cx="60" cy="48" r="3" class="tp-hub"/></svg>`,
-  box: `<svg viewBox="0 0 120 64" aria-hidden="true"><path d="M2 56h116" class="tp-ground"/><path d="M4 40h18M2 38v4" class="tp-line"/><rect x="10" y="36" width="8" height="5" rx="1" class="tp-body"/><path d="M22 44V16q0-4 4-4h64q4 0 4 4v28Z" class="tp-body"/><path d="M22 22h72" class="tp-line"/><circle cx="50" cy="48" r="7" class="tp-wheel"/><circle cx="68" cy="48" r="7" class="tp-wheel"/><circle cx="50" cy="48" r="2.5" class="tp-hub"/><circle cx="68" cy="48" r="2.5" class="tp-hub"/></svg>`,
-  caravan: `<svg viewBox="0 0 120 64" aria-hidden="true"><path d="M2 56h116" class="tp-ground"/><path d="M4 42h16M2 40v4" class="tp-line"/><path d="M20 44V18q0-10 12-10h66q14 0 18 14v22Z" class="tp-body"/><rect x="30" y="16" width="22" height="12" rx="3" class="tp-win"/><rect x="88" y="18" width="16" height="10" rx="3" class="tp-win"/><rect x="62" y="16" width="14" height="26" rx="2" class="tp-line-f"/><circle cx="58" cy="48" r="7" class="tp-wheel"/><circle cx="58" cy="48" r="2.5" class="tp-hub"/></svg>`,
+  small: `<svg viewBox="0 0 120 64" aria-hidden="true"><path d="M2 56h116" class="tp-ground"/><path d="M14 40h14M12 38v4" class="tp-line"/><rect x="28" y="30" width="56" height="14" rx="2" class="tp-body"/><path d="M32 34h48" class="tp-line"/><circle cx="56" cy="48" r="7" class="tp-wheel"/><circle cx="56" cy="48" r="2.5" class="tp-hub"/></svg>`,
+  medium: `<svg viewBox="0 0 120 64" aria-hidden="true"><path d="M2 56h116" class="tp-ground"/><path d="M6 40h18M4 38v4" class="tp-line"/><rect x="12" y="36" width="8" height="5" rx="1" class="tp-brake"/><rect x="24" y="24" width="72" height="20" rx="2" class="tp-body"/><path d="M28 29h64" class="tp-line"/><circle cx="60" cy="48" r="8" class="tp-wheel"/><circle cx="60" cy="48" r="3" class="tp-hub"/></svg>`,
+  large: `<svg viewBox="0 0 120 64" aria-hidden="true"><path d="M2 56h116" class="tp-ground"/><path d="M2 40h18M1 38v4" class="tp-line"/><rect x="8" y="36" width="8" height="5" rx="1" class="tp-brake"/><rect x="20" y="18" width="94" height="26" rx="2" class="tp-body"/><path d="M24 23h86" class="tp-line"/><circle cx="58" cy="48" r="7" class="tp-wheel"/><circle cx="76" cy="48" r="7" class="tp-wheel"/><circle cx="58" cy="48" r="2.5" class="tp-hub"/><circle cx="76" cy="48" r="2.5" class="tp-hub"/></svg>`,
 };
-// [bild, namn, egna bromsar, vanlig totalvikt, vanlig tjänstevikt (tomt)]
-const TRAILER_TYPES = [["small", "Litet släp", false, 750, 170], ["box", "Kåpsläp", true, 1500, 450], ["caravan", "Husvagn", true, 1500, 1200]];
+// [bild, namn, egna bromsar, vanlig totalvikt (släp + last), vanlig tjänstevikt (släpet tomt)]
+const TRAILER_TYPES = [["small", "Litet släp", false, 750, 170], ["medium", "Mellanstort släp", true, 1000, 250], ["large", "Stort släp", true, 1500, 350]];
+// Varje ruta: vad släpet väger tomt + hur mycket du får lasta = vad det får väga totalt.
 function trailerTiles(t, lic) {
   return `<div class="tow-tiles">${TRAILER_TYPES.map(([pic, name, braked, typTotal, typCurb]) => {
     const lmax = licenseMax(t, lic);
-    const max = Math.min(trailerCarMax(t, braked), lmax ?? Infinity); // släp + last, högst
-    const load = Math.min(max, typTotal) - typCurb;                      // last i ett vanligt sådant släp
-    const cls = max >= typTotal ? "ok" : load >= 100 ? "warn" : "bad";
-    const big = load >= 100 ? `Lasta ca ${fmt(Math.round(load / 10) * 10)} kg` : "För tungt";
-    return `<div class="tow-tile ${cls}">${TRAILER_PICS[pic]}
-      <b>${esc(name)}</b>
-      <span class="tt-kg">${esc(big)}</span>
-      <span class="tt-typ">${esc(`Släp + last högst ${fmt(max)} kg`)}</span></div>`;
+    const head = `<span class="tt-pic">${TRAILER_PICS[pic]}</span><span class="tt-txt"><b>${esc(name)}</b><span class="tt-brake">${braked ? "Med bromsar" : "Utan bromsar"}</span>`;
+    // Körkortet räknas på släpets totalvikt i registreringsbeviset, även om man lastar mindre.
+    if (lmax != null && typTotal > lmax) {
+      const need = lic === "B" && t.b96 != null && typTotal <= t.b96 ? "B96" : "BE";
+      return `<div class="tow-tile bad">${head}<span class="tt-kg">${esc(`Kräver körkort ${need}`)}</span>
+        <span class="tt-sum">${esc(`Ett sådant släp brukar få väga ${fmt(typTotal)} kg med last`)}</span></span></div>`;
+    }
+    const max = trailerCarMax(t, braked);
+    const total = Math.min(typTotal, max), load = total - typCurb;
+    if (load < 50) return `<div class="tow-tile bad">${head}<span class="tt-kg">För tungt för bilen</span>
+      <span class="tt-sum">${esc(`Bilen får bara dra ${fmt(max)} kg`)}</span></span></div>`;
+    return `<div class="tow-tile ${total < typTotal ? "warn" : "ok"}">${head}
+      <span class="tt-kg">${esc(`Lasta ca ${fmt(load)} kg`)}</span>
+      <span class="tt-sum">${esc(`Släpet ca ${fmt(typCurb)} kg + last ${fmt(load)} kg = ${fmt(total)} kg totalt`)}</span>
+      ${total < typTotal ? `<span class="tt-sub">${esc(`Fyll inte helt. Bilen får dra ${fmt(max)} kg.`)}</span>` : ""}</span></div>`;
   }).join("")}</div>`;
 }
 const licenseOf = () => (LICENSES[pref.get("license")] ? pref.get("license") : "B");
