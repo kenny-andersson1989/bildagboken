@@ -2217,6 +2217,18 @@ function runLaunchAction() {
   launchAction = null;
   const u = new URL(location.href); u.searchParams.delete("ny");
   history.replaceState(history.state, "", u.pathname + u.search + (u.hash || "#oversikt"));
+  // Avsluta i Dynamic Island eller på låsskärmen: formuläret för att avsluta den pågående resan.
+  // Resorna kan komma lite efter resten, så appen väntar upp till fem sekunder på dem.
+  if (a === "avsluta-resa") {
+    let tries = 0;
+    const go = () => {
+      const o = tripsOn() && openTrip();
+      if (o) { if (S.view !== "resor" && tripsVisible()) setView("resor"); return tripForm(o, "end"); }
+      if (++tries < 10) return setTimeout(go, 500);
+      showToast("Ingen resa pågår just nu.");
+    };
+    return setTimeout(go, 0);
+  }
   setTimeout(() => {
     if (a === "bokning") bookingForm();
     else if (TYPE[a]) entryForm(a);

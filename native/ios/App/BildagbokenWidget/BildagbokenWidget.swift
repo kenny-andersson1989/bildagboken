@@ -221,6 +221,21 @@ private func routeText(_ s: TripActivityAttributes.ContentState, en: Bool) -> St
     return en ? "Trip in progress" : "Resa pågår"
 }
 
+// Avsluta öppnar appen direkt på formuläret Avsluta resan, där man fyller i mätarställningen.
+private let endTripURL = URL(string: "https://bildagboken.com/?ny=avsluta-resa")!
+
+private func endButton(en: Bool) -> some View {
+    Link(destination: endTripURL) {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2).fill(Color.white).frame(width: 10, height: 10)
+            Text(en ? "End trip" : "Avsluta").font(.subheadline.weight(.semibold)).foregroundColor(.white)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Capsule().fill(orange))
+    }
+}
+
 struct TripLockScreenView: View {
     let context: ActivityViewContext<TripActivityAttributes>
     var body: some View {
@@ -238,10 +253,13 @@ struct TripLockScreenView: View {
                     .font(.caption).foregroundColor(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
-            tripClock(context.attributes.start)
-                .font(.title2.weight(.bold))
-                .multilineTextAlignment(.trailing)
-                .frame(width: 96, alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 8) {
+                tripClock(context.attributes.start)
+                    .font(.title2.weight(.bold))
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 96, alignment: .trailing)
+                endButton(en: en)
+            }
         }
         .padding(16)
     }
@@ -267,12 +285,15 @@ struct TripLiveActivity: Widget {
                         .frame(width: 90, alignment: .trailing)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(routeText(context.state, en: en)).font(.subheadline.weight(.semibold)).lineLimit(1)
-                        Text([context.attributes.car, kindText(context.state.kind, en: en)].filter { !$0.isEmpty }.joined(separator: " · "))
-                            .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(routeText(context.state, en: en)).font(.subheadline.weight(.semibold)).lineLimit(1)
+                            Text([context.attributes.car, kindText(context.state.kind, en: en)].filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        endButton(en: en)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } compactLeading: {
                 Image(systemName: "car.fill").foregroundColor(orange)

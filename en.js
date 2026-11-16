@@ -1,6 +1,7 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Ingen resa pågår just nu.": "No trip in progress right now.",
   "Sparade platser": "Saved places",
   "Resor som börjar eller slutar vid en sparad plats får platsens namn, och appen föreslår tjänst eller privat.": "Trips that start or end at a saved place get the place's name, and the app suggests business or private.",
   "Lägg till plats": "Add place",
