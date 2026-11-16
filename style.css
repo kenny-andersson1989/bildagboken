@@ -1763,3 +1763,11 @@ button.hero-name svg { opacity: .6; }
 .car-danger { text-align: center; padding: 18px 8px 6px; }
 .car-danger .link.danger { display: inline-flex; align-items: center; gap: 6px; font: 600 14px var(--f-body); background: none; border: 0; cursor: pointer; padding: 8px; }
 .car-danger .hint { margin: 4px auto 0; max-width: 34ch; }
+
+/* Låst bil utan Plus */
+body.car-locked .fab { display: none; }
+.locked-car { text-align: center; }
+.locked-car h2 { justify-content: center; text-align: center; }
+.locked-car .lc-ic { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); margin: 4px auto 10px; }
+.locked-car .form .hh-ghost { margin: 4px auto 0; }
+.locked-tip h2 { display: flex; align-items: center; gap: 8px; }

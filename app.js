@@ -499,6 +499,38 @@ function limitSheet(kind) {
   openSheet("Bildagboken Plus", `<p>${esc(text)}</p>
     <div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="plus">Läs om Bildagboken Plus</button></div>`);
 }
+// Utan Plus fungerar bara en bil. Ägaren väljer vilken (activeCar), annars den som lades till först.
+// De andra är låsta: allt finns kvar, men det går inte att logga på dem förrän ni har Plus igen.
+const ACTIVE_CAR_DAYS = 30; // så ofta ägaren får byta vilken bil som fungerar
+function activeCarId() {
+  const c = caps();
+  if (!c || S.cars.length <= c.cars) return null;
+  return S.cars.find((x) => x.id === S.house?.activeCar)?.id || S.cars[0]?.id || null;
+}
+const carLocked = (c) => { const a = activeCarId(); return !!(a && c && c.id !== a); };
+// När ägaren får byta bil nästa gång (0 = nu).
+const activeCarNext = () => { const t = tsMs(S.house?.activeCarAt); return t && Date.now() - t < ACTIVE_CAR_DAYS * 864e5 ? t + ACTIVE_CAR_DAYS * 864e5 : 0; };
+function viewLocked() {
+  const c = car(), a = S.cars.find((x) => x.id === activeCarId());
+  const next = activeCarNext();
+  return `${headerMain()}
+  <div class="car-chips" role="group" aria-label="Välj bil">
+    ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon(carLocked(x) ? "lock" : "car", 16)}${esc(carName(x))}</button>`).join("")}
+  </div>
+  <article class="card locked-car">
+    <span class="lc-ic">${icon("lock", 28)}</span>
+    <h2>${esc(`${carName(c)} är låst`)}</h2>
+    <p class="muted">${esc(`Utan Plus fungerar en bil i taget, och just nu är det ${carName(a)}. Allt som är loggat på ${carName(c)} finns kvar och syns igen när ni har Plus.`)}</p>
+    <div class="form" style="margin-top:14px">
+      <button class="btn primary block" type="button" data-act="plus">${icon("spark", 18)} Skaffa Plus, så fungerar alla bilar</button>
+      <button class="btn block" type="button" data-act="pick-car" data-id="${esc(a.id)}">${esc(`Gå till ${carName(a)}`)}</button>
+      ${isOwner()
+        ? next ? `<p class="hint">${esc(`Du kan byta vilken bil som fungerar igen ${fmtDate(ymd(new Date(next)))}.`)}</p>`
+          : `<button class="hh-ghost" type="button" data-act="set-active-car" data-id="${esc(c.id)}">${esc(`Använd ${carName(c)} i stället`)}</button>`
+        : `<p class="hint">${esc(`Det är hushållets ägare, ${memberName(ownerUid())}, som väljer vilken bil som fungerar.`)}</p>`}
+    </div>
+  </article>`;
+}
 const membersFull = () => { const c = caps(); return !!c && (S.house?.members || []).length >= c.members; };
 // Ett tips om Plus på Översikt, en gång, när appen har hunnit göra nytta (20 loggade saker eller en månad).
 function plusTipCard() {
@@ -1840,7 +1872,11 @@ function render() {
   if (!S.cars.length) return renderCarSetup();
   const views = { oversikt: viewOverview, logg: viewLog, ekonomi: viewEconomy, bilen: viewCar, resor: viewTrips, aviseringar: viewNotifications, installningar: viewSettings, admin: viewAdmin };
   if (S.view === "resor" && !tripsVisible()) S.view = "oversikt";
-  const fn = views[S.view] || viewOverview;
+  // En låst bil visas bara om man själv har valt den. Annars hoppar appen till bilen som fungerar.
+  if (carLocked(car()) && S.lockSeen !== S.carId) S.carId = activeCarId();
+  const locked = carLocked(car()) && ["oversikt", "logg", "ekonomi", "bilen", "resor"].includes(S.view);
+  document.body.classList.toggle("car-locked", locked);
+  const fn = locked ? viewLocked : views[S.view] || viewOverview;
   setScreen("view-" + S.view, fn(), { showNav: true, keepForm: true });
   // Antal nya aviseringar även i sidomenyn på datorn.
   const n = unseenFromOthers().length;
@@ -2938,6 +2974,15 @@ function viewOverview() {
   const c = car();
   const parts = [headerMain()];
   if (isGarage()) parts.push(garageSign());
+  // Utan Plus fungerar en bil. Har ägaren inte valt vilken än, får ägaren välja här.
+  if (activeCarId() && !S.house?.activeCar && !pref.get("activeCarTip." + S.hid)) parts.push(`<article class="card locked-tip">
+    <h2>${icon("lock", 18)} En bil fungerar utan Plus</h2>
+    <p class="muted">${esc(`Ni har ${S.cars.length} bilar, och utan Plus fungerar en i taget. Just nu är det ${carName(S.cars.find((x) => x.id === activeCarId()))}. De andra är låsta, men allt på dem finns kvar.`)}</p>
+    ${isOwner() ? `<p class="muted" style="margin-top:6px">Vill du hellre använda en annan bil? Välj den här. Sedan kan du byta en gång var 30:e dag.</p>
+      <div class="ask">${S.cars.filter((x) => x.id !== activeCarId()).map((x) => `<button class="btn-soft" type="button" data-act="set-active-car" data-id="${esc(x.id)}">${icon("car", 16)} ${esc(carName(x))}</button>`).join("")}</div>`
+      : `<p class="hint">${esc(`Det är hushållets ägare, ${memberName(ownerUid())}, som väljer vilken bil som fungerar.`)}</p>`}
+    <div class="ask"><button class="btn-soft" type="button" data-act="plus">${icon("spark", 16)} Skaffa Plus</button><button class="hh-ghost" type="button" data-act="active-car-tip">Okej</button></div>
+  </article>`);
 
 
   // Bilkortet: namn och regnummer, bilden, och under den två rutor: mätarställning och bränsle.
@@ -3713,7 +3758,7 @@ function viewCar() {
   }).join("");
   return arrangeCards(`${subHeader([c.year, c.fuel].filter(Boolean).join(" · "), carName(c), false, "Bilen")}
     <div class="car-chips" role="group" aria-label="Välj bil">
-      ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon("car", 16)}${esc(carName(x))}</button>`).join("")}
+      ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon(carLocked(x) ? "lock" : "car", 16)}${esc(carName(x))}</button>`).join("")}
       <button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>
     </div>
     <!--card:upp--><div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
@@ -6546,6 +6591,7 @@ const ACTIONS = {
   },
   "close-sheet"() { closeSheet(); },
   "new-entry"(el) {
+    if (carLocked(car())) return render();
     const t = el.dataset.type;
     // Besiktning är en kostnad av typen Besiktning, men har en egen knapp så att den är lätt att hitta.
     if (t && TYPE[t]) entryForm(t, el.dataset.cat ? { category: el.dataset.cat } : {});
@@ -7157,10 +7203,25 @@ const ACTIONS = {
     $("#item-rows").innerHTML = fresh.map(itemRowHtml).join("");
     showToast("Standardpunkterna är inlagda. Tryck Spara för att behålla dem.");
   },
-  "pick-car"(el) { S.carId = el.dataset.id; pref.set("car", S.carId); if (el.closest(".car-switch")) closeSheet(); render(); },
+  "pick-car"(el) { S.carId = el.dataset.id; S.lockSeen = S.carId; if (!carLocked(car())) pref.set("car", S.carId); if (el.closest(".car-switch")) closeSheet(); render(); },
+  "active-car-tip"() { pref.set("activeCarTip." + S.hid, 1); render(); },
+  async "set-active-car"(el) {
+    const c = S.cars.find((x) => x.id === el.dataset.id);
+    if (!c || !isOwner() || activeCarNext()) return;
+    const a = S.cars.find((x) => x.id === activeCarId());
+    const ok = await confirmDialog({ title: `Använda ${carName(c)}?`, lines: [`${carName(c)} fungerar och ${carName(a)} blir låst. Inget raderas.`, `Du kan byta igen om ${ACTIVE_CAR_DAYS} dagar.`], okLabel: "Byt bil", warn: "" });
+    if (!ok) return;
+    try {
+      await updateDoc(doc(db, "households", S.hid), { activeCar: c.id, activeCarAt: Date.now() });
+      S.house = { ...S.house, activeCar: c.id, activeCarAt: Date.now() };
+      pref.set("car", c.id);
+      showToast(`${carName(c)} fungerar nu`);
+      render();
+    } catch (e) { onWriteError(e); }
+  },
   "car-switch"() {
     openSheet("Byt bil", `<div class="rows car-switch">${S.cars.map((x) => `<button class="dl as-btn" type="button" data-act="pick-car" data-id="${esc(x.id)}"><span class="dl-ic">${icon("car", 20)}</span>
-      <span><span class="dl-t">${esc(carName(x))}</span><span class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</span></span>${x.id === S.carId ? `<span class="pill ok">Vald</span>` : "<span></span>"}</button>`).join("")}</div>
+      <span><span class="dl-t">${esc(carName(x))}</span><span class="dl-s">${esc([x.year, x.plate, carLocked(x) ? "Låst utan Plus" : ""].filter(Boolean).join(" · "))}</span></span>${x.id === S.carId ? `<span class="pill ok">Vald</span>` : carLocked(x) ? icon("lock", 18) : "<span></span>"}</button>`).join("")}</div>
       <div class="form" style="margin-top:14px"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>`);
   },
   async "delete-car"(el) {
