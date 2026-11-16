@@ -1109,6 +1109,7 @@ const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 // Röststyrning i webbläsaren. I iPhone-appen pratar man med mikrofonen på tangentbordet.
 const canListen = () => !!SpeechRec && !NATIVE;
 const canSpeak = () => "speechSynthesis" in window;
+const speakerSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>`;
 const micSvg = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>`;
 function chatSheet() {
   if (!chatOn()) return plusOnSale() ? plusSheet() : null;
@@ -1129,7 +1130,7 @@ function chatSheet() {
 function chatLogHtml(st) {
   if (!st.msgs.length) return `<p class="muted chat-intro">Fråga vad du vill om bilen: kostnader, service, däck, förbrukning eller resor.</p>
     <div class="chat-sugg">${CHAT_SUGGESTIONS.map((q) => `<button class="chip-btn" type="button" data-act="chat-ask" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
-  return st.msgs.map((m) => `<div class="msg ${m.role === "user" ? "me" : "ai"}${m.err ? " err" : ""}"${m.err ? "" : " data-notr"}>${esc(m.text).replace(/\n/g, "<br>")}</div>`).join("")
+  return st.msgs.map((m, i) => `<div class="msg ${m.role === "user" ? "me" : "ai"}${m.err ? " err" : ""}"${m.err ? "" : " data-notr"}>${esc(m.text).replace(/\n/g, "<br>")}</div>${m.role === "assistant" && !m.err && canSpeak() ? `<button class="link chat-play" type="button" data-act="chat-play" data-i="${i}">${speakerSvg} Lyssna</button>` : ""}`).join("")
     + (st.busy ? `<div class="msg ai busy" aria-label="AI tänker"><span></span><span></span><span></span></div>` : "")
     + (st.left != null && st.left <= 5 ? `<p class="hint chat-left">${esc(`${st.left} frågor kvar den här månaden.`)}</p>` : "");
 }
@@ -1152,7 +1153,7 @@ async function askCar(q) {
     }
     st.msgs.push({ role: "assistant", text: res?.answer || "Jag hittade inget svar." });
     if (res?.left != null) st.left = res.left;
-    if ($("#chat-speak")?.checked) speak(res?.answer || "");
+    if (pref.get("chatSpeak") === "1") speak(res?.answer || "");
   } catch (e) {
     const code = String(e?.code || e?.message || "").replace(/^functions\//, "");
     st.msgs.push({ role: "assistant", err: true, text: /resource-exhausted|permission-denied|failed-precondition|unavailable/.test(code) ? e.message : !navigator.onLine ? "Fråga om bilen behöver nät." : `Det gick inte att få ett svar (${code || "okänt fel"}). Försök igen.` });
@@ -1161,9 +1162,12 @@ async function askCar(q) {
     redrawChat();
   }
 }
+// På iPhone får uppläsningen bara starta direkt av ett tryck, och den hörs inte när telefonen står på ljudlöst
+// (i appen från 1.2 hörs den ändå). Därför finns Lyssna under varje svar, och den avbryts innan man pratar in.
+const stopSpeech = () => { try { if (canSpeak() && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel(); } catch { /* inget att stoppa */ } };
 function speak(text) {
   if (!canSpeak() || !text) return;
-  speechSynthesis.cancel();
+  stopSpeech();
   const u = new SpeechSynthesisUtterance(text.replace(/[*#_`]/g, ""));
   u.lang = EN ? "en-GB" : "sv-SE";
   speechSynthesis.speak(u);
@@ -1171,6 +1175,7 @@ function speak(text) {
 let listening = null;
 function listen(btn) {
   if (listening) { listening.stop(); return; }
+  stopSpeech();
   const input = $("#chat-in");
   const rec = new SpeechRec();
   rec.lang = EN ? "en-GB" : "sv-SE";
@@ -3604,7 +3609,8 @@ function nudgeFixed() {
   });
 }
 document.addEventListener("focusout", (ev) => { if (ev.target.matches?.("input, textarea, select")) setTimeout(nudgeFixed, 60); });
-window.visualViewport?.addEventListener("resize", () => setTimeout(nudgeFixed, 60));
+let nudgeTimer = 0;
+window.visualViewport?.addEventListener("resize", () => { clearTimeout(nudgeTimer); nudgeTimer = setTimeout(nudgeFixed, 120); });
 
 // Rutan ska alltid få plats ovanför tangentbordet och under klockan, så att både krysset och
 // det understa fältet går att nå. iPhone krymper bara den synliga ytan när tangentbordet visas.
@@ -3612,22 +3618,30 @@ function fitSheet() {
   const vv = window.visualViewport;
   if (!vv || sheet.hidden) return;
   // iPhone skjuter undan hela sidan för att visa fältet. Sidan bakom är låst, så den förskjutningen tas bort.
-  if (lockedY != null && window.scrollY !== 0) window.scrollTo(0, 0);
+  if (lockedY != null && window.scrollY > 1) window.scrollTo(0, 0);
   const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
   const typing = sheet.contains(document.activeElement) && document.activeElement.matches("input:not([type=checkbox]):not([type=radio]):not([type=file]), textarea");
-  sheet.style.bottom = kb > 0 ? kb + "px" : "";
-  // Aldrig högre än den synliga ytan, minus klockraden överst.
-  sheet.style.maxHeight = `min(90vh, calc(${Math.round(vv.height)}px - env(safe-area-inset-top, 0px) - 8px))`;
-  sheet.classList.toggle("kb", typing && vv.height < window.screen.height * 0.75);
+  // Ändra bara när något har ändrats. Diktering ändrar tangentbordets höjd många gånger i rad, och varje
+  // ändring av rutan får iPhone att räkna om sidan, vilket annars kan bli en slinga som låser skärmen.
+  const bottom = kb > 0 ? kb + "px" : "";
+  const maxH = `min(90vh, calc(${Math.round(vv.height)}px - env(safe-area-inset-top, 0px) - 8px))`;
+  if (sheet.style.bottom !== bottom) sheet.style.bottom = bottom;
+  if (sheet.dataset.maxH !== maxH) { sheet.dataset.maxH = maxH; sheet.style.maxHeight = maxH; }
+  const kbOn = typing && vv.height < window.screen.height * 0.75;
+  if (sheet.classList.contains("kb") !== kbOn) sheet.classList.toggle("kb", kbOn);
 }
-window.visualViewport?.addEventListener("resize", fitSheet);
-window.visualViewport?.addEventListener("scroll", fitSheet);
+// Högst en gång per bildruta.
+let fitQueued = false;
+const fitSheetSoon = () => { if (fitQueued) return; fitQueued = true; requestAnimationFrame(() => { fitQueued = false; fitSheet(); }); };
+window.visualViewport?.addEventListener("resize", fitSheetSoon);
+window.visualViewport?.addEventListener("scroll", fitSheetSoon);
 // Fältet man skriver i flyttas fram i rutan när tangentbordet har kommit upp.
 sheet.addEventListener("focusin", (ev) => {
   if (!ev.target.matches?.("input, textarea, select")) return;
   fitSheet();
   setTimeout(fitSheet, 150);
-  setTimeout(() => { fitSheet(); ev.target.scrollIntoView({ block: "center", behavior: "smooth" }); }, 400);
+  // Chattens fält ligger redan längst ner i rutan och ska inte skrollas fram (det störde dikteringen).
+  setTimeout(() => { fitSheet(); if (ev.target.id !== "chat-in") ev.target.scrollIntoView({ block: "center", behavior: "smooth" }); }, 400);
 });
 sheet.addEventListener("focusout", () => setTimeout(fitSheet, 150));
 window.addEventListener("pageshow", nudgeFixed);
@@ -3648,6 +3662,7 @@ function unlockScroll() {
 }
 let reloadWhenClosed = false;
 function closeSheet(fromBack = false) {
+  if (typeof stopSpeech === "function") stopSpeech();
   // Vänta en stund, så att det som just sparades hinner skrivas innan sidan laddas om.
   if (reloadWhenClosed) { reloadWhenClosed = false; setTimeout(() => location.reload(), 900); }
   if (sheetHistory) {
@@ -6466,7 +6481,22 @@ const ACTIONS = {
   chat() { chatSheet(); },
   "chat-ask"(el) { askCar(EN ? el.textContent : el.dataset.q); },
   "chat-mic"(el) { listen(el); },
-  "chat-speak"(el) { pref.set("chatSpeak", el.checked ? "1" : "0"); if (!el.checked && canSpeak()) speechSynthesis.cancel(); },
+  "chat-speak"(el) {
+    // Trycket avbryts av appen (preventDefault), så rutan sätts här efteråt, utifrån det sparade valet.
+    const on = pref.get("chatSpeak") !== "1";
+    pref.set("chatSpeak", on ? "1" : "0");
+    setTimeout(() => { el.checked = on; }, 0);
+    if (!on) return stopSpeech();
+    // Läs upp senaste svaret direkt, så att uppläsningen är igång (iPhone kräver ett tryck första gången).
+    const last = [...chatState().msgs].reverse().find((m) => m.role === "assistant" && !m.err);
+    if (last) speak(last.text); else showToast("Svaren läses upp när de kommer. Kontrollera att telefonen inte står på ljudlöst.", 5000);
+  },
+  "chat-play"(el) {
+    const m = chatState().msgs[Number(el.dataset.i)];
+    if (!m) return;
+    if (canSpeak() && speechSynthesis.speaking) return stopSpeech();
+    speak(m.text);
+  },
   "new-place"() { placeForm(); },
   "edit-place"(el) { const p = S.places.find((x) => x.id === el.dataset.id); if (p) placeForm(p); },
   async "place-here"(el) {
@@ -7386,8 +7416,10 @@ document.addEventListener("click", (ev) => {
 document.addEventListener("focusin", (ev) => { if ((ev.target.id === "tr-to" || ev.target.id === "tr-from") && !ev.target.value.trim()) recentTripTargets(ev.target.id); });
 // Fråga om bilen: Enter skickar frågan, Skift+Enter ger en ny rad.
 document.addEventListener("keydown", (ev) => {
-  if (ev.target.id === "chat-in" && ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ev.target.form?.requestSubmit(); }
+  if (ev.target.id === "chat-in" && ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); if (ev.target.value.trim()) ev.target.form?.requestSubmit(); }
 });
+// Diktering och uppläsning använder ljudet samtidigt: tysta uppläsningen när man ska skriva eller prata in.
+document.addEventListener("focusin", (ev) => { if (ev.target.id === "chat-in") stopSpeech(); });
 document.addEventListener("submit", onSubmit);
 document.addEventListener("input", onInput);
 document.addEventListener("change", onChange);

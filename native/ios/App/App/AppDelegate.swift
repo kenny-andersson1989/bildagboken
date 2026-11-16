@@ -1,6 +1,7 @@
 import UIKit
 import Capacitor
 import UserNotifications
+import AVFoundation
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -10,6 +11,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Automatisk körjournal: fortsätt bevaka om den är påslagen, även när iOS startar appen i bakgrunden.
         TripTracker.shared.resumeIfEnabled()
+        // Uppläsningen i Fråga om bilen ska höras även när telefonen står på ljudlöst, och annan musik spelar vidare.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers])
         // Startar iOS appen i bakgrunden för knappen Tjänst eller Privat i notisen finns ingen vy, och då
         // tar TripTracker emot svaret direkt. Annars sköter Capacitor notiserna (se SceneDelegate).
         if application.applicationState == .background {

@@ -1,6 +1,8 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Lyssna": "Listen",
+  "Svaren läses upp när de kommer. Kontrollera att telefonen inte står på ljudlöst.": "Answers are read aloud when they arrive. Check that the phone is not on silent.",
   "Fråga om bilen": "Ask about the car",
   "Skriv eller prata med AI om allt ni har loggat: kostnader, service, däck och förbrukning.": "Write or talk to AI about everything you have logged: costs, service, tyres and fuel use.",
   "Vad har bilen kostat i år?": "What has the car cost this year?",
