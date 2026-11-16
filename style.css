@@ -1704,3 +1704,26 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 :root[data-garage] .fab { border-radius: 0 !important; }
 /* Kryssrutor och radioknappar som pixelrutor. */
 :root[data-garage] input[type=checkbox], :root[data-garage] input[type=radio] { border-radius: 0 !important; }
+
+/* Glenns Garage i Inställningar: Glenn överst och tre små skärmar som visar hur temana ser ut. */
+.gp-pick { margin-top: 16px; padding: 12px; background: #1d1a24; border: 3px solid #121315; color: #fff; }
+.gp-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 10px; background: #1d3f8a; border: 3px solid #0f1f45; }
+.gp-head img { width: 56px; height: 56px; image-rendering: pixelated; border: 3px solid #0f1f45; background: #fde2cd; flex: none; }
+.gp-head b { display: block; font: 400 24px/1.05 "Garage Pixel", system-ui, sans-serif; letter-spacing: .04em; }
+.gp-head span { display: block; margin-top: 4px; font: 400 16px "Garage Pixel", system-ui, sans-serif; color: #ffe08a; }
+.gp-minis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.gp-mini { display: flex; flex-direction: column; gap: 6px; padding: 0; border: 0; background: none; color: #fff; cursor: pointer; text-align: center; }
+.gm-screen { display: flex; flex-direction: column; gap: 4px; height: 118px; padding: 5px; border: 3px solid #121315; background: var(--m-bg); }
+.gm-sign { display: flex; align-items: center; gap: 3px; height: 20px; padding: 0 4px; background: var(--m-sign); color: var(--m-signink); border: 2px solid var(--m-edge); font: 400 10px "Garage Pixel", system-ui, sans-serif; white-space: nowrap; overflow: hidden; }
+.gm-sign img { width: 14px; height: 14px; image-rendering: pixelated; flex: none; }
+.gm-card { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 5px; background: var(--m-card); border: 2px solid var(--m-edge); }
+.gm-card i { display: block; height: 4px; background: var(--m-line); }
+.gm-card i + i { width: 60%; }
+.gm-nav { position: relative; height: 12px; background: var(--m-nav); border: 2px solid var(--m-edge); }
+.gm-nav i { position: absolute; left: 50%; top: -6px; width: 12px; height: 12px; margin-left: -6px; background: var(--m-fab); border: 2px solid var(--m-edge); }
+.gm-name { font: 400 16px/1.1 "Garage Pixel", system-ui, sans-serif; hyphens: manual; }
+.gp-mini[aria-pressed="true"] .gm-screen { outline: 3px solid #ffe08a; outline-offset: 2px; }
+.gp-mini[aria-pressed="true"] .gm-name { color: #ffe08a; }
+.gp-mini.g-diner { --m-bg: #bfe3d0; --m-sign: #d7263d; --m-signink: #fff8ea; --m-card: #fff8ea; --m-edge: #3a1d1d; --m-line: #d7263d; --m-nav: #fff8ea; --m-fab: #ffcf40; }
+.gp-mini.g-neon { --m-bg: #2a1446; --m-sign: #12081f; --m-signink: #ffe66b; --m-card: #3d2066; --m-edge: #ff4fd8; --m-line: #5ef2ff; --m-nav: #1a0b2e; --m-fab: #ff4fd8; }
+.gp-mini.g-cozy { --m-bg: #efe2c8; --m-sign: #5d7a3a; --m-signink: #fffaf0; --m-card: #fffaf0; --m-edge: #6b4a2b; --m-line: #5d7a3a; --m-nav: #fffaf0; --m-fab: #f2c14e; }

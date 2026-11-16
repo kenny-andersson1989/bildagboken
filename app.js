@@ -1549,6 +1549,16 @@ function pixelCar(root) {
     if (im.complete && im.naturalWidth) go(); else im.addEventListener("load", go, { once: true });
   });
 }
+// Glenns teman i Inställningar: ett eget kort med Glenn och en liten förhandsvisning av varje tema.
+function garagePicker() {
+  const list = Object.entries(COLORS).filter(([, t]) => t.garage);
+  return `<div class="gp-pick">
+    <div class="gp-head"><img src="${glennSrc("base")}" alt="" width="56" height="56"><div><b>GLENNS GARAGE</b><span>Tre teman i pixelstil</span></div></div>
+    <div class="gp-minis" role="group" aria-label="Glenns Garage">${list.map(([k, t]) => `<button class="gp-mini ${t.garage}" type="button" data-act="theme-color" data-v="${k}" aria-pressed="${themePrefs().color === k}" aria-label="${esc(t.name.replace(/\u00ad/g, ""))}">
+      <span class="gm-screen" aria-hidden="true"><span class="gm-sign"><img src="${glennSrc("base")}" alt="">GLENNS GARAGE</span><span class="gm-card"><i></i><i></i></span><span class="gm-card"><i></i></span><span class="gm-nav"><i></i></span></span>
+      <span class="gm-name">${t.name}</span></button>`).join("")}</div>
+  </div>`;
+}
 // Saker från verkstaden på korten, efter rubriken (svenska eller engelska).
 const GARAGE_DECO = [[/^(däck|tyres)/i, "tire"], [/^(underhåll|maintenance)/i, "oil"], [/^(uppgifter|details)/i, "toolbox"], [/^(på gång|coming up)/i, "cone"], [/^(att göra|to do)/i, "coffee"], [/^(sparade platser|saved places)/i, "cone"], [/^(tankningar|refuelling)/i, "oil"]];
 function garageDeco(root) {
@@ -3750,11 +3760,7 @@ function viewSettings() {
         ${Object.entries(COLORS).filter(([, t]) => !t.garage).map(([k, t]) => { const v = t[isDarkNow() ? "dark" : "light"]; return `<button class="theme-btn" type="button" data-act="theme-color" data-v="${k}" aria-pressed="${themePrefs().color === k}">
           <span class="theme-sw" style="background:${v.sw}" aria-hidden="true"><i style="background:${v.dot}"></i></span>${t.name}</button>`; }).join("")}
       </div>
-      <p class="label" style="margin:16px 0 8px">Glenns Garage</p>
-      <div class="theme-grid colors garage-grid" role="group" aria-label="Glenns Garage">
-        ${Object.entries(COLORS).filter(([, t]) => t.garage).map(([k, t]) => `<button class="theme-btn" type="button" data-act="theme-color" data-v="${k}" aria-pressed="${themePrefs().color === k}">
-          <span class="theme-sw ${t.garage}" aria-hidden="true"></span>${t.name}</button>`).join("")}
-      </div>
+      ${garagePicker()}
       <p class="label" style="margin:16px 0 8px">Språk</p>
       <div class="seg" role="group" aria-label="Språk">
         ${[["sv", "Svenska"], ["en", "English"]].map(([k, l]) => `<button type="button" data-act="lang" data-v="${k}" aria-pressed="${LANG === k}" data-notr>${l}</button>`).join("")}
