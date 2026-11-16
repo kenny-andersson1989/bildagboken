@@ -1943,7 +1943,7 @@ function renderOnboarding(error = "") {
     <form class="card form" data-form="create-house" data-keep>
       <h2>Starta en ny bildagbok</h2>
       <label class="field"><span>Ditt namn</span><input name="name" id="ob-name" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
-      <label class="field"><span>Vad heter hushållet?</span><input name="house" id="ob-house" maxlength="40" placeholder="Till exempel Familjen Berg"></label>
+      <label class="field"><span>Vad heter hushållet?</span><input name="house" id="ob-house" maxlength="40"></label>
       <button class="btn primary block" type="submit">Skapa</button>
       <p class="hint">Sedan kan du bjuda in andra med en kod, till exempel familj eller den du delar bil med.</p>
     </form>
@@ -2090,25 +2090,25 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
   parts.basic = `
     ${isNew ? `<div class="field reg-look">
       <label for="cf-plate">Registreringsnummer</label>
-      <span class="geo-row"><input name="plate" id="cf-plate" value="${esc(c.plate || "")}" placeholder="ABC 123" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="8">
+      <span class="geo-row"><input name="plate" id="cf-plate" value="${esc(c.plate || "")}" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="8">
         <button class="btn-soft" type="button" data-act="reg-lookup">${icon("search", 16)} Hämta</button></span>
       <div id="cf-reg-status" class="reg-status" aria-live="polite"><small>Skriv registreringsnumret, så kan du hämta bilens uppgifter gratis från Transportstyrelsen. Eller fyll i dem själv nedan.</small></div>
       <input type="hidden" name="regJson" id="cf-regJson">
     </div>` : ""}
     <div class="row2">
-      ${inp("make", "Märke", c.make, 'required placeholder="Volvo" list="dl-make" autocomplete="off"')}
-      ${inp("model", "Modell", c.model, 'required placeholder="V50" list="dl-model" autocomplete="off"')}
+      ${inp("make", "Märke", c.make, 'required list="dl-make" autocomplete="off"')}
+      ${inp("model", "Modell", c.model, 'required list="dl-model" autocomplete="off"')}
     </div>
     <datalist id="dl-make">${makeOptions()}</datalist>
     <datalist id="dl-model">${modelOptions(c.make)}</datalist>
     <div class="row2">
-      ${inp("year", "Årsmodell", c.year, 'inputmode="numeric" placeholder="2007"')}
-      ${inp("engine", "Motor", c.engine, 'placeholder="1.8F"')}
+      ${inp("year", "Årsmodell", c.year, 'inputmode="numeric"')}
+      ${inp("engine", "Motor", c.engine, '')}
     </div>
     <label class="field"><span>Drivmedel</span>${sel("fuel", FUELS, c.fuel || "Bensin")}</label>
-    ${isNew ? inp("color", "Färg", c.color, 'placeholder="Svart"') : `<div class="row2">
-      ${inp("color", "Färg", c.color, 'placeholder="Svart"')}
-      ${inp("plate", "Registreringsnummer", c.plate, 'placeholder="ABC 123" autocapitalize="characters"')}
+    ${isNew ? inp("color", "Färg", c.color, '') : `<div class="row2">
+      ${inp("color", "Färg", c.color, '')}
+      ${inp("plate", "Registreringsnummer", c.plate, 'autocapitalize="characters"')}
     </div>`}
     <label class="field"><span>Chassinummer (VIN)</span>
       <span class="geo-row"><input name="vin" id="cf-vin" value="${esc(c.vin || "")}" placeholder="17 tecken, valfritt" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="24">
@@ -2116,7 +2116,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       <small id="cf-vin-info">${esc(c.vin ? vinInfo(c.vin) : "Står längst ner i vindrutan på förarsidan och i registreringsbeviset. Tryck på kameran för att läsa av det.")}</small></label>
     ${isNew ? "" : `<label class="check"><input type="checkbox" name="vinShare" id="cf-vinShare"${c.vinShare ? " checked" : ""}> Visa chassinumret i serviceboken som delas med en köpare</label>`}
     ${isNew
-      ? inp("odometer", "Mätarställning (mil)", "", 'inputmode="numeric" placeholder="Till exempel 21 480"') + `
+      ? inp("odometer", "Mätarställning (mil)", "", 'inputmode="numeric"') + `
         <div class="field">
           <span id="cf-bes-label">Senast besiktad</span>
           <input type="month" name="lastInspection" id="cf-lastInspection" max="${todayStr().slice(0, 7)}" placeholder="ÅÅÅÅ-MM">
@@ -2134,10 +2134,10 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
   parts.dates = `
     <div class="row2">
       ${inp("besiktning", "Sista dag för besiktning", c.besiktning, 'type="date"')}
-      ${inp("besiktningPlats", "Besiktningsstation", c.besiktningPlats, 'placeholder="Till exempel Bilprovningen"')}
+      ${inp("besiktningPlats", "Besiktningsstation", c.besiktningPlats, '')}
     </div>
     <div class="row2">
-      ${inp("forsakringBolag", "Försäkringsbolag", c.forsakringBolag, 'placeholder="Till exempel If eller Folksam"')}
+      ${inp("forsakringBolag", "Försäkringsbolag", c.forsakringBolag, '')}
       ${inp("forsakringDatum", "Försäkringen förnyas", c.forsakringDatum, 'type="date"')}
     </div>
     <div class="row2">
@@ -2435,8 +2435,8 @@ function trailerCard(c) {
     <p class="label" style="margin:14px 0 6px">Får jag dra mitt släp?</p>
     <div class="form trailer-calc">
       <div class="row2">
-        <label class="field"><span>Släpets totalvikt (kg)</span><input id="tc-total" inputmode="numeric" placeholder="Till exempel 1 300"></label>
-        <label class="field"><span>Släpets tjänstevikt (kg)</span><input id="tc-curb" inputmode="numeric" placeholder="Till exempel 350"></label>
+        <label class="field"><span>Släpets totalvikt (kg)</span><input id="tc-total" inputmode="numeric"></label>
+        <label class="field"><span>Släpets tjänstevikt (kg)</span><input id="tc-curb" inputmode="numeric"></label>
       </div>
       <label class="check"><input type="checkbox" id="tc-unbraked"> Släpet har inga egna bromsar</label>
       <div id="tc-out" aria-live="polite"><p class="hint">Vikterna står i släpets registreringsbevis.</p></div>
@@ -2827,7 +2827,7 @@ function docReminders(c) {
 function docForm(d = null) {
   openSheet(d ? "Ändra dokument" : "Dokument", `
     <form class="form" data-form="doc"${d ? ` data-id="${esc(d.id)}"` : ""} novalidate>
-      ${field("Vad är det?", `<input name="title" id="doc-title" required placeholder="Till exempel försäkringsbrev 2027" autocomplete="off" value="${esc(d?.title || "")}">`)}
+      ${field("Vad är det?", `<input name="title" id="doc-title" required autocomplete="off" value="${esc(d?.title || "")}">`)}
       ${field("Gäller till (valfritt)", `<input type="date" name="validTo" id="doc-valid" value="${esc(d?.validTo || "")}">`, "Till exempel när försäkringen, garantin eller parkeringstillståndet går ut. Ni får en påminnelse två månader innan.")}
       ${d ? "" : `<label class="photo-in">${icon("camera", 22)}<span id="photo-label">Fota eller välj en bild</span><input type="file" name="photo" id="ef-photo" accept="image/*"></label>
       <p class="hint">PDF-filer går inte att spara. Ta en skärmbild av PDF:en och välj den i stället.</p>`}
@@ -3838,7 +3838,7 @@ function viewLog() {
   const filters = [["alla", "Alla"], ...LOG_ORDER.map((k) => [k, typeLabel(k)])];
   return `${subHeader("Allt som hänt med bilen", "Logg")}
     <label class="search">${icon("search", 18)}
-      <input type="search" id="log-search" placeholder="Sök, till exempel bromsar" value="${esc(S.query || "")}" autocomplete="off" enterkeyhint="search" aria-label="Sök i loggen">
+      <input type="search" id="log-search" placeholder="Sök" value="${esc(S.query || "")}" autocomplete="off" enterkeyhint="search" aria-label="Sök i loggen">
       ${S.query ? `<button class="search-clear" type="button" data-act="clear-search" aria-label="Rensa sökningen">${icon("close", 14)}</button>` : ""}
     </label>
     <div class="filters" role="group" aria-label="Filtrera loggen">
@@ -4635,9 +4635,9 @@ function bookingForm(b = {}) {
             </div>
             <input type="hidden" name="time" id="bk-time" value="${esc(t || (b.id ? "" : "09:00"))}"></div>`;
       })()}
-      ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" placeholder="Till exempel Däckcentrum" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-suggest" aria-expanded="false">
+      ${field("Var", `<input name="place" id="bk-place" value="${esc(b.place || "")}" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-suggest" aria-expanded="false">
         <span class="suggest" id="bk-suggest" role="listbox" hidden></span>`)}
-      ${field("Adress", `<input name="placeAddr" id="bk-addr" value="${esc(b.addr || "")}" placeholder="Till exempel Storgatan 20, Uppsala" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-addr-suggest" aria-expanded="false">
+      ${field("Adress", `<input name="placeAddr" id="bk-addr" value="${esc(b.addr || "")}" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="bk-addr-suggest" aria-expanded="false">
         <input type="hidden" name="placeLat" id="bk-lat" value="${b.lat ?? ""}">
         <input type="hidden" name="placeLon" id="bk-lon" value="${b.lon ?? ""}">
         <input type="hidden" name="placeId" id="bk-pid" value="${esc(b.placeId || "")}">
@@ -4649,7 +4649,7 @@ function bookingForm(b = {}) {
         <div class="bk-map-inner" id="bk-map-inner"></div>
         <button class="bk-map-open" type="button" data-act="map-open" aria-label="Öppna platsen i en kartapp"><span>${icon("pin", 14)} Öppna i kartan</span></button>
       </div>
-      ${field("Anteckning", `<textarea name="note" id="bk-note" rows="2" placeholder="Till exempel lämna nyckeln i brevlådan">${esc(b.note || "")}</textarea>`)}
+      ${field("Anteckning", `<textarea name="note" id="bk-note" rows="2">${esc(b.note || "")}</textarea>`)}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
       ${isEdit
@@ -5033,14 +5033,14 @@ function tripForm(t = {}, mode = "new") {
       ${t.edits?.length ? `<div class="hint" style="margin-top:0"><b>Ändrad i efterhand</b>${t.edits.slice(-5).reverse().map((e) => `<br>${esc(editLine(e))}`).join("")}</div>` : ""}
       ${mode === "end" ? "" : `<div class="row2">
         ${field("Datum", `<input type="date" name="date" id="tr-date" value="${esc(t.date || todayStr())}">`)}
-        ${field("Mätare vid start (mil)", `<input name="odoStart" id="tr-odoStart" inputmode="decimal" required value="${odoStart != null ? esc(String(odoStart).replace(".", ",")) : ""}" placeholder="${lastOdo != null ? esc(`Senast ${fmt(lastOdo, 1)}`) : "Till exempel 21 480,6"}">`)}
+        ${field("Mätare vid start (mil)", `<input name="odoStart" id="tr-odoStart" inputmode="decimal" required value="${odoStart != null ? esc(String(odoStart).replace(".", ",")) : ""}" placeholder="${lastOdo != null ? esc(`Senast ${fmt(lastOdo, 1)}`) : ""}">`)}
       </div>
       ${t.id ? "" : `<p class="hint" style="margin-top:-6px">Läs av mätaren i bilen${lastOdo != null ? esc(`. Senast kända är ${fmt(lastOdo, 1)} mil`) : ""}.</p>`}`}
       ${mode === "start" ? "" : field("Mätare vid slut (mil)", `<input name="odoEnd" id="tr-odoEnd" inputmode="decimal" required value="${t.odoEnd != null ? esc(String(t.odoEnd).replace(".", ",")) : ""}" placeholder="Läs av mätaren i bilen">`, `<span id="tr-dist">${t.odoEnd != null ? esc(`${fmt(tripMil(t), 1)} mil`) : "Mil med en decimal. 1,2 mil är 12 km."}</span>`)}
       ${mode === "end" ? `<div id="tr-route" hidden></div>` : ""}
       ${field("Från", `<span class="geo-row"><input name="from" id="tr-from" value="${esc(t.from ?? (mode === "new" && !t.id ? prev?.to || "" : ""))}" placeholder="Ort, adress eller företag" autocomplete="off"><button class="geo-btn" type="button" data-act="trip-here" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span><span class="suggest" id="tr-from-suggest" role="listbox" hidden></span><input type="hidden" name="fromLoc" id="tr-fromLoc" value="${t.fromLoc ? esc(JSON.stringify(t.fromLoc)) : ""}">`)}
       ${field("Vart", `<input name="to" id="tr-to" value="${esc(t.to || "")}" placeholder="Ort, adress eller företag" autocomplete="off"><span class="suggest" id="tr-to-suggest" role="listbox" hidden></span><input type="hidden" name="toLoc" id="tr-toLoc" value="${t.toLoc ? esc(JSON.stringify(t.toLoc)) : ""}">`)}
-      ${field("Ärende", `<input name="purpose" id="tr-purpose" value="${esc(t.purpose || "")}" list="tr-purpose-list" placeholder="Till exempel Kundmöte" autocomplete="off">${list("tr-purpose-list", count("purpose"))}`)}
+      ${field("Ärende", `<input name="purpose" id="tr-purpose" value="${esc(t.purpose || "")}" list="tr-purpose-list" autocomplete="off">${list("tr-purpose-list", count("purpose"))}`)}
       <div class="row2">
         ${field("Typ av resa", `<select name="kind" id="tr-kind">${Object.entries(TRIP_KINDS).map(([k, l]) => `<option value="${k}"${kind === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
         ${field("Förare", `<select name="driver" id="tr-driver">${members.map((m) => `<option value="${esc(m)}"${(t.driver || uid()) === m ? " selected" : ""}>${esc(m === uid() ? `${memberName(m)} (du)` : memberName(m))}</option>`).join("")}</select>`)}
@@ -5073,7 +5073,7 @@ function suggestTripKind() {
 function placeForm(p = {}) {
   openSheet(p.id ? "Ändra plats" : "Ny plats", `
     <form class="form" data-form="place"${p.id ? ` data-id="${esc(p.id)}"` : ""} novalidate>
-      ${field("Namn", `<input name="name" id="pl-name" required value="${esc(p.name || "")}" placeholder="Till exempel Hem, Kontoret eller Kund: Volvo" autocomplete="off">`)}
+      ${field("Namn", `<input name="name" id="pl-name" required value="${esc(p.name || "")}" autocomplete="off">`)}
       ${field("Adress", `<span class="geo-row"><input name="addr" id="pl-addr" required value="${esc(p.addr || "")}" placeholder="Sök adress eller företag" autocomplete="off"><button class="geo-btn" type="button" data-act="place-here" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span><span class="suggest" id="pl-addr-suggest" role="listbox" hidden></span>
         <input type="hidden" name="lat" id="pl-lat" value="${p.lat ?? ""}"><input type="hidden" name="lon" id="pl-lon" value="${p.lon ?? ""}">`, "Välj i listan, eller tryck på nålen när du är på platsen.")}
       ${field("Resor hit är oftast", `<select name="kind" id="pl-kind">${Object.entries(PLACE_KINDS).map(([k, l]) => `<option value="${k}"${(p.kind || "") === k ? " selected" : ""}>${l}</option>`).join("")}</select>`, "Till exempel Tjänst för kontoret och kunder. Hem kan stå på Inget förslag.")}
@@ -5492,8 +5492,8 @@ function entryForm(type, e = {}, opts = {}) {
   const bookKind = { service: "service", dack: "dack" }[type] || (type === "kostnad" && e.category === "Besiktning" ? "besiktning" : null);
   const date = field("Datum", `<input type="date" name="date" id="ef-date" required value="${esc(e.date || todayStr())}">`)
     + (bookKind && !e.id ? `<div class="future-hint" id="ef-future" data-kind="${bookKind}" hidden><span>Datumet är framåt i tiden. Vill du boka en tid i stället?</span><button class="btn-soft" type="button" data-act="to-booking">${icon("calendar", 16)} Lägg in som bokad tid</button></div>` : "");
-  const odo = (required = false) => field("Mätarställning (mil)", `<input name="odometer" id="ef-odometer" inputmode="numeric" ${required ? "required" : ""} placeholder="${odoOf(c) != null ? `Senast ${fmt(odoOf(c))}` : "Till exempel 21 480"}" value="${e.odometer ?? ""}">`);
-  const amount = (example, label = "Kostnad (kr)", extra = "", hint = "") => field(label, `<input name="amount" id="ef-amount" inputmode="decimal"${extra} value="${e.amount ?? ""}" placeholder="Till exempel ${example}">`, hint);
+  const odo = (required = false) => field("Mätarställning (mil)", `<input name="odometer" id="ef-odometer" inputmode="numeric" ${required ? "required" : ""} placeholder="${odoOf(c) != null ? `Senast ${fmt(odoOf(c))}` : ""}" value="${e.odometer ?? ""}">`);
+  const amount = (example, label = "Kostnad (kr)", extra = "", hint = "") => field(label, `<input name="amount" id="ef-amount" inputmode="decimal"${extra} value="${e.amount ?? ""}">`, hint);
   const note = field("Anteckning", `<textarea name="note" id="ef-note" rows="2">${v("note")}</textarea>`);
   // Bilder: flera går att lägga till, en i taget eller många på en gång, och var och en går att ta bort.
   pendingPhotos = [];
@@ -5532,7 +5532,7 @@ function entryForm(type, e = {}, opts = {}) {
         ${amount("2 500")}${odo(false)}${date}${more()}`;
       break;
     case "eget":
-      body = `${field("Vad gjorde du?", `<input name="title" id="ef-title" required value="${v("title")}" placeholder="Till exempel bytte glödlampa bak">`)}
+      body = `${field("Vad gjorde du?", `<input name="title" id="ef-title" required value="${v("title")}">`)}
         ${items}${parts}${amount("450", "Kostnad för delar (kr)")}${odo(false)}${date}${more()}`;
       break;
     case "dack": {
@@ -5544,11 +5544,11 @@ function entryForm(type, e = {}, opts = {}) {
         </div>
         <div id="ef-newtire-box"${actDefault === "nya" ? "" : " hidden"}>
           <div class="row2">
-            ${field("Märke", `<input name="tireBrand" id="ef-tireBrand" value="${v("tireBrand")}" placeholder="Till exempel Michelin" autocomplete="off">`)}
-            ${field("Dimension", `<input name="tireSize" id="ef-tireSize" value="${v("tireSize")}" placeholder="Till exempel 205/55 R16" autocomplete="off">`)}
+            ${field("Märke", `<input name="tireBrand" id="ef-tireBrand" value="${v("tireBrand")}" autocomplete="off">`)}
+            ${field("Dimension", `<input name="tireSize" id="ef-tireSize" value="${v("tireSize")}" autocomplete="off">`)}
           </div>
           <div class="row2">
-            ${field("Tillverkningsår", `<input name="tireYear" id="ef-tireYear" inputmode="numeric" value="${v("tireYear")}" placeholder="Till exempel ${new Date().getFullYear()}" autocomplete="off">`, "Står efter DOT på däckets sida, till exempel 2425 = vecka 24 år 2025.")}
+            ${field("Tillverkningsår", `<input name="tireYear" id="ef-tireYear" inputmode="numeric" value="${v("tireYear")}" autocomplete="off">`, "Står efter DOT på däckets sida, till exempel 2425 = vecka 24 år 2025.")}
             <div id="ef-studded-box"${e.tireKind === "vinter" ? "" : " hidden"} style="align-self:center"><label class="check"><input type="checkbox" name="studded" id="ef-studded"${e.studded ? " checked" : ""}> Dubbade</label></div>
           </div>
         </div>
@@ -5585,7 +5585,7 @@ function entryForm(type, e = {}, opts = {}) {
              ${handlerField(e.handler ?? (e.id ? "" : lastHandler(e.place || (e.title || "").replace(/^Besiktning hos /, ""))))}
              <input type="hidden" name="title" value="${v("title")}">
              ${inspectionFields(e, c)}`
-          : field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt, till exempel Halvförsäkring 2027">`)}
+          : field("Beskrivning", `<input name="title" id="ef-title" value="${v("title")}" placeholder="Valfritt">`)}
         ${amount(e.category === "Besiktning" ? "520" : "3 200", "Kostnad (kr)", e.category === "Besiktning" ? "" : " required")}${e.category === "Besiktning" ? odo(false) : ""}${date}
         ${!e.id ? `<div id="ef-next-besikt"${e.category === "Besiktning" ? "" : " hidden"}>${field("Nästa besiktning senast (valfritt)", `<input type="date" name="nextBesiktning" id="ef-nextBesiktning" value="${e.category === "Besiktning" ? esc(suggestNextInspection(e.date || todayStr(), c)) : ""}">`, "Uträknat från besiktningens datum. Kontrollera mot protokollet.")}</div>
         <p class="hint" id="ef-old-besikt" hidden>Det här är en äldre besiktning, så nästa datum behövs inte. Den sparas bara i loggen.</p>` : ""}
@@ -5920,11 +5920,11 @@ function inspectionFields(e, c) {
   return `<div class="field"><span>Resultat</span>
       <div class="seg res-seg" role="radiogroup" aria-label="Resultat">${Object.entries(INSP_SHORT).map(([k, l]) => `<label class="res-${k}"><input type="radio" class="vh" name="result" value="${k}"${res === k ? " checked" : ""}><span>${l}</span></label>`).join("")}</div></div>
     ${pending ? `<label class="check"><input type="checkbox" name="recheck" id="ef-recheck" checked> Det här var efterkontrollen</label>` : e.recheck ? `<input type="hidden" name="recheck" value="on">` : ""}
-    <div id="ef-defects-box"${res === "godkand" ? " hidden" : ""}>${field("Brister", `<textarea name="defects" id="ef-defects" rows="3" placeholder="En brist per rad, till exempel Bromsskiva bak höger">${esc((e.defects || []).join("\n"))}</textarea>`, e.id ? "" : "Varje brist hamnar i Att göra, så att ni inte glömmer att åtgärda den.")}</div>
+    <div id="ef-defects-box"${res === "godkand" ? " hidden" : ""}>${field("Brister", `<textarea name="defects" id="ef-defects" rows="3" placeholder="En brist per rad">${esc((e.defects || []).join("\n"))}</textarea>`, e.id ? "" : "Varje brist hamnar i Att göra, så att ni inte glömmer att åtgärda den.")}</div>
     <div id="ef-recheck-box"${inspFailed(res) ? "" : " hidden"}>${field("Efterkontroll senast", `<input type="date" name="recheckBy" id="ef-recheckBy" value="${esc(recheckBy)}">`, "Står på protokollet. Appen påminner er i tid.")}</div>`;
 }
 
-const handlerField = (value, id = "ef-handler") => field("Handläggare", `<input name="handler" id="${id}" value="${esc(value || "")}" placeholder="Valfritt, till exempel Johan" autocomplete="off">`);
+const handlerField = (value, id = "ef-handler") => field("Handläggare", `<input name="handler" id="${id}" value="${esc(value || "")}" placeholder="Valfritt" autocomplete="off">`);
 // Senaste handläggaren på samma ställe, så att den kan föreslås.
 function lastHandler(place) {
   const p = String(place || "").trim().toLowerCase();
@@ -5948,7 +5948,7 @@ document.addEventListener("change", (ev) => {
 });
 
 function placeField(name, id, value, kind, example) {
-  return field("Var", geoInput(name, id, value, kind, `Till exempel ${example}`));
+  return field("Var", geoInput(name, id, value, kind, ""));
 }
 function geoInput(name, id, value, kind, placeholder) {
   return `<span class="geo-row"><input name="${name}" id="${id}" value="${esc(value ?? "")}" placeholder="${esc(placeholder)}" autocomplete="off">
@@ -6073,7 +6073,7 @@ function workFormHtml(c, work) {
     <div class="w-add">
       <button class="btn-soft" type="button" data-act="w-open" id="w-open">${icon("plus", 16)} Lägg till del</button>
       <div id="w-searchbox" hidden>
-        <input id="w-search" placeholder="Sök eller skriv en del, till exempel bromsskivor" autocomplete="off" aria-label="Sök eller lägg till en del">
+        <input id="w-search" placeholder="Sök eller skriv en del" autocomplete="off" aria-label="Sök eller lägg till en del">
         <span class="suggest" id="w-suggest" role="listbox" hidden></span>
       </div>
       <div class="w-chips" id="w-chips">${sug.length ? `<span class="w-sug-l">Förslag:</span>${sug.map((i) => `<button type="button" class="w-chip" data-act="w-add" data-item="${esc(i.id)}" data-name="${esc(i.name)}">${esc(i.name)}</button>`).join("")}` : ""}</div>
