@@ -1,17 +1,19 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Upp till 6 bilar": "Up to 6 cars",
+  "Upp till 6 personer": "Up to 6 people",
+  "Alla i familjen som kör bilarna.": "Everyone in the family who drives the cars.",
+  "Fullt": "Full",
+  "Behöver ni fler, till exempel för ett företag? Skriv till": "Need more, for example for a company? Write to",
   "Logga tjänsteresor och privata resor. Milersättningen räknas ut, och iPhone-appen kan logga resorna själv.": "Log business and private trips. The mileage allowance is calculated, and the iPhone app can log trips by itself.",
   "Fota kvittot, servicefakturan eller besiktningsprotokollet, så fylls allt i åt dig.": "Take a photo of the receipt, service invoice or inspection report, and everything is filled in for you.",
-  "Fler bilar": "More cars",
-  "Hela familjens bilar i samma app.": "All the family's cars in one app.",
-  "Fler i hushållet": "More people in the household",
-  "Bjud in alla som kör bilarna.": "Invite everyone who drives the cars.",
-  "2 000 bilder": "2,000 photos",
+    "Hela familjens bilar i samma app.": "All the family's cars in one app.",
+      "2 000 bilder": "2,000 photos",
   "Plats för kvitton, dokument och bilder på bilen.": "Room for receipts, documents and photos of the car.",
   "Ni har gratisversionen": "You have the free version",
   "Körjournal, läsning med AI, fler bilar, fler i hushållet och fler bilder.": "Driving log, AI reading, more cars, more people and more photos.",
-  "Körjournal, läsning med AI och inga gränser. Gäller alla i hushållet.": "Driving log, AI reading and no limits. Applies to everyone in the household.",
+  "Körjournal, läsning med AI, upp till 6 bilar och 6 personer. Gäller alla i hushållet.": "Driving log, AI reading, up to 6 cars and 6 people. Applies to everyone in the household.",
   "Med Plus fyller AI i allt från kvittot.": "With Plus, AI fills in everything from the receipt.",
   "Läs mer": "Read more",
   "Ingen resa pågår just nu.": "No trip in progress right now.",
@@ -1226,6 +1228,11 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Gratisversionen har plats för (\d+) bil\. Med Bildagboken Plus kan ni ha upp till (\d+) bilar\.$/, "The free version has room for $1 car. With Bildagboken Plus you can have up to $2 cars."],
+  [/^Gratisversionen har plats för (\d+) personer i hushållet\. Med Bildagboken Plus kan ni vara upp till (\d+)\.$/, "The free version has room for $1 people in the household. With Bildagboken Plus you can be up to $2."],
+  [/^Bildagboken Plus har plats för (.+) i ett hushåll\.( Ta bort några bilder för att lägga till nya\.)?$/, (m, w, r) => `Bildagboken Plus has room for ${w.replace("bilar", "cars").replace("personer", "people").replace("bilder", "photos")} in a household.${r ? " Delete some photos to add new ones." : ""}`],
+  [/^Bildagboken Plus har plats för (\d+) personer\.$/, "Bildagboken Plus has room for $1 people."],
+  [/^Gratisversionen har plats för (\d+) personer\. Med Plus kan ni vara upp till (\d+)\.$/, "The free version has room for $1 people. With Plus you can be up to $2."],
   [/^Ni har Plus till (.+)$/, "You have Plus until $1"],
   [/^(\d+) luckor i körjournalen$/, "$1 gaps in the driving log"],
   [/^([\d\s ,]+) mil som inte är loggade den (.+)$/, "$1 mil not logged on $2"],

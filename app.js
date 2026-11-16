@@ -439,8 +439,10 @@ function recurringEntries(c) {
   return out;
 }
 // Gratisversionens gränser. Avstängda tills Plus går att köpa: sätt då `from` till startdagen, till exempel "2027-03-01".
-// Hushåll som skapades före den dagen, och hushåll med Plus, har inga gränser.
-const FREE = { from: null, cars: 1, members: 3, photos: 50 };
+// Hushåll som skapades före den dagen och inte har Plus har inga gränser. Plus har egna gränser (PLUS).
+const FREE = { from: null, cars: 1, members: 2, photos: 30 };
+// Plus är för en familj, som familjeabonnemang brukar vara: upp till sex personer och sex bilar.
+const PLUS = { cars: 6, members: 6, photos: 2000 };
 // Testläge för administratören: visa appen som gratisversionen (med gränserna) eller som Plus.
 // Gäller bara på den här enheten och bara för det egna hushållet. Inget sparas i databasen.
 const testMode = () => (S.user && isAdmin() ? pref.get("testMode") || "" : "");
@@ -459,21 +461,34 @@ const plusUntilText = () => { const u = tsMs(S.house?.plus?.until); return u > D
 const PLUS_PERKS = [
   ["route", "Körjournal", "Logga tjänsteresor och privata resor. Milersättningen räknas ut, och iPhone-appen kan logga resorna själv."],
   ["spark", "Läsning med AI", "Fota kvittot, servicefakturan eller besiktningsprotokollet, så fylls allt i åt dig."],
-  ["car", "Fler bilar", "Hela familjens bilar i samma app."],
-  ["home", "Fler i hushållet", "Bjud in alla som kör bilarna."],
+  ["car", "Upp till 6 bilar", "Hela familjens bilar i samma app."],
+  ["home", "Upp till 6 personer", "Alla i familjen som kör bilarna."],
   ["image", "2 000 bilder", "Plats för kvitton, dokument och bilder på bilen."],
 ];
+// Gränserna som gäller för hushållet: gratis, Plus, eller inga alls (innan Plus säljs, och för hushåll
+// som skapades före FREE.from och inte har Plus).
+function caps(h = S.house) {
+  if (h === S.house && testMode()) return testMode() === "plus" ? PLUS : FREE;
+  if (!FREE.from || !h) return null;
+  if (hasPlus(h)) return PLUS;
+  return limited(h) ? FREE : null;
+}
 const photoCount = () => S.entries.reduce((a, e) => a + photosOf(e).length, 0);
 function limitSheet(kind) {
+  if (caps() === PLUS) {
+    const what = { cars: `${PLUS.cars} bilar`, members: `${PLUS.members} personer`, photos: `${fmt(PLUS.photos)} bilder` }[kind];
+    return openSheet("Fullt", `<p>${esc(`Bildagboken Plus har plats för ${what} i ett hushåll.${kind === "photos" ? " Ta bort några bilder för att lägga till nya." : ""}`)}</p>
+      ${kind === "photos" ? "" : `<p class="muted">Behöver ni fler, till exempel för ett företag? Skriv till <a class="link" href="mailto:kontakt@bildagboken.com" data-notr>kontakt@bildagboken.com</a>.</p>`}`);
+  }
   const text = {
-    cars: `Gratisversionen har plats för ${FREE.cars} bil. Med Bildagboken Plus kan ni lägga till fler bilar.`,
-    members: `Gratisversionen har plats för ${FREE.members} personer i hushållet. Med Bildagboken Plus kan fler gå med.`,
+    cars: `Gratisversionen har plats för ${FREE.cars} bil. Med Bildagboken Plus kan ni ha upp till ${PLUS.cars} bilar.`,
+    members: `Gratisversionen har plats för ${FREE.members} personer i hushållet. Med Bildagboken Plus kan ni vara upp till ${PLUS.members}.`,
     photos: `Gratisversionen har plats för ${FREE.photos} bilder. Alla bilder finns kvar, men för att lägga till nya behöver ni ta bort några eller skaffa Bildagboken Plus.`,
   }[kind];
   openSheet("Bildagboken Plus", `<p>${esc(text)}</p>
     <div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="plus">Läs om Bildagboken Plus</button></div>`);
 }
-const membersFull = () => limited() && (S.house?.members || []).length >= FREE.members;
+const membersFull = () => { const c = caps(); return !!c && (S.house?.members || []).length >= c.members; };
 // Ett tips om Plus på Översikt, en gång, när appen har hunnit göra nytta (20 loggade saker eller en månad).
 function plusTipCard() {
   if (!limited() || pref.get("plusTip." + S.hid)) return "";
@@ -488,9 +503,9 @@ function plusTipCard() {
 // Plus-sidan. Visas först när gränserna är påslagna (FREE.from). Köpet byggs in med RevenueCat.
 function plusSheet() {
   const rows = [
-    ["Bilar", `${FREE.cars}`, "Obegränsat"],
-    ["Personer i hushållet", `${FREE.members}`, "Obegränsat"],
-    ["Bilder", `${FREE.photos}`, "2 000"],
+    ["Bilar", `${FREE.cars}`, `${PLUS.cars}`],
+    ["Personer i hushållet", `${FREE.members}`, `${PLUS.members}`],
+    ["Bilder", `${FREE.photos}`, fmt(PLUS.photos)],
     ["Körjournal", "–", "Ingår"],
     ["Läsning med AI", "–", "Ingår"],
   ];
@@ -3117,7 +3132,7 @@ function viewSettings() {
         <span class="row-actions">${members.length > 1 ? (m === uid()
           ? `<button class="link danger" type="button" data-act="leave-house">Lämna</button>`
           : `<button class="link danger" type="button" data-act="remove-member" data-id="${esc(m)}" aria-label="Ta bort ${esc(memberName(m))}">Ta bort</button>`) : ""}</span></div>`).join("")}</div>
-      ${membersFull() ? `<div class="hh-invite"><div class="hh-grow"><span class="label">Hushållet är fullt</span><span class="dl-s">${esc(`Gratisversionen har plats för ${FREE.members} personer. Med Plus kan fler gå med.`)}</span></div><button class="btn-soft" type="button" data-act="plus">Läs om Plus</button></div>` : `      <div class="hh-invite">
+      ${membersFull() ? `<div class="hh-invite"><div class="hh-grow"><span class="label">Hushållet är fullt</span><span class="dl-s">${esc(caps() === PLUS ? `Bildagboken Plus har plats för ${PLUS.members} personer.` : `Gratisversionen har plats för ${FREE.members} personer. Med Plus kan ni vara upp till ${PLUS.members}.`)}</span></div>${caps() === PLUS ? "" : `<button class="btn-soft" type="button" data-act="plus">Läs om Plus</button>`}</div>` : `      <div class="hh-invite">
         <div class="hh-grow"><span class="label">Inbjudningskod</span><span class="hh-code" data-notr>${esc(S.house?.inviteCode || "")}</span></div>
         <button class="btn-soft" type="button" data-act="copy-invite">Kopiera länk</button>
         <button class="hh-ghost" type="button" data-act="new-invite-code">Byt kod</button>
@@ -3125,7 +3140,7 @@ function viewSettings() {
       ${membersFull() ? "" : `<p class="hint" style="margin-top:8px">Den som har koden kan gå med. Byt kod om den har kommit på villovägar, då slutar den gamla att fungera.</p>`}
     </div>
     ${plusOnSale() ? `<div class="card plus-card"><h2>Bildagboken Plus</h2>
-      <div class="rows"><button class="dl as-btn" type="button" data-act="plus"><div class="dl-ic">${icon("spark", 20)}</div><div><div class="dl-t">${hasPlus() ? esc(plusUntilText()) : limited() ? "Ni har gratisversionen" : "Ingen gräns för ert hushåll"}</div><div class="dl-s">${hasPlus() ? "Körjournal, läsning med AI och inga gränser. Gäller alla i hushållet." : "Körjournal, läsning med AI, fler bilar, fler i hushållet och fler bilder."}</div></div><span class="dl-v">›</span></button></div></div>` : ""}
+      <div class="rows"><button class="dl as-btn" type="button" data-act="plus"><div class="dl-ic">${icon("spark", 20)}</div><div><div class="dl-t">${hasPlus() ? esc(plusUntilText()) : limited() ? "Ni har gratisversionen" : "Ingen gräns för ert hushåll"}</div><div class="dl-s">${hasPlus() ? "Körjournal, läsning med AI, upp till 6 bilar och 6 personer. Gäller alla i hushållet." : "Körjournal, läsning med AI, fler bilar, fler i hushållet och fler bilder."}</div></div><span class="dl-v">›</span></button></div></div>` : ""}
     <div class="card">
       <h2>Bilar</h2>
       <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(carName(x))}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
@@ -3184,7 +3199,7 @@ function viewSettings() {
     </div>
     ${isAdmin() ? `<div class="card"><h2>Testläge</h2><p class="muted">Visa appen som en vanlig användare ser den. Gäller bara på den här enheten, och inget ändras för andra.</p>
       <div class="checks" role="radiogroup" aria-label="Visa appen som" style="margin-top:12px">${[["", "Som vanligt"], ["free", "Gratis"], ["plus", "Plus"]].map(([k, l]) => `<label class="check"><input type="radio" name="testMode" value="${k}" data-act="test-mode"${testMode() === k ? " checked" : ""}> ${l}</label>`).join("")}</div>
-      <p class="hint" style="margin-top:8px">Gratis: gränserna (${FREE.cars} bil, ${FREE.members} personer, ${FREE.photos} bilder) och tipsen om Plus är påslagna. Plus: allt som ingår i Plus, utan gränser.</p></div>` : ""}
+      <p class="hint" style="margin-top:8px">Gratis: gränserna (${FREE.cars} bil, ${FREE.members} personer, ${FREE.photos} bilder) och tipsen om Plus är påslagna. Plus: allt som ingår i Plus, med Plus-gränserna (${PLUS.cars} bilar, ${PLUS.members} personer, ${fmt(PLUS.photos)} bilder).</p></div>` : ""}
     ${isAdmin() ? `<div class="card"><h2>Användare</h2><p class="muted">Alla hushåll och användare, och vilka funktioner de använder. Bara du ser det här.</p><div class="ask"><button class="btn-soft" type="button" data-act="open-admin">Visa översikten</button></div></div>` : ""}
     <p class="hint" style="text-align:center">Bildagboken ${VERSION} · <span>Frågor eller idéer?</span> <a class="link" href="mailto:kontakt@bildagboken.com" data-notr>kontakt@bildagboken.com</a></p>`;
 }
@@ -5111,8 +5126,10 @@ function renderPhotoThumbs() {
   const quota = $("#ef-quota");
   if (quota) {
     const used = photoCount() + pendingPhotos.length;
-    quota.hidden = !limited();
-    quota.textContent = `${Math.min(used, FREE.photos)} av ${FREE.photos} bilder i gratisversionen${used >= FREE.photos * 0.8 ? ". Med Plus får ni plats för 2 000." : "."}`;
+    const c = caps();
+    // Med Plus visas räknaren först när det börjar bli fullt.
+    quota.hidden = !c || (c === PLUS && used < c.photos * 0.8);
+    if (c) quota.textContent = c === PLUS ? `${fmt(Math.min(used, c.photos))} av ${fmt(c.photos)} bilder` : `${Math.min(used, c.photos)} av ${c.photos} bilder i gratisversionen${used >= c.photos * 0.8 ? `. Med Plus får ni plats för ${fmt(PLUS.photos)}.` : "."}`;
   }
   const keep = keepIn.value.split(",").filter(Boolean);
   const urlOf = (f) => { if (!thumbUrls.has(f)) thumbUrls.set(f, URL.createObjectURL(f)); return thumbUrls.get(f); };
@@ -6345,7 +6362,7 @@ const ACTIONS = {
   },
   "plus-buy"() { showToast("Köpet går inte att göra än."); },
   "add-car"() {
-    if (limited() && S.cars.length >= FREE.cars) return limitSheet("cars");
+    if (caps() && S.cars.length >= caps().cars) return limitSheet("cars");
     carSheet(false);
   },
   async "odo-from-car"(el) {
@@ -6734,10 +6751,13 @@ async function joinHouse(form) {
   if (FREE.from) {
     // Fullt hushåll: gå ur igen direkt. Kontrolleras efter att man gått med, eftersom hushållet inte kan läsas innan dess.
     const h = (await getDoc(doc(db, "households", hid)).catch(() => null))?.data();
-    if (h && limited(h) && (h.members || []).length > FREE.members) {
+    const c = h && caps(h);
+    if (c && (h.members || []).length > c.members) {
       await updateDoc(doc(db, "households", hid), { members: h.members.filter((x) => x !== uid()), [`memberInfo.${uid()}`]: deleteField(), joinedWith: deleteField() }).catch(() => {});
       btn.disabled = false;
-      return renderOnboarding(`${houseName || "Hushållet"} har redan ${FREE.members} personer, så det är fullt i gratisversionen. Med Bildagboken Plus kan fler gå med.`);
+      return renderOnboarding(c === PLUS
+        ? `${houseName || "Hushållet"} har redan ${PLUS.members} personer, som är det mesta som går.`
+        : `${houseName || "Hushållet"} har redan ${FREE.members} personer, så det är fullt i gratisversionen. Med Bildagboken Plus kan ni vara upp till ${PLUS.members}.`);
     }
   }
   history.replaceState(null, "", location.pathname + "#oversikt");
@@ -6746,7 +6766,7 @@ async function joinHouse(form) {
 }
 
 async function saveNewCar(form) {
-  if (limited() && S.cars.length >= FREE.cars) return limitSheet("cars");
+  if (caps() && S.cars.length >= caps().cars) return limitSheet("cars");
   const data = readCarForm(form);
   if (!data.make || !data.model) return formError("Fyll i märke och modell.") ?? showToast("Fyll i märke och modell.");
   const startOdo = data.odometer;
@@ -6972,10 +6992,11 @@ function onChange(ev) {
   } else if (ev.target.id === "ef-photo") {
     const files = [...(ev.target.files || [])].filter((f) => f.type.startsWith("image/") || /\.(heic|heif|jpe?g|png|webp)$/i.test(f.name));
     const perPost = MAX_PHOTOS - pendingPhotos.length - ($("#ef-keep")?.value.split(",").filter(Boolean).length || 0);
-    const total = limited() ? FREE.photos - photoCount() - pendingPhotos.length : Infinity;
+    const cp = caps();
+    const total = cp ? cp.photos - photoCount() - pendingPhotos.length : Infinity;
     const room = Math.min(perPost, total);
     if (files.length > room) {
-      if (total < perPost) { if (total <= 0) { ev.target.value = ""; return showToast(`Gratisversionen har plats för ${FREE.photos} bilder. Ta bort några eller skaffa Bildagboken Plus för att lägga till fler.`, 7000); } showToast(`Det finns plats för ${total === 1 ? "1 bild" : `${total} bilder`} till i gratisversionen.`); }
+      if (total < perPost) { if (total <= 0) { ev.target.value = ""; return showToast(cp === PLUS ? `Bildagboken Plus har plats för ${fmt(PLUS.photos)} bilder. Ta bort några för att lägga till nya.` : `Gratisversionen har plats för ${FREE.photos} bilder. Ta bort några eller skaffa Bildagboken Plus för att lägga till fler.`, 7000); } showToast(`Det finns plats för ${total === 1 ? "1 bild" : `${total} bilder`} till i gratisversionen.`); }
       else showToast(`Högst ${MAX_PHOTOS} bilder per post.`);
     }
     pendingPhotos.push(...files.slice(0, Math.max(0, room)));
