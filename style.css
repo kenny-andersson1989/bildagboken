@@ -1523,14 +1523,14 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 .chat { position: relative; }
 .voice { position: absolute; inset: -4px; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px 16px; background: var(--glass-strong); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: 18px; text-align: center; }
 .voice[hidden] { display: none; }
-.voice-orb { width: 150px; height: 150px; border-radius: 50%; border: 0; cursor: pointer; background: radial-gradient(circle at 35% 30%, #ffb27a, var(--accent) 60%, #b84a12); box-shadow: 0 10px 40px rgba(231,112,38,.35); display: grid; place-items: center; transition: transform .3s; }
-.voice-orb span { width: 40%; height: 40%; border-radius: 50%; background: rgba(255,255,255,.25); }
+.voice-orb { width: 170px; height: 170px; padding: 0; border-radius: 50%; border: 4px solid var(--accent); cursor: pointer; background: #fde2cd; box-shadow: 0 10px 40px rgba(231,112,38,.3); display: grid; place-items: center; overflow: hidden; transition: transform .3s; }
+.voice-orb img { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
 .voice[data-state="listen"] .voice-orb { animation: breathe 1.6s infinite ease-in-out; }
-.voice[data-state="think"] .voice-orb { animation: think 1.2s infinite linear; }
-.voice[data-state="talk"] .voice-orb { animation: talk .5s infinite alternate ease-in-out; }
+.voice[data-state="think"] .voice-orb { animation: think 1s infinite ease-in-out; }
+.voice[data-state="talk"] .voice-orb { animation: none; }
 .voice[data-state="idle"] .voice-orb { opacity: .7; }
 @keyframes breathe { 0%, 100% { transform: scale(.94); } 50% { transform: scale(1.04); } }
-@keyframes think { from { transform: rotate(0deg) scale(.9); } to { transform: rotate(360deg) scale(.9); } }
+@keyframes think { 0%, 100% { transform: rotate(-4deg) scale(.95); } 50% { transform: rotate(4deg) scale(.95); } }
 @keyframes talk { from { transform: scale(.96); } to { transform: scale(1.08); } }
 @media (prefers-reduced-motion: reduce) { .voice-orb, .cb-mic.on { animation: none !important; } }
 .voice-state { margin: 6px 0 0; font-weight: 700; font-size: 18px; }
@@ -1538,3 +1538,9 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 .chat-foot .check { margin: 0 0 6px; }
 .chat-foot .hint { margin: 0; }
 .chat-play { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin: -4px 0 0 6px; font-size: 14px; }
+
+/* Glenns figur bredvid hans svar. Pixelgrafik ska inte suddas ut när den förstoras. */
+.ai-row { display: flex; align-items: flex-end; gap: 8px; align-self: flex-start; max-width: 92%; }
+.ai-row .msg.ai { max-width: none; }
+.glenn-av { flex: none; width: 52px; height: 52px; image-rendering: pixelated; border-radius: 50%; }
+.chat-play { margin-left: 66px !important; }

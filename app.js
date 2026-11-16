@@ -1106,6 +1106,35 @@ function carContext(c) {
 const chatOn = () => aiOn();
 const chatState = () => { if (!S.chat || S.chat.carId !== S.carId) S.chat = { carId: S.carId, msgs: [], busy: false }; return S.chat; };
 const AI_NAME = "Glenn";
+/* Glenns figur i pixelstil (icons/glenn): vanlig, blinkar eller tummen upp, var och en med stängd och öppen mun.
+   Gesten kommer från svaret (taggen [tumme] eller [blink], som funktionen fragaBilen gör om till mood) och visas
+   en stund när svaret kommer och medan det läses upp. Munnen rör sig bara när han pratar. */
+const GLENN_FRAMES = ["base", "base-talk", "wink", "wink-talk", "thumb", "thumb-talk"];
+const glennSrc = (f) => `icons/glenn/${f}.png?v=1`;
+let glennMouth = false;
+function glennFrame(m) {
+  const gesture = m?.mood && (m.speaking || (m.gestureUntil || 0) > Date.now()) ? m.mood : "base";
+  return gesture + (m?.speaking && glennMouth ? "-talk" : "");
+}
+function refreshGlenn() {
+  const st = chatState();
+  document.querySelectorAll("img.glenn-av[data-i]").forEach((img) => {
+    const src = glennSrc(glennFrame(st.msgs[Number(img.dataset.i)]));
+    if (img.getAttribute("src") !== src) img.setAttribute("src", src);
+  });
+  const big = $("#voice-glenn");
+  if (big) {
+    const m = st.msgs.find((x) => x.speaking) || [...st.msgs].reverse().find((x) => x.role === "assistant" && !x.err);
+    const src = glennSrc(glennFrame(m));
+    if (big.getAttribute("src") !== src) big.setAttribute("src", src);
+  }
+}
+function glennGesture(m, ms = 3500) {
+  if (!m?.mood) return;
+  m.gestureUntil = Date.now() + ms;
+  refreshGlenn();
+  setTimeout(refreshGlenn, ms + 50);
+}
 const callFn = async (name, payload) => {
   const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-functions.js");
   return (await httpsCallable(getFunctions(fb, "europe-west1"), name, { timeout: 120000 })(payload)).data;
@@ -1176,6 +1205,8 @@ const stopSpeech = () => {
   try { voiceAudio?.pause(); } catch { /* inget att stoppa */ }
   try { if ("speechSynthesis" in window && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel(); } catch { /* inget att stoppa */ }
   document.querySelectorAll(".chat-play.on").forEach((b) => b.classList.remove("on"));
+  const st = S.chat;
+  if (st?.msgs?.some((m) => m.speaking)) { st.msgs.forEach((m) => { m.speaking = false; }); glennMouth = false; setTimeout(refreshGlenn, 0); }
 };
 function playB64(b64, id) {
   return new Promise((resolve) => {
@@ -1205,12 +1236,22 @@ async function sayText(m) {
   const id = sayId;
   const text = String(m?.text || "").replace(/[*#_`]/g, "");
   if (!text) return;
+  let mouth = 0;
+  const talk = () => {
+    m.speaking = true;
+    mouth = setInterval(() => { glennMouth = !glennMouth; refreshGlenn(); }, 160);
+  };
   try {
-    if (!m.audio) m.audio = window.__ttsMock ? await window.__ttsMock(text) : (await callFn("glennPratar", { hid: S.hid, text }))?.audio;
-    if (id !== sayId) return;
-    if (m.audio) return await playB64(m.audio, id);
-  } catch (e) { console.warn("Glenns röst", e); }
-  if (id === sayId) await speakDevice(text, id);
+    try {
+      if (!m.audio) m.audio = window.__ttsMock ? await window.__ttsMock(text) : (await callFn("glennPratar", { hid: S.hid, text }))?.audio;
+      if (id !== sayId) return;
+      if (m.audio) { talk(); return await playB64(m.audio, id); }
+    } catch (e) { console.warn("Glenns röst", e); }
+    if (id === sayId) { talk(); await speakDevice(text, id); }
+  } finally {
+    clearInterval(mouth);
+    if (m.speaking) { m.speaking = false; glennMouth = false; glennGesture(m, 900); }
+  }
 }
 
 const micSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>`;
@@ -1223,6 +1264,7 @@ const speakerSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" 
 function chatSheet() {
   if (!chatOn()) return plusOnSale() ? plusSheet() : null;
   const st = chatState();
+  GLENN_FRAMES.forEach((f) => { new Image().src = glennSrc(f); });
   openSheet(`Fråga ${AI_NAME}`, `<div class="chat">
     <div class="chat-log" id="chat-log" aria-live="polite">${chatLogHtml(st)}</div>
     <form class="chat-bar" data-form="chat" novalidate>
@@ -1235,7 +1277,7 @@ function chatSheet() {
       <p class="hint">${esc(`${AI_NAME} svarar utifrån det ni har loggat om ${carName(car())}. AI kan ha fel, så kontrollera viktiga saker.`)}</p>
     </div>
     <div class="voice" id="voice" hidden>
-      <button class="voice-orb" type="button" data-act="voice-orb" aria-label="Prata"><span></span></button>
+      <button class="voice-orb" type="button" data-act="voice-orb" aria-label="Prata"><img id="voice-glenn" src="${glennSrc("base")}" alt="" width="150" height="150"></button>
       <p class="voice-state" id="voice-state" aria-live="polite"></p>
       <p class="voice-text" id="voice-text" data-notr></p>
       <button class="btn-soft voice-end" type="button" data-act="voice-end">Avsluta</button>
@@ -1243,10 +1285,15 @@ function chatSheet() {
   scrollChat();
 }
 function chatLogHtml(st) {
-  if (!st.msgs.length) return `<div class="msg ai intro">${esc(`Tjenare! Jag är ${AI_NAME}. Jag har koll på allt ni har loggat om ${carName(car())}. Vad undrar du?`)}</div>
+  const av = (i) => `<img class="glenn-av" ${i == null ? "" : `data-i="${i}" `}src="${glennSrc(i == null ? "base" : glennFrame(st.msgs[i]))}" alt="" width="52" height="52">`;
+  if (!st.msgs.length) return `<div class="ai-row">${av(null)}<div class="msg ai intro">${esc(`Tjenare! Jag är ${AI_NAME}. Jag har koll på allt ni har loggat om ${carName(car())}. Vad undrar du?`)}</div></div>
     <div class="chat-sugg">${CHAT_SUGGESTIONS.map((q) => `<button class="chip-btn" type="button" data-act="chat-ask" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
-  return st.msgs.map((m, i) => `<div class="msg ${m.role === "user" ? "me" : "ai"}${m.err ? " err" : ""}"${m.err ? "" : " data-notr"}>${esc(m.text).replace(/\n/g, "<br>")}</div>${m.role === "assistant" && !m.err ? `<button class="link chat-play" type="button" data-act="chat-play" data-i="${i}">${speakerSvg} Lyssna</button>` : ""}`).join("")
-    + (st.busy ? `<div class="msg ai busy" aria-label="${esc(`${AI_NAME} tänker`)}"><span></span><span></span><span></span></div>` : "")
+  return st.msgs.map((m, i) => {
+    const bubble = `<div class="msg ${m.role === "user" ? "me" : "ai"}${m.err ? " err" : ""}"${m.err ? "" : " data-notr"}>${esc(m.text).replace(/\n/g, "<br>")}</div>`;
+    if (m.role === "user") return bubble;
+    return `<div class="ai-row">${av(i)}${bubble}</div>${!m.err ? `<button class="link chat-play" type="button" data-act="chat-play" data-i="${i}">${speakerSvg} Lyssna</button>` : ""}`;
+  }).join("")
+    + (st.busy ? `<div class="ai-row">${av(null)}<div class="msg ai busy" aria-label="${esc(`${AI_NAME} tänker`)}"><span></span><span></span><span></span></div></div>` : "")
     + (st.left != null && st.left <= 5 ? `<p class="hint chat-left">${esc(`${st.left} frågor kvar den här månaden.`)}</p>` : "");
 }
 function scrollChat() { const l = $("#chat-log"); if (l) l.scrollTop = l.scrollHeight; }
@@ -1274,9 +1321,10 @@ async function askCar(q, { voice = false } = {}) {
   let answer = null;
   try {
     const res = window.__chatMock ? await window.__chatMock(payload) : await callFn("fragaBilen", payload);
-    const m = { role: "assistant", text: res?.answer || "Jag hittade inget svar." };
+    const m = { role: "assistant", text: res?.answer || "Jag hittade inget svar.", mood: res?.mood === "thumb" || res?.mood === "wink" ? res.mood : null };
     st.msgs.push(m);
     answer = m;
+    if (m.mood) m.gestureUntil = Date.now() + 3500;
     if (res?.left != null) st.left = res.left;
   } catch (e) {
     const code = String(e?.code || e?.message || "").replace(/^functions\//, "");
@@ -1285,6 +1333,7 @@ async function askCar(q, { voice = false } = {}) {
     st.busy = false;
     redrawChat();
   }
+  if (answer?.mood) setTimeout(refreshGlenn, 3550);
   if (answer && !voice && pref.get("chatSpeak") === "1") sayText(answer);
   return answer;
 }
@@ -6667,6 +6716,7 @@ const ACTIONS = {
     stopSpeech();
     el.classList.add("on");
     sayText(m).finally(() => el.classList.remove("on"));
+    refreshGlenn();
   },
   "new-place"() { placeForm(); },
   "edit-place"(el) { const p = S.places.find((x) => x.id === el.dataset.id); if (p) placeForm(p); },
