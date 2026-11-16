@@ -80,7 +80,11 @@ service cloud.firestore {
       // Räknaren för AI-anrop (ai/{månad}) skrivs bara av servern.
       match /{coll}/{document=**} {
         allow read: if memberOf(hid) || isAdmin();
-        allow create, update: if memberOf(hid) && coll != "ai";
+        allow create: if memberOf(hid) && coll != "ai";
+        // Bara ägaren lägger en bil i papperskorgen (deletedAt) eller tar ut den.
+        allow update: if memberOf(hid) && coll != "ai"
+          && (coll != "cars" || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['deletedAt', 'deletedBy'])
+            || ownerOf(get(/databases/$(database)/documents/households/$(hid)).data) == request.auth.uid);
         // Bara hushållets ägare får ta bort en bil.
         allow delete: if memberOf(hid) && coll != "ai"
           && (coll != "cars" || ownerOf(get(/databases/$(database)/documents/households/$(hid)).data) == request.auth.uid);

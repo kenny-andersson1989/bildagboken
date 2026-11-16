@@ -616,3 +616,37 @@ exports.adminPlus = onCall({ timeoutSeconds: 20, memory: "256MiB", maxInstances:
   await ref.update({ "plus.until": admin.firestore.Timestamp.fromDate(until), "plus.gift": true });
   return { ok: true, until: until.getTime() };
 });
+
+// Papperskorgen: bilar som har legat borttagna i 30 dagar raderas för gott, med logg, resor och bilder.
+exports.rensaPapperskorg = onSchedule({ schedule: "every day 03:30", timeZone: TZ, timeoutSeconds: 300 }, async () => {
+  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 30 * 864e5);
+  const houses = await db.collection("households").select().get();
+  for (const h of houses.docs) {
+    const old = await h.ref.collection("cars").where("deletedAt", "<", cutoff).get();
+    for (const car of old.docs) {
+      const refs = [car.ref];
+      const photo = car.data().photoId;
+      if (photo) refs.push(h.ref.collection("photos").doc(photo));
+      for (const sub of ["entries", "trips", "photos"]) {
+        const q = await h.ref.collection(sub).where("carId", "==", car.id).get();
+        refs.push(...q.docs.map((d) => d.ref));
+        // Bilderna i loggen.
+        if (sub === "entries") for (const e of q.docs) {
+          const d = e.data();
+          const ids = Array.isArray(d.photoIds) && d.photoIds.length ? d.photoIds : d.photoId ? [d.photoId] : [];
+          refs.push(...ids.map((id) => h.ref.collection("photos").doc(id)));
+        }
+      }
+      // Samma dokument kan ha kommit med två gånger (en bild med carId som också hör till en post).
+      const seen = new Set();
+      for (let i = refs.length - 1; i >= 0; i--) { if (seen.has(refs[i].path)) refs.splice(i, 1); else seen.add(refs[i].path); }
+      if (car.data().shareToken) refs.push(db.doc(`shares/${car.data().shareToken}`));
+      for (let i = 0; i < refs.length; i += 400) {
+        const b = db.batch();
+        refs.slice(i, i + 400).forEach((r) => b.delete(r));
+        await b.commit();
+      }
+      logger.info("Papperskorgen tömd", { hid: h.id, car: car.id, docs: refs.length });
+    }
+  }
+});
