@@ -1140,7 +1140,7 @@ const AI_NAME = "Glenn";
    en stund när svaret kommer och medan det läses upp. Munnen rör sig bara när han pratar. */
 const GLENN_FRAMES = ["base", "base-talk", "wink", "wink-talk", "thumb", "thumb-talk"];
 // Små bilder (ansikte och axlar) och hela Glenn (i röstläget).
-const glennSrc = (f, full = false) => `icons/glenn/${full ? "full-" : ""}${f}.png?v=2`;
+const glennSrc = (f, full = false) => `icons/glenn/${full ? "full-" : ""}${f}.png?v=3`;
 
 /* Glenns väder och kläder. Bakgrunden visar vädret där man är (Open-Meteo, utan nyckel), och Glenn klär sig
    efter det: sydväst i regn, mössa i snö och kyla, solglasögon när det är soligt och varmt. På högtider har han
@@ -1178,7 +1178,7 @@ function glennLook() {
 // Glenn med bakgrund och kläder. img är bilden av Glenn (som byts när han blinkar, pratar med mera).
 function glennFig(img, full = false, cls = "") {
   const L = glennLook();
-  const style = [`--sky:url(icons/glenn/sky-${L.sky}.png?v=2)`, L.acc ? `--acc:url(icons/glenn/acc-${full ? "full-" : ""}${L.acc}.png?v=2)` : "", L.fx ? `--fx:url(icons/glenn/fx-${L.fx}.png?v=2)` : ""].filter(Boolean).join(";");
+  const style = [`--sky:url(icons/glenn/sky-${L.sky}.png?v=3)`, L.acc ? `--acc:url(icons/glenn/acc-${full ? "full-" : ""}${L.acc}.png?v=3)` : "", L.fx ? `--fx:url(icons/glenn/fx-${L.fx}.png?v=3)` : ""].filter(Boolean).join(";");
   return `<span class="gfig${full ? " full" : ""}${L.fx ? ` fx-${L.fx}` : ""}${cls ? ` ${cls}` : ""}" style="${style}">${img}</span>`;
 }
 // Vädret där man är, högst en gång i halvtimmen. Platsen används bara om appen redan har fått lov.
