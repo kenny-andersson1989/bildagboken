@@ -9,12 +9,9 @@ service cloud.firestore {
     function isAdmin() {
       return signedIn() && request.auth.uid == 'mjQJQzsMCpVURkuVSyK5ctKVhG23';
     }
-    // Hushållets ägare: den som betalar för Plus (plus.by), annars owner, annars den som skapade hushållet.
+    // Hushållets ägare: den som skapade hushållet, eller den som ägaren lämnade över till.
+    // Plus ändrar inte vem som är ägare.
     function ownerOf(d) {
-      return d.get('plus', {}).get('by', d.get('owner', d.members[0]));
-    }
-    // Den som skapade hushållet. Bara den får ta bort bilar.
-    function creatorOf(d) {
       return d.get('owner', d.members[0]);
     }
     function memberOf(hid) {
@@ -57,7 +54,9 @@ service cloud.firestore {
       allow update: if signedIn() && (
         // Medlemmar får ändra hushållet. Plus skrivs bara av servern när någon har betalat.
         // Bara ägaren får ta bort andra och byta ägare. Andra får bara ta bort sig själva (Lämna).
+        // Ägaren måste alltid vara någon som är med i hushållet.
         (request.auth.uid in resource.data.members && request.resource.data.members.size() > 0
+          && ownerOf(request.resource.data) in request.resource.data.members
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plus'])
           && (ownerOf(resource.data) == request.auth.uid
             || (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['owner'])
@@ -81,9 +80,9 @@ service cloud.firestore {
       match /{coll}/{document=**} {
         allow read: if memberOf(hid) || isAdmin();
         allow create, update: if memberOf(hid) && coll != "ai";
-        // Bara den som skapade hushållet får ta bort en bil.
+        // Bara hushållets ägare får ta bort en bil.
         allow delete: if memberOf(hid) && coll != "ai"
-          && (coll != "cars" || creatorOf(get(/databases/$(database)/documents/households/$(hid)).data) == request.auth.uid);
+          && (coll != "cars" || ownerOf(get(/databases/$(database)/documents/households/$(hid)).data) == request.auth.uid);
       }
     }
   }
