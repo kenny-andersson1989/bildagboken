@@ -1,6 +1,13 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Föregående": "Previous",
+  "Ägare": "Owner",
+  "Bara hushållets ägare kan ta bort andra.": "Only the household owner can remove others.",
+  "Du är hushållets ägare och den enda som kan ta bort andra.": "You are the household owner and the only one who can remove others.",
+  "Den som betalar för Plus blir ägare.": "Whoever pays for Plus becomes the owner.",
+  "Bilåret i siffror": "The car year in numbers",
+  "Vill du ta bort bilen? Det gör du under Bilen → Bilar, längst ner.": "Want to remove the car? Do it under Car → Cars, at the bottom.",
   "Femtiotals\u00admack": "Fifties gas station",
   "Femtiotalsmack": "Fifties gas station",
   "Neonnatt": "Neon night",
@@ -1296,6 +1303,9 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Sida (\d+) av (\d+)$/, "Page $1 of $2"],
+  [/^Nästa (\d+) bilder$/, "Next $1 photos"],
+  [/^(.+) är hushållets ägare och den enda som kan ta bort andra\.( Den som betalar för Plus blir ägare\.)?$/, (m, n, x) => `${n} is the household owner and the only one who can remove others.${x ? " Whoever pays for Plus becomes the owner." : ""}`],
   [/^Tjenare! Jag är Glenn\. Jag har koll på allt ni har loggat om (.+)\. Vad undrar du\?$/, "Hi there! I'm Glenn. I know everything you have logged about $1. What would you like to know?"],
   [/^Glenn svarar utifrån det ni har loggat om (.+)\. AI kan ha fel, så kontrollera viktiga saker\.$/, "Glenn answers based on what you have logged about $1. AI can be wrong, so check important things."],
   [/^Ni har ställt (\d+) frågor den här månaden\. Det fylls på nästa månad\.$/, "You have asked $1 questions this month. More are added next month."],
