@@ -1418,7 +1418,8 @@ async function dictateField(btn) {
   btn?.classList.add("on");
   try {
     const text = await dictate((t) => { if (input) { input.value = before + t; chatInputChanged(); } });
-    if (input && text) { input.value = before + text; chatInputChanged(); }
+    // Har man pratat klart skickas frågan direkt, som om man hade tryckt på pilen.
+    if (input && text) { const q = before + text; input.value = ""; chatInputChanged(); askCar(q); }
   } catch (e) { dictateError(e); }
   finally { btn?.classList.remove("on"); }
 }
@@ -3939,6 +3940,13 @@ function fitSheet() {
   if (sheet.dataset.maxH !== maxH) { sheet.dataset.maxH = maxH; sheet.style.maxHeight = maxH; }
   const kbOn = typing && vv.height < window.screen.height * 0.75;
   if (sheet.classList.contains("kb") !== kbOn) sheet.classList.toggle("kb", kbOn);
+  // I chatten: samtalet får plats ovanför tangentbordet, och det senaste meddelandet och fältet syns.
+  if (document.activeElement?.id === "chat-in") {
+    const vvh = Math.round(vv.height) + "px";
+    if (sheet.style.getPropertyValue("--vvh") !== vvh) sheet.style.setProperty("--vvh", vvh);
+    sheet.scrollTop = sheet.scrollHeight;
+    scrollChat();
+  }
 }
 // Högst en gång per bildruta.
 let fitQueued = false;
@@ -6813,7 +6821,6 @@ const ACTIONS = {
     const on = !speakOn();
     pref.set("chatSpeak", on ? "1" : "0");
     el.outerHTML = speakBtn();
-    showToast(on ? `${AI_NAME} läser upp svaren` : `${AI_NAME} läser inte upp svaren`);
     if (!on) return stopSpeech();
     unlockAudio();
     const last = [...chatState().msgs].reverse().find((m) => m.role === "assistant" && !m.err);
