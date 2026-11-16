@@ -53,13 +53,14 @@ service cloud.firestore {
         && (!('owner' in request.resource.data) || request.resource.data.owner == request.auth.uid);
       allow update: if signedIn() && (
         // Medlemmar får ändra hushållet. Plus skrivs bara av servern när någon har betalat.
-        // Bara ägaren får ta bort andra och byta ägare. Andra får bara ta bort sig själva (Lämna).
+        // Bara ägaren får ta bort andra, byta ägare och välja vilken bil som fungerar utan Plus.
+        // Andra får bara ta bort sig själva (Lämna).
         // Ägaren måste alltid vara någon som är med i hushållet.
         (request.auth.uid in resource.data.members && request.resource.data.members.size() > 0
           && ownerOf(request.resource.data) in request.resource.data.members
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plus'])
           && (ownerOf(resource.data) == request.auth.uid
-            || (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['owner'])
+            || (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['owner', 'activeCar', 'activeCarAt'])
               && (request.resource.data.members.toSet() == resource.data.members.toSet()
                 || resource.data.members.toSet().difference(request.resource.data.members.toSet()) == [request.auth.uid].toSet()))))
         // Den som inte är medlem får bara lägga till sig själv, och bara med en giltig inbjudningskod.
