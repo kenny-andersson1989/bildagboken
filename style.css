@@ -1756,3 +1756,10 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 /* Toppknapparna står alltid längst till höger, på samma ställe på alla sidor (även med tillbaka-pil). */
 .top .top-actions { margin-left: auto; flex: none; }
 .top .hello { flex: 1 1 auto; }
+
+/* Byt bil från Översikt: bilens namn är en knapp. Ta bort bil längst ner på Bilen. */
+button.hero-name { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: pointer; margin-left: auto; }
+button.hero-name svg { opacity: .6; }
+.car-danger { text-align: center; padding: 18px 8px 6px; }
+.car-danger .link.danger { display: inline-flex; align-items: center; gap: 6px; font: 600 14px var(--f-body); background: none; border: 0; cursor: pointer; padding: 8px; }
+.car-danger .hint { margin: 4px auto 0; max-width: 34ch; }

@@ -13,6 +13,10 @@ service cloud.firestore {
     function ownerOf(d) {
       return d.get('plus', {}).get('by', d.get('owner', d.members[0]));
     }
+    // Den som skapade hushållet. Bara den får ta bort bilar.
+    function creatorOf(d) {
+      return d.get('owner', d.members[0]);
+    }
     function memberOf(hid) {
       return signedIn()
         && request.auth.uid in get(/databases/$(database)/documents/households/$(hid)).data.members;
@@ -76,7 +80,10 @@ service cloud.firestore {
       // Räknaren för AI-anrop (ai/{månad}) skrivs bara av servern.
       match /{coll}/{document=**} {
         allow read: if memberOf(hid) || isAdmin();
-        allow write: if memberOf(hid) && coll != "ai";
+        allow create, update: if memberOf(hid) && coll != "ai";
+        // Bara den som skapade hushållet får ta bort en bil.
+        allow delete: if memberOf(hid) && coll != "ai"
+          && (coll != "cars" || creatorOf(get(/databases/$(database)/documents/households/$(hid)).data) == request.auth.uid);
       }
     }
   }

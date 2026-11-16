@@ -534,6 +534,9 @@ function plusSheet() {
 // hushållet. Bara ägaren kan ta bort andra (också i säkerhetsreglerna).
 const ownerUid = (h = S.house) => h?.plus?.by || h?.owner || h?.members?.[0] || null;
 const isOwner = () => ownerUid() === uid();
+// Den som skapade hushållet. Bara den får ta bort bilar, oavsett vem som betalar för Plus.
+const creatorUid = (h = S.house) => h?.owner || h?.members?.[0] || null;
+const isCreator = () => creatorUid() === uid();
 const memberName = (u) => S.house?.memberInfo?.[u]?.name || "Någon";
 const whoName = (u) => (u === uid() ? "Du" : memberName(u));
 const myName = () => memberName(uid());
@@ -2943,7 +2946,7 @@ function viewOverview() {
   // Bilkortet: namn och regnummer, bilden, och under den två rutor: mätarställning och bränsle.
   parts.push(`<article class="card hero">
     <div class="hero-car">
-      <div class="hero-name">${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}<b>${esc(carName(c))}</b></div>
+      <button class="hero-name as-link" type="button" data-act="car-switch" aria-label="${esc(`${carName(c)}. Byt bil eller lägg till en`)}">${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}<b>${esc(carName(c))}</b>${icon("down", 16)}</button>
       <div class="sub">${esc([c.year, c.fuel].filter(Boolean).join(" · "))}</div>
     </div>
     <label class="car-pick" title="Byt bild på bilen">
@@ -3040,7 +3043,7 @@ const CARD_NAMES = { koll: "På gång", todo: "Att göra", recent: "Senaste akti
 // Korten som går att flytta, per vy. Översikt sparas under "cards" (som förut) och Bilen under "cards.bilen".
 const CARD_VIEWS = {
   oversikt: { names: CARD_NAMES, pref: "cards", title: "Översikten" },
-  bilen: { get names() { return { upp: "Uppgifter", maint: "Underhåll", dack: "Däck", media: "Bilder och dokument", book: "Servicebok", bilar: "Bilar" }; }, pref: "cards.bilen", title: "Bilen" },
+  bilen: { get names() { return { upp: "Uppgifter", maint: "Underhåll", dack: "Däck", media: "Bilder och dokument", book: "Servicebok" }; }, pref: "cards.bilen", title: "Bilen" },
   ekonomi: { names: { month: "Kostnad per månad", year: "Hela året", rec: "Återkommande kostnader", tank: "Tankningar", facts: "Bilåret i siffror" }, pref: "cards.ekonomi", title: "Ekonomi" },
 };
 function cardPrefs(view = "oversikt") {
@@ -3714,6 +3717,7 @@ function viewCar() {
   return arrangeCards(`${subHeader([c.year, c.fuel].filter(Boolean).join(" · "), carName(c), false, "Bilen")}
     <div class="car-chips" role="group" aria-label="Välj bil">
       ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon("car", 16)}${esc(carName(x))}</button>`).join("")}
+      <button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>
     </div>
     <!--card:upp--><div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
@@ -3742,15 +3746,10 @@ function viewCar() {
       <div class="ask"><button class="btn-soft" type="button" data-act="print-book">${icon("print", 16)} Dela eller spara som PDF</button>
       ${shareCardHtml(c)}</div>
     </div>
-    <!--card:bilar--><div class="card">
-      <h2>Bilar</h2>
-      <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(carName(x))}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
-        <span class="row-actions">${x.id === S.carId ? `<span class="pill ok">Vald</span>` : `<button class="link" type="button" data-act="pick-car" data-id="${esc(x.id)}">Välj</button>`}
-        <button class="link danger" type="button" data-act="delete-car" data-id="${esc(x.id)}" aria-label="Ta bort ${esc(carName(x))}">Ta bort</button></span></div>`).join("")}</div>
-      ${limited() ? `<p class="hint plus-hint" style="margin-top:8px">${esc(`${S.cars.length} av ${FREE.cars} ${FREE.cars === 1 ? "bil" : "bilar"} i gratisversionen.`)} <button class="link" type="button" data-act="plus">Plus för fler</button></p>` : ""}
-      <div class="ask"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>
-      <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för alla ni som delar bilen. Du får frågan en gång till innan något tas bort.</p>
-    </div>`, "bilen");
+    <!--card:end--><div class="car-danger">${isCreator()
+      ? `<button class="link danger" type="button" data-act="delete-car" data-id="${esc(c.id)}">${icon("close", 14)} ${esc(`Ta bort ${carName(c)}`)}</button>
+        <p class="hint">Tar bort bilen och hela dess logg för alla i hushållet. Det går inte att ångra.</p>`
+      : `<p class="hint">${esc(`Bara ${memberName(creatorUid())}, som skapade hushållet, kan ta bort bilen.`)}</p>`}</div>`, "bilen");
 }
 
 function viewNotifications() {
@@ -6352,7 +6351,7 @@ function carSheet(edit, sections = ["basic"]) {
       ${carFormFields(c, { sections, isNew: !edit })}
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">Spara</button>
-      ${edit && sections.includes("basic") ? `<p class="hint">Vill du ta bort bilen? Det gör du under Bilen → Bilar, längst ner.</p>` : ""}
+      ${edit && sections.includes("basic") ? `<p class="hint">Vill du ta bort bilen? Det gör du längst ner på sidan Bilen.</p>` : ""}
     </form>`);
 }
 
@@ -7157,10 +7156,16 @@ const ACTIONS = {
     $("#item-rows").innerHTML = fresh.map(itemRowHtml).join("");
     showToast("Standardpunkterna är inlagda. Tryck Spara för att behålla dem.");
   },
-  "pick-car"(el) { S.carId = el.dataset.id; pref.set("car", S.carId); render(); },
+  "pick-car"(el) { S.carId = el.dataset.id; pref.set("car", S.carId); if (el.closest(".car-switch")) closeSheet(); render(); },
+  "car-switch"() {
+    openSheet("Byt bil", `<div class="rows car-switch">${S.cars.map((x) => `<button class="dl as-btn" type="button" data-act="pick-car" data-id="${esc(x.id)}"><span class="dl-ic">${icon("car", 20)}</span>
+      <span><span class="dl-t">${esc(carName(x))}</span><span class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</span></span>${x.id === S.carId ? `<span class="pill ok">Vald</span>` : "<span></span>"}</button>`).join("")}</div>
+      <div class="form" style="margin-top:14px"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>`);
+  },
   async "delete-car"(el) {
     const c = S.cars.find((x) => x.id === el.dataset.id) || car();
     if (!c) return;
+    if (!isCreator()) return showToast("Bara den som skapade hushållet kan ta bort bilen.");
     const n = S.entries.filter((e) => e.carId === c.id).length;
     const ok = await confirmDialog({
       title: `Ta bort ${carName(c)}?`,
