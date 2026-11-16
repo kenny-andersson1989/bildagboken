@@ -1834,3 +1834,8 @@ body.car-locked .fab { display: none; }
 .glenn-card.glenn-nav { border-style: solid; }
 .glenn-nav .gc-s { margin-top: 2px; }
 .glenn-nav .btn { margin-top: 10px; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; }
+
+/* Knappen för Glenn uppe till höger: hans ansikte i stället för en symbol */
+.icon-btn.glenn-btn { padding: 0; overflow: hidden; }
+.glenn-btn .gfig.gfig-btn { width: 100%; height: 100%; margin: 0; border: 0; border-radius: inherit; box-shadow: none; }
+.glenn-btn .gfig.gfig-btn img { width: 100%; height: 100%; }

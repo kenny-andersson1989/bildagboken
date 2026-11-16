@@ -2817,7 +2817,7 @@ function topActions() {
   // Den sida man är inne på (Aviseringar eller Inställningar) är markerad.
   const on = (v) => (S.view === v ? ` aria-current="page"` : "");
   return `<div class="top-actions">
-      ${chatOn() || plusOnSale() ? `<button class="icon-btn ai-btn" type="button" data-act="chat" aria-label="Fråga Glenn">${icon("spark")}</button>` : ""}
+      ${chatOn() || plusOnSale() ? `<button class="icon-btn ai-btn glenn-btn" type="button" data-act="chat" aria-label="Fråga Glenn">${glennFig(`<img class="glenn-av" src="${glennSrc("base")}" alt="" width="44" height="44">`, false, "gfig-av gfig-btn")}</button>` : ""}
       <button class="icon-btn" type="button" data-go="aviseringar"${on("aviseringar")} aria-label="Aviseringar${n ? `, ${n} nya` : ""}">${icon("bell")}${n ? `<span class="badge">${n > 9 ? "9+" : n}</span>` : ""}</button>
       <button class="icon-btn" type="button" data-go="installningar"${on("installningar")} aria-label="Inställningar">${icon("gear")}</button>
     </div>`;
