@@ -1303,6 +1303,10 @@ function dictate(onText) {
       const stopNow = () => { Promise.resolve(ns.stop()).catch(() => {}); setTimeout(finish, 2500); };
       (async () => {
         try {
+          // Glenns uppläsning måste vara helt stoppad innan mikrofonen startar, annars får iPhone inget ljud in.
+          try { voiceAudio?.pause(); if (voiceAudio) voiceAudio.src = SILENT; } catch { /* inget ljud */ }
+          try { if ("speechSynthesis" in window) speechSynthesis.cancel(); } catch { /* ingen röst */ }
+          await new Promise((r) => setTimeout(r, 350));
           sub = await ns.addListener("partial", (d) => {
             if (d?.text) { text = d.text; onText(text); }
             if (d?.final) return finish();
