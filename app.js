@@ -2215,6 +2215,26 @@ const TRAILERS = [
   ["Hästtransport, två hästar", 2000, 900, true],
   ["Biltrailer", 2500, 550, true],
 ];
+// Tre typer av släp med bild: [namn, egna bromsar, vanlig totalvikt från–till, bild].
+const TRAILER_PICS = {
+  small: `<svg viewBox="0 0 120 64" aria-hidden="true"><path d="M2 56h116" class="tp-ground"/><path d="M6 40h16M4 38v4" class="tp-line"/><rect x="22" y="26" width="74" height="18" rx="2" class="tp-body"/><path d="M26 30h66" class="tp-line"/><circle cx="60" cy="48" r="8" class="tp-wheel"/><circle cx="60" cy="48" r="3" class="tp-hub"/></svg>`,
+  box: `<svg viewBox="0 0 120 64" aria-hidden="true"><path d="M2 56h116" class="tp-ground"/><path d="M4 40h18M2 38v4" class="tp-line"/><rect x="10" y="36" width="8" height="5" rx="1" class="tp-body"/><path d="M22 44V16q0-4 4-4h64q4 0 4 4v28Z" class="tp-body"/><path d="M22 22h72" class="tp-line"/><circle cx="50" cy="48" r="7" class="tp-wheel"/><circle cx="68" cy="48" r="7" class="tp-wheel"/><circle cx="50" cy="48" r="2.5" class="tp-hub"/><circle cx="68" cy="48" r="2.5" class="tp-hub"/></svg>`,
+  caravan: `<svg viewBox="0 0 120 64" aria-hidden="true"><path d="M2 56h116" class="tp-ground"/><path d="M4 42h16M2 40v4" class="tp-line"/><path d="M20 44V18q0-10 12-10h66q14 0 18 14v22Z" class="tp-body"/><rect x="30" y="16" width="22" height="12" rx="3" class="tp-win"/><rect x="88" y="18" width="16" height="10" rx="3" class="tp-win"/><rect x="62" y="16" width="14" height="26" rx="2" class="tp-line-f"/><circle cx="58" cy="48" r="7" class="tp-wheel"/><circle cx="58" cy="48" r="2.5" class="tp-hub"/></svg>`,
+};
+const TRAILER_TYPES = [["small", "Litet släp", false, 500, 750], ["box", "Kåpsläp", true, 1000, 1500], ["caravan", "Husvagn", true, 1200, 1800]];
+function trailerTiles(t, lic) {
+  return `<div class="tow-tiles">${TRAILER_TYPES.map(([pic, name, braked, lo, hi]) => {
+    const lmax = licenseMax(t, lic);
+    const max = Math.min(trailerCarMax(t, braked), lmax ?? Infinity);
+    const cls = max >= hi ? "ok" : max >= lo ? "warn" : "bad";
+    const sub = max >= hi ? "Räcker för de flesta" : max >= lo ? "Räcker för mindre" : "För tungt för de flesta";
+    return `<div class="tow-tile ${cls}">${TRAILER_PICS[pic]}
+      <b>${esc(name)}</b>
+      <span class="tt-kg">${esc(`Upp till ${fmt(max)} kg`)}</span>
+      <span class="tt-sub">${esc(sub)}</span>
+      <span class="tt-typ">${esc(`Vanligt: ${fmt(lo)}–${fmt(hi)} kg`)}</span></div>`;
+  }).join("")}</div>`;
+}
 const licenseOf = () => (LICENSES[pref.get("license")] ? pref.get("license") : "B");
 function trailerInfo(c) {
   const t = { braked: num(c.towMax), total: num(c.totalWeight), train: num(c.trainWeight) };
@@ -2254,6 +2274,7 @@ function trailerCard(c) {
   return `<div class="card"><h2>Släpvagn <button class="link" type="button" data-act="edit-car" data-section="more">Ändra</button></h2>
     <p class="label" style="margin:0 0 8px">Ditt körkort</p>
     <div class="seg" role="group" aria-label="Ditt körkort">${Object.keys(LICENSES).map((k) => `<button type="button" data-act="license" data-v="${k}" aria-pressed="${k === lic}">${k}</button>`).join("")}</div>
+    ${trailerTiles(t, lic)}
     <div class="tow-answer">
       <p><b>${esc(`Du får dra ett släp på upp till ${fmt(most)} kg`)}</b></p>
       <p class="muted">${esc(`Med lasten. Ett släp utan egna bromsar högst ${fmt(trailerCarMax(t, false))} kg.`)} ${esc(limitText)}</p>
