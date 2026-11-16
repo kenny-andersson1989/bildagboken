@@ -2302,13 +2302,13 @@ function trailerCard(c) {
       ${t.total ? "" : `<p class="hint">Fyll i bilens totalvikt under Ändra, så räknar appen också ut vilket körkort som behövs.</p>`}
       ${t.train ? "" : `<p class="hint">Har du tågvikten (står i registreringsbeviset)? Fyll i den, så blir svaret säkrare.</p>`}
     </div>
-    <p class="label" style="margin:16px 0 4px">Vanliga släp</p>
+    <details class="more" style="margin-top:12px"><summary>${esc(`Visa fler släp (${TRAILERS.length})`)}</summary>
     <div class="rows tow-list">${TRAILERS.map(([name, total, curb, braked]) => {
       const [ok, head, text] = trailerVerdict(t, lic, total, curb, braked);
       return `<div class="dl tow-row ${ok === true ? "ok" : ok === "warn" ? "warn" : "bad"}"><span class="dl-ic">${verdictIcon(ok)}</span>
         <span><span class="dl-t">${esc(name)}</span><span class="tow-head">${esc(head)}</span><span class="dl-s">${esc(text)}</span></span></div>`;
     }).join("")}</div>
-    <p class="hint" style="margin-top:6px">Vikterna för släpen är ungefärliga. Kolla alltid släpets registreringsbevis.</p>
+    <p class="hint" style="margin-top:6px">Vikterna för släpen är ungefärliga. Kolla alltid släpets registreringsbevis.</p></details>
     <details class="more" style="margin-top:12px"><summary>Har du ett visst släp?</summary>
       <div class="form trailer-calc" style="margin-top:8px">
         <div class="row2">

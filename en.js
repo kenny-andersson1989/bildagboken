@@ -1448,6 +1448,7 @@ export const EN_RULES = [
   [/^Ett släp utan egna bromsar högst (.+) kg\.$/, "A trailer without its own brakes at most $1 kg."],
   [/^Du får lasta (ca )?(.+) kg$/, (m, a, k) => `You may load ${a ? "about " : ""}${k} kg`],
   [/^Lasta ca (.+) kg$/, "Load about $1 kg"],
+  [/^Visa fler släp \((\d+)\)$/, "Show more trailers ($1)"],
   [/^ca (\d[\d\s]*) kg$/, "about $1 kg"],
   [/^Släpet ca (.+) kg \+ last (.+) kg = (.+) kg totalt$/, "Trailer about $1 kg + load $2 kg = $3 kg in total"],
   [/^Fyll inte helt\. Bilen får dra (.+) kg\.$/, "Don't fill it completely. The car may tow $1 kg."],
