@@ -2268,15 +2268,6 @@ function viewOverview() {
   const c = car();
   const parts = [headerMain()];
 
-  const unseen = unseenFromOthers();
-  if (unseen.length) {
-    const e = unseen.sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt))[0];
-    parts.push(`<button class="card toast" type="button" data-go="aviseringar">
-      <span class="avatar">${esc(memberName(e.createdBy).slice(0, 1).toUpperCase())}</span>
-      <p><b>${esc(activityText(e))}</b><time>${esc(timeAgo(tsMs(e.createdAt)))}</time></p>
-      <span class="new-pill">${unseen.length > 1 ? `${unseen.length} nya` : "Ny"}</span>
-    </button>`);
-  }
 
   // Bilkortet: namn och regnummer, bilden, och under den två rutor: mätarställning och bränsle.
   parts.push(`<article class="card hero">
@@ -2706,10 +2697,12 @@ function recentCard(c) {
     <h2>Senaste aktivitet <button class="link" type="button" data-go="logg">Visa alla</button></h2>
     <div class="rows">${items.map((x) => {
       const mine = x.who === uid();
+      // Det andra har gjort sedan du var inne senast får etiketten Ny (samma som klockan räknar).
+      const isNew = !mine && x.ts > lastSeenMs();
       return `<button class="dl as-btn" type="button" data-act="${x.act}" data-id="${esc(x.id)}">
         <span class="avatar${mine ? " me" : ""}">${esc((mine ? myName() : memberName(x.who)).slice(0, 1).toUpperCase())}</span>
         <span><span class="dl-t">${esc(x.text)}</span><span class="dl-s">${esc(timeAgo(x.ts) || fmtDateShort(x.date))}</span></span>
-        <span></span></button>`;
+        <span>${isNew ? `<span class="new-pill">Ny</span>` : ""}</span></button>`;
     }).join("")}</div>
   </article>`;
 }
@@ -3133,8 +3126,6 @@ function viewSettings() {
     </div>
     ${plusOnSale() ? `<div class="card plus-card"><h2>Bildagboken Plus</h2>
       <div class="rows"><button class="dl as-btn" type="button" data-act="plus"><div class="dl-ic">${icon("spark", 20)}</div><div><div class="dl-t">${hasPlus() ? esc(plusUntilText()) : limited() ? "Ni har gratisversionen" : "Ingen gräns för ert hushåll"}</div><div class="dl-s">${hasPlus() ? "Körjournal, läsning med AI och inga gränser. Gäller alla i hushållet." : "Körjournal, läsning med AI, fler bilar, fler i hushållet och fler bilder."}</div></div><span class="dl-v">›</span></button></div></div>` : ""}
-    ${tripsOn() ? `<div class="card"><h2>Körjournal</h2><p class="muted">Logga resor i tjänsten och privat, med milersättning och export. Den finns under Resor i menyn.</p>
-      <div class="ask">${tripsVisible() ? `<button class="btn-soft" type="button" data-go="resor">${icon("route", 16)} Öppna Resor</button><button class="link" type="button" data-act="trips-off">Dölj fliken</button>` : `<button class="btn-soft" type="button" data-act="trips-on">${icon("route", 16)} Slå på körjournalen</button>`}</div></div>` : ""}
     <div class="card">
       <h2>Bilar</h2>
       <div class="rows">${S.cars.map((x) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc(carName(x))}</div><div class="dl-s">${esc([x.year, x.plate].filter(Boolean).join(" · "))}</div></div>
@@ -3142,7 +3133,6 @@ function viewSettings() {
         <button class="link danger" type="button" data-act="delete-car" data-id="${esc(x.id)}" aria-label="Ta bort ${esc(carName(x))}">Ta bort</button></span></div>`).join("")}</div>
       <p class="hint" style="margin-top:10px">Ta bort raderar bilen och hela dess logg för alla ni som delar bilen. Du får frågan en gång till innan något tas bort.</p>
       ${limited() ? `<p class="hint plus-hint" style="margin-top:8px">${esc(`${S.cars.length} av ${FREE.cars} ${FREE.cars === 1 ? "bil" : "bilar"} i gratisversionen.`)} <button class="link" type="button" data-act="plus">Plus för fler</button></p>` : ""}
-      <div class="ask"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>
     </div>
     <div class="card">
       <h2>Notiser</h2>
@@ -3540,6 +3530,7 @@ function typePicker() {
     ${keys.map((k) => `<button type="button" data-act="new-entry" data-type="${k === "besiktning" ? "kostnad" : k}"${k === "besiktning" ? ' data-cat="Besiktning"' : ""}>${icon(typeIcon(k), 26)}${typeLabel(k)}</button>`).join("")}
   </div>`).join("") + `
   ${!tripsOn() && plusOnSale() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="plus" class="plus-teaser">${icon("car", 26)}Resa<span class="plus-badge">Plus</span></button></div>` : ""}
+  ${tripsOn() && !tripsVisible() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="trips-on">${icon("route", 26)}Slå på körjournalen</button></div>` : ""}
   ${tripsVisible() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="trip-menu">${icon("car", 26)}${openTrip() ? "Avsluta resa" : "Resa"}</button></div>` : ""}
   <p class="types-head">Boka</p><button class="btn primary block" type="button" data-act="new-booking">${icon("calendar", 18)} Lägg in bokad tid</button>
   <p class="hint" style="margin-top:14px">Det du sparar syns direkt för alla ni som delar bilen.</p>`);
@@ -6270,7 +6261,7 @@ const ACTIONS = {
   "trip-start-now"() { tripForm({}, "start"); },
   "trips-on"() { setTripsVisible(true); closeSheet(); setView("resor"); showToast("Körjournalen är påslagen. Den finns under Resor i menyn."); },
   async "trips-off"() {
-    const ok = await confirmDialog({ title: "Dölja fliken Resor?", lines: ["Resorna finns kvar. Du kan slå på körjournalen igen under Inställningar."], okLabel: "Dölj", warn: "" });
+    const ok = await confirmDialog({ title: "Dölja fliken Resor?", lines: ["Resorna finns kvar. Du kan slå på körjournalen igen med plusknappen i menyn."], okLabel: "Dölj", warn: "" });
     if (!ok) return;
     setTripsVisible(false); setView("oversikt");
   },
