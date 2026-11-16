@@ -1771,3 +1771,27 @@ body.car-locked .fab { display: none; }
 .locked-car .lc-ic { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); margin: 4px auto 10px; }
 .locked-car .form .hh-ghost { margin: 4px auto 0; }
 .locked-tip h2 { display: flex; align-items: center; gap: 8px; }
+
+/* Uppgifter från Transportstyrelsen: sökning med laddningssymbol, klistra in, släpräknaren */
+.reg-look > label { display: block; font: 600 13px var(--f-body); color: var(--ink-2); margin-bottom: 6px; }
+.reg-look .geo-row input { text-transform: uppercase; letter-spacing: .08em; }
+.reg-look .geo-row .btn-soft { flex: none; }
+.reg-status { margin-top: 8px; }
+.reg-busy, .reg-ok { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--accent-soft); color: var(--accent-text); font: 600 14px/1.35 var(--f-body); }
+.reg-ok { background: color-mix(in srgb, var(--sage) 16%, transparent); color: var(--ink); }
+.reg-ok svg { flex: none; color: var(--sage); }
+.reg-spin { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 3px solid currentColor; border-right-color: transparent; animation: regspin .8s linear infinite; }
+[data-garage] .reg-spin { border-radius: 0; animation-timing-function: steps(4); }
+@keyframes regspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .reg-spin { animation-duration: 2s; } }
+.reg-fail { padding: 12px 14px; border-radius: 14px; border: 1px dashed var(--line, rgba(0,0,0,.15)); }
+.reg-fail p { margin: 0 0 6px; }
+.reg-fail .steps { margin: 4px 0 10px; padding-left: 20px; color: var(--ink-2); font-size: 14px; }
+.reg-fail .ask { margin: 0 0 10px; flex-wrap: wrap; }
+.reg-fail textarea { width: 100%; box-sizing: border-box; }
+#reg-sheet-box .reg-busy { margin: 6px 0 12px; }
+.tc-res p { display: flex; align-items: flex-start; gap: 6px; margin: 4px 0; font-weight: 600; }
+.tc-res p svg { flex: none; margin-top: 3px; }
+.tc-res p.ok svg { color: var(--sage); }
+.tc-res p.bad { color: var(--danger); }
+.reg-fail a.btn-soft { text-decoration: none; }

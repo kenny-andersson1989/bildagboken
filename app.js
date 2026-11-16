@@ -1087,6 +1087,10 @@ function carContext(c) {
     ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${c.forsakringDatum}` : ""].filter(Boolean).join(", ")],
     ["Fordonsskatt betalas", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : null]];
   for (const [k, x] of facts) if (v(x)) L.push(`${k}: ${x}`);
+  if (c.reg?.f?.length) {
+    L.push("", `# Uppgifter från Transportstyrelsens register (hämtade ${ymd(new Date(c.reg.at || Date.now()))})`);
+    for (const x of c.reg.f) L.push(`${x.k}: ${x.v}`);
+  }
   for (const t of c.tires || []) L.push(`${t.kind === "vinter" ? "Vinterdäck" : "Sommardäck"}${t.on ? " (sitter på)" : ""}: ${[t.brand, t.size, t.year ? `tillverkade ${t.year}` : "", t.depth != null ? `${fmt(t.depth, 1)} mm mönster` : ""].filter(Boolean).join(", ") || "inga uppgifter"}`);
 
   L.push("", "# Underhåll");
@@ -2084,6 +2088,13 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
   const head = (k) => (sections.length > 1 ? `<p class="section-t">${CAR_SECTIONS[k]}</p>` : "");
   const parts = {};
   parts.basic = `
+    ${isNew ? `<div class="field reg-look">
+      <label for="cf-plate">Registreringsnummer</label>
+      <span class="geo-row"><input name="plate" id="cf-plate" value="${esc(c.plate || "")}" placeholder="ABC 123" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="8">
+        <button class="btn-soft" type="button" data-act="reg-lookup">${icon("search", 16)} Hämta</button></span>
+      <div id="cf-reg-status" class="reg-status" aria-live="polite"><small>Skriv registreringsnumret, så hämtar appen bilens uppgifter.</small></div>
+      <input type="hidden" name="regJson" id="cf-regJson">
+    </div>` : ""}
     <div class="row2">
       ${inp("make", "Märke", c.make, 'required placeholder="Volvo" list="dl-make" autocomplete="off"')}
       ${inp("model", "Modell", c.model, 'required placeholder="V50" list="dl-model" autocomplete="off"')}
@@ -2095,10 +2106,10 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       ${inp("engine", "Motor", c.engine, 'placeholder="1.8F"')}
     </div>
     <label class="field"><span>Drivmedel</span>${sel("fuel", FUELS, c.fuel || "Bensin")}</label>
-    <div class="row2">
+    ${isNew ? inp("color", "Färg", c.color, 'placeholder="Svart"') : `<div class="row2">
       ${inp("color", "Färg", c.color, 'placeholder="Svart"')}
       ${inp("plate", "Registreringsnummer", c.plate, 'placeholder="ABC 123" autocapitalize="characters"')}
-    </div>
+    </div>`}
     <label class="field"><span>Chassinummer (VIN)</span>
       <span class="geo-row"><input name="vin" id="cf-vin" value="${esc(c.vin || "")}" placeholder="17 tecken, valfritt" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="24">
       <label class="geo-btn" id="cf-vin-scan" aria-label="Läs av chassinumret med kameran" title="Läs av med kameran">${icon("camera", 20)}<input type="file" id="cf-vin-file" accept="image/*" class="vh"></label></span>
@@ -2175,6 +2186,302 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
     <p class="hint">Skriv fritt. Rader som "Motorolja: 5W-30" visas som rutor, så har ni oljetyp, däckdimension och liknande till hands i butiken.</p>`;
   return sections.map((k) => head(k) + parts[k]).join("");
 }
+
+/* ------------------------------------------- uppgifter från registret */
+// Bilens uppgifter från registreringsnumret. Appen försöker först själv (funktionen hamtaFordon läser
+// Transportstyrelsens publika sida). Går det inte kan man öppna sidan, kopiera texten och klistra in den här,
+// eller fylla i själv. Uppgifterna sparas på bilen som reg = { f: [{ k, v }], at, src }.
+const TS_PAGE = (plate) => `https://fordon-fu-regnr.transportstyrelsen.se/UppgifterAnnatFordon/TillbakaTillFordonsuppgifter?Registreringsnummer=${encodeURIComponent(plateKey(plate))}`;
+const plateKey = (p) => String(p || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const plateOk = (p) => /^[A-Z]{3}[0-9]{2}[A-Z0-9]$/.test(plateKey(p));
+const fmtPlate = (p) => (plateOk(p) ? `${plateKey(p).slice(0, 3)} ${plateKey(p).slice(3)}` : String(p || "").toUpperCase().trim());
+// Etiketter som känns igen när man klistrar in text från Transportstyrelsen.
+const REG_LABELS = ["Registreringsnummer", "Fabrikat", "Handelsbeteckning", "Modell", "Fordonsstatus", "Status", "Färg", "Fordonsår", "Årsmodell",
+  "Fordonsslag", "Fordonskategori", "Kaross", "Besiktas senast", "Besiktigas senast", "Senast godkända besiktning", "Senaste besiktning", "Användningsförbud",
+  "Identifikationsnummer", "Chassinummer", "Mätarställning", "Längd", "Bredd", "Höjd", "Axelavstånd", "Tjänstevikt", "Max lastvikt", "Lastvikt", "Totalvikt",
+  "Ursprunglig totalvikt", "Skattevikt", "Max släpvagnsvikt", "Släpvagnsvikt", "Max sammanlagd bruttovikt", "Max sammanlagda bruttovikt", "Tågvikt",
+  "Släpets högsta tillåtna totalvikt", "Antal passagerare", "Passagerare", "Växellåda", "Miljöklass", "Utsläppsklass", "Motoreffekt", "Effekt", "Cylindervolym",
+  "Drivmedel", "Bränsle", "Koldioxid", "CO2", "Årsskatt", "Fordonsskatt", "Skatt", "Skattebelopp", "Import", "Införsel", "I trafik första gången",
+  "Påställt första gången", "Första registrering", "Typgodkännande", "Max hastighet", "Däck", "Fälg", "Hjulbas", "Antal axlar",
+  "Drivande axlar", "Antal sittplatser", "Ljudnivå", "Bränsleförbrukning", "Elenergiförbrukning", "Räckvidd", "Kopplingsanordning", "Senaste ägarbyte"];
+const OWNER_LABEL = /ägare|innehavare|brukare|leasing|kredit|adress|postnummer|postort|personnummer|organisationsnummer|ägarbyte/i;
+const isRegLabel = (line) => {
+  const l = line.toLowerCase().replace(/:$/, "");
+  return line.length < 90 && REG_LABELS.some((x) => l === x.toLowerCase() || l.startsWith(x.toLowerCase() + " ") || l.startsWith(x.toLowerCase() + ","));
+};
+// Text som kopierats från sidan: "Etikett" på en rad och värdet på nästa, eller "Etikett: värde" / "Etikett<tab>värde".
+function parseRegText(text) {
+  const lines = String(text || "").split(/\r?\n/).map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 600);
+  const out = [], seen = new Set();
+  const add = (k, v) => {
+    k = k.replace(/:$/, "").trim(); v = String(v).trim();
+    if (!k || !v || OWNER_LABEL.test(k) || seen.has(k.toLowerCase())) return;
+    seen.add(k.toLowerCase()); out.push({ k, v: v.slice(0, 200) });
+  };
+  const raw = String(text || "").split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const tab = raw.find((r) => r.trim().replace(/\s+/g, " ") === line && r.includes("\t"));
+    if (tab) { const [k, ...v] = tab.split("\t").map((s) => s.trim()).filter(Boolean); if (k && v.length && isRegLabel(k)) { add(k, v.join(" ")); continue; } }
+    const colon = line.match(/^([^:]{2,80}):\s*(.+)$/);
+    if (colon && isRegLabel(colon[1])) { add(colon[1], colon[2]); continue; }
+    if (!isRegLabel(line)) continue;
+    const next = lines[i + 1];
+    if (next && !isRegLabel(next)) { add(line, next); i++; continue; }
+    // "Totalvikt 1 920 kg" på samma rad: den längsta etiketten som raden börjar med, och resten är värdet.
+    const l = line.toLowerCase();
+    const lab = REG_LABELS.filter((x) => l.startsWith(x.toLowerCase() + " ")).sort((a, b) => b.length - a.length)[0];
+    const rest = lab ? line.slice(lab.length).trim() : "";
+    if (rest && (/\d/.test(rest) || !next || isRegLabel(next))) add(lab, rest);
+  }
+  return out;
+}
+const regVal = (f, ...res) => {
+  for (const re of res) {
+    const hit = (f || []).find((x) => re.test(String(x.k).toLowerCase()));
+    if (hit && hit.v && !/^(-|–|uppgift saknas|saknas|okänt?)$/i.test(hit.v.trim())) return hit.v.trim();
+  }
+  return null;
+};
+const SV_MONTHS = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"];
+function regDate(v) {
+  if (!v) return null;
+  const iso = v.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const sv = v.toLowerCase().match(/(\d{1,2})\s+([a-zåäö]+)\s+(\d{4})/);
+  if (sv && SV_MONTHS.includes(sv[2])) return `${sv[3]}-${String(SV_MONTHS.indexOf(sv[2]) + 1).padStart(2, "0")}-${sv[1].padStart(2, "0")}`;
+  return null;
+}
+const regNum = (v) => { if (!v) return null; const m = String(v).replace(/(\d)\s+(?=\d{3}\b)/g, "$1").match(/\d+(?:[.,]\d+)?/); return m ? Number(m[0].replace(",", ".")) : null; };
+const niceCase = (s) => String(s).split(/(\s+|-)/).map((w) => (/^[A-ZÅÄÖ]{4,}$/.test(w) ? w[0] + w.slice(1).toLowerCase() : w)).join("");
+// Mätarställningen i mil. Transportstyrelsen anger den i km.
+function regOdoMil(f) {
+  const v = regVal(f, /^mätarställning/);
+  const n = regNum(v);
+  if (n == null) return null;
+  return /\bmil\b/i.test(v) ? Math.round(n) : Math.round(n / 10);
+}
+// Det som går att fylla i på bilen.
+function regToCar(f) {
+  const out = {};
+  let make = regVal(f, /^fabrikat$/, /^märke$/, /^fabrikat/), model = regVal(f, /^handelsbeteckning/, /^modell$/);
+  if (make && !model && /\s/.test(make)) { const w = make.split(/\s+/); make = w[0]; model = w.slice(1).join(" "); }
+  if (make) out.make = findMake(make) || niceCase(make);
+  if (model) out.model = niceCase(model);
+  const year = (regVal(f, /^årsmodell/, /^fordonsår/) || "").match(/\b(19|20)\d{2}\b/);
+  if (year) out.year = year[0];
+  const color = regVal(f, /^färg/);
+  if (color) out.color = color[0].toUpperCase() + color.slice(1).toLowerCase();
+  const fuel = (regVal(f, /^drivmedel/, /^bränsle/) || "").toLowerCase();
+  if (fuel) out.fuel = /laddhybrid|plug/.test(fuel) ? "Laddhybrid" : /hybrid|el\s*\/\s*bensin|bensin\s*\/\s*el|el och bensin/.test(fuel) ? "Hybrid"
+    : /etanol|e85|flex/.test(fuel) ? "Flexifuel (bensin/E85)" : /diesel/.test(fuel) ? "Diesel" : /^el\b|elektri/.test(fuel) ? "El" : /bensin/.test(fuel) ? "Bensin" : undefined;
+  if (!out.fuel) delete out.fuel;
+  const vin = cleanVin(regVal(f, /identifikationsnummer/, /chassinummer/, /^vin/) || "");
+  if (vin) out.vin = vin;
+  const plate = regVal(f, /^registreringsnummer/);
+  if (plate) out.plate = fmtPlate(plate);
+  const bes = regDate(regVal(f, /^besikt(i)?gas senast/, /^besiktas senast/, /sista dag för besiktning/));
+  if (bes) out.besiktning = bes;
+  const last = regDate(regVal(f, /^senast godkänd/, /^senaste besiktning/, /^senast besiktad/));
+  if (last) out.lastInspection = last;
+  const odo = regOdoMil(f);
+  if (odo != null && odo > 0 && odo < 200000) out.odometer = odo;
+  const tax = regNum(regVal(f, /årsskatt/, /^fordonsskatt/, /^skatt(ebelopp)?$/));
+  if (tax) out.skattBelopp = tax;
+  const ccm = regNum(regVal(f, /^cylindervolym/));
+  if (ccm && ccm > 300 && ccm < 9000) out.engine = (Math.round(ccm / 100) / 10).toFixed(1);
+  return out;
+}
+const regOk = (f) => Array.isArray(f) && f.length >= 3 && !!(regVal(f, /^fabrikat/, /^märke$/, /^handelsbeteckning/) || regVal(f, /^besikt/));
+
+// Söker automatiskt och visar en laddningssymbol i box. Lyckas det: onFields(fields, "auto"). Annars en ruta
+// där man kan öppna Transportstyrelsen och klistra in texten, eller fylla i själv.
+async function regLookup(box, plate, onFields, { manualHint = "Fyll i uppgifterna själv nedan, eller hämta dem från Transportstyrelsen:" } = {}) {
+  const key = plateKey(plate);
+  box.dataset.plate = key;
+  box.innerHTML = `<div class="reg-busy" role="status"><span class="reg-spin" aria-hidden="true"></span><span>${esc(`Söker efter ${fmtPlate(key)} hos Transportstyrelsen …`)}</span></div>`;
+  let res = null;
+  try {
+    res = await Promise.race([window.__regMock ? window.__regMock(key) : callFn("hamtaFordon", { plate: key }), new Promise((r) => setTimeout(() => r({ ok: false, reason: "timeout" }), 20000))]);
+  } catch { res = { ok: false, reason: "error" }; }
+  if (box.dataset.plate !== key) return; // man har hunnit skriva ett annat nummer
+  const fields = res?.ok ? (res.fields || []).map(([k, v]) => ({ k: String(k), v: String(v) })).filter((x) => !OWNER_LABEL.test(x.k)) : null;
+  if (fields && regOk(fields)) return onFields(fields, "auto");
+  regFallback(box, key, onFields, res?.reason === "limit" ? "Du har sökt många gånger i dag. Fyll i själv nedan, eller hämta uppgifterna från Transportstyrelsen:" : `Det gick inte att hämta uppgifterna automatiskt. ${manualHint}`);
+}
+function regFallback(box, key, onFields, text) {
+  box.innerHTML = `<div class="reg-fail">
+    <p>${esc(text)}</p>
+    <ol class="steps"><li>Öppna Transportstyrelsen och sök på bilen.</li><li>Markera all text på sidan och kopiera den.</li><li>Klistra in den i rutan här under.</li></ol>
+    <div class="ask"><a class="btn-soft" href="${esc(TS_PAGE(key))}" target="_blank" rel="noopener">${icon("search", 16)} Öppna Transportstyrelsen</a>
+      <button class="hh-ghost" type="button" data-act="reg-retry">Försök igen</button></div>
+    <textarea class="reg-paste" rows="3" placeholder="Klistra in texten från Transportstyrelsen här" aria-label="Klistra in texten från Transportstyrelsen"></textarea>
+    <p class="err reg-paste-err" hidden>Hittade inga uppgifter om bilen i texten. Kopiera hela sidan med uppgifterna och försök igen.</p>
+  </div>`;
+  box._onFields = onFields;
+}
+document.addEventListener("input", (ev) => {
+  if (!ev.target.classList?.contains("reg-paste")) return;
+  const box = ev.target.closest("[data-plate]");
+  const f = parseRegText(ev.target.value);
+  const errEl = box?.querySelector(".reg-paste-err");
+  if (!regOk(f)) { if (errEl) errEl.hidden = ev.target.value.trim().length < 20; return; }
+  const want = plateKey(box.dataset.plate), got = plateKey(regVal(f, /^registreringsnummer/));
+  if (want && got && want !== got) { if (errEl) { errEl.textContent = `Texten gäller ${fmtPlate(got)}, inte ${fmtPlate(want)}.`; errEl.hidden = false; } return; }
+  box._onFields?.(f, "paste");
+});
+
+// Nytt bil-formulär: när registreringsnumret är ifyllt söker appen själv, och fyller i det den hittar.
+let regTimer = null;
+function regFormLookup(force = false) {
+  const inp = $("#cf-plate"), box = $("#cf-reg-status");
+  if (!inp || !box) return;
+  const key = plateKey(inp.value);
+  if (!plateOk(key)) { box.dataset.plate = ""; box.innerHTML = `<small>Skriv registreringsnumret, så hämtar appen bilens uppgifter.</small>`; return; }
+  if (!force && box.dataset.plate === key) return;
+  regLookup(box, key, (f, src) => regFillForm(f, src), { manualHint: "Fyll i uppgifterna själv nedan, eller hämta dem från Transportstyrelsen:" });
+}
+document.addEventListener("input", (ev) => {
+  if (ev.target.id !== "cf-plate") return;
+  clearTimeout(regTimer);
+  regTimer = setTimeout(regFormLookup, 700);
+});
+function regFillForm(f, src) {
+  const form = $("#cf-plate")?.form, box = $("#cf-reg-status");
+  if (!form || !box) return;
+  const d = regToCar(f);
+  const set = (name, v) => {
+    const el = form.elements.namedItem(name);
+    if (!el || v == null || v === "") return false;
+    el.value = String(v);
+    el.classList.add("auto-filled");
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  };
+  ["make", "model", "year", "engine", "color", "vin", "fuel"].forEach((k) => set(k, d[k]));
+  if (d.plate) form.elements.namedItem("plate").value = d.plate;
+  // Mätarställningen vid senaste besiktningen blir bilens första mätarställning, om ingen har skrivit någon.
+  const odoEl = form.elements.namedItem("odometer");
+  if (odoEl && !odoEl.value.trim() && d.odometer != null) set("odometer", d.odometer);
+  if (d.lastInspection) set("lastInspection", d.lastInspection.slice(0, 7));
+  form.elements.namedItem("regJson").value = JSON.stringify({ f, src });
+  updateInspectionEstimate();
+  const name = [d.make, d.model].filter(Boolean).join(" ") || "bilen";
+  box.dataset.plate = plateKey(d.plate || box.dataset.plate);
+  box.innerHTML = `<div class="reg-ok" role="status">${icon("check", 18)}<span>${esc(`Hittade ${name}${d.year ? ` (${d.year})` : ""}. Kolla att det stämmer och spara. ${f.length} uppgifter från Transportstyrelsen sparas med bilen.`)}</span></div>`;
+}
+// Uppgifterna som sparas på bilen, från det dolda fältet i formuläret.
+function regFromForm(form) {
+  try { const j = JSON.parse(form.elements.namedItem("regJson")?.value || "null"); return j && regOk(j.f) ? { f: j.f.slice(0, 150), src: j.src === "paste" ? "paste" : "auto", at: Date.now() } : null; } catch { return null; }
+}
+
+// Bilen: uppgifterna från registret, och hämta dem (igen) för en bil som redan finns.
+const REG_MAIN = [["Status", /^fordonsstatus/, /^status$/], ["Besiktas senast", /^besikt(i)?gas senast/, /^besiktas senast/], ["Senast godkänd besiktning", /^senast godkänd/, /^senaste besiktning/],
+  ["Användningsförbud", /^användningsförbud/], ["Fordonsslag", /^fordonsslag/], ["Växellåda", /^växellåda/], ["Motoreffekt", /^motoreffekt/, /^effekt/],
+  ["Mätarställning vid besiktning", /^mätarställning/]];
+function regCard(c) {
+  if (!c.reg?.f?.length) {
+    if (!c.plate) return "";
+    return `<div class="card"><h2>Från Transportstyrelsen</h2>
+      <p class="muted">Hämta besiktning, status, vikter, mått och mer från registreringsnumret ${esc(fmtPlate(c.plate))}. Det är gratis.</p>
+      <div class="ask"><button class="btn-soft" type="button" data-act="reg-refresh">${icon("search", 16)} Hämta uppgifterna</button></div></div>`;
+  }
+  const f = c.reg.f;
+  const main = REG_MAIN.map(([label, ...res]) => [label, regVal(f, ...res)]).filter(([, v]) => v);
+  const ban = regVal(f, /^användningsförbud/);
+  return `<div class="card"><h2>Från Transportstyrelsen <button class="link" type="button" data-act="reg-refresh">Hämta igen</button></h2>
+    ${ban && !/^nej/i.test(ban) ? `<p class="pill warn" style="margin-bottom:8px">Användningsförbud: ${esc(ban)}</p>` : ""}
+    <dl class="detail-list">${main.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd data-notr>${esc(v)}</dd></div>`).join("")}</dl>
+    <details class="more" style="margin-top:10px"><summary>Visa alla uppgifter (${f.length})</summary>
+      <dl class="detail-list">${f.map((x) => `<div><dt data-notr>${esc(x.k)}</dt><dd data-notr>${esc(x.v)}</dd></div>`).join("")}</dl></details>
+    <p class="hint" style="margin-top:8px">${esc(`Hämtat ${fmtDate(ymd(new Date(c.reg.at || Date.now())))}. Uppgifterna kommer från Transportstyrelsens register.`)}</p>
+  </div>`;
+}
+function regRefreshSheet(c) {
+  openSheet("Från Transportstyrelsen", `<div id="reg-sheet-box"></div>`);
+  const box = $("#reg-sheet-box");
+  const save = async (f, src) => {
+    const d = regToCar(f);
+    // Registret bestämmer besiktningen. Annat fylls bara i om det saknas, så att det man själv skrivit står kvar.
+    const upd = { reg: { f: f.slice(0, 150), src, at: Date.now() } };
+    if (d.besiktning) upd.besiktning = d.besiktning;
+    for (const k of ["vin", "color", "year", "engine", "skattBelopp"]) if (d[k] != null && (c[k] == null || c[k] === "")) upd[k] = d[k];
+    try {
+      await updateDoc(ref("cars", c.id), upd);
+      Object.assign(c, upd);
+      closeSheet();
+      showToast("Uppgifterna är hämtade");
+      render();
+    } catch (e) { onWriteError(e); }
+  };
+  box._save = save;
+  regLookup(box, c.plate, save, { manualHint: "Hämta dem från Transportstyrelsen i stället:" });
+}
+
+// Släpvagn: vad bilen får dra, enligt registret, och en räknare för ett visst släp.
+function trailerInfo(c) {
+  const f = c.reg?.f;
+  if (!f) return null;
+  const kg = (...res) => regNum(regVal(f, ...res));
+  const t = {
+    braked: kg(/^max släpvagnsvikt$/, /^max släpvagnsvikt.*brom/, /^släpvagnsvikt.*brom/, /^max släpvagnsvikt/),
+    unbraked: kg(/obromsad/, /utan broms/),
+    train: kg(/^max sammanlagd/, /tågvikt/),
+    b: kg(/släpets högsta tillåtna totalvikt vid körkortsbehörighet b$/, /^släpets högsta.*behörighet b(?!.*utökad)/, /^släpets högsta(?!.*utökad)/),
+    b96: kg(/släpets högsta.*utökad/),
+    total: kg(/^totalvikt/),
+    curb: kg(/^tjänstevikt/),
+  };
+  return t.braked || t.train || t.b ? t : null;
+}
+function trailerCard(c) {
+  const t = trailerInfo(c);
+  if (!t) return "";
+  const rows = [["Max släpvagnsvikt (bromsat släp)", t.braked], ["Max släpvagnsvikt (obromsat släp)", t.unbraked], ["Tågvikt (bil och släp tillsammans)", t.train],
+    ["Släpets totalvikt med körkort B", t.b], ["Släpets totalvikt med utökad B (B96)", t.b96]].filter(([, v]) => v);
+  return `<div class="card"><h2>Släpvagn</h2>
+    <dl class="detail-list">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(`${fmt(v)} kg`)}</dd></div>`).join("")}</dl>
+    <p class="label" style="margin:14px 0 6px">Får jag dra mitt släp?</p>
+    <div class="form trailer-calc">
+      <div class="row2">
+        <label class="field"><span>Släpets totalvikt (kg)</span><input id="tc-total" inputmode="numeric" placeholder="Till exempel 1 300"></label>
+        <label class="field"><span>Släpets tjänstevikt (kg)</span><input id="tc-curb" inputmode="numeric" placeholder="Till exempel 350"></label>
+      </div>
+      <label class="check"><input type="checkbox" id="tc-unbraked"> Släpet har inga egna bromsar</label>
+      <div id="tc-out" aria-live="polite"><p class="hint">Vikterna står i släpets registreringsbevis.</p></div>
+    </div>
+  </div>`;
+}
+// Räknar ut vad släpet får väga och lasta. Kallas när man skriver i rutorna.
+function trailerCalc() {
+  const out = $("#tc-out"), c = car(), t = c && trailerInfo(c);
+  if (!out || !t) return;
+  const total = num($("#tc-total").value), curb = num($("#tc-curb").value), unbraked = $("#tc-unbraked").checked;
+  if (total == null) { out.innerHTML = `<p class="hint">Vikterna står i släpets registreringsbevis.</p>`; return; }
+  const carMax = unbraked ? t.unbraked ?? (t.braked != null ? Math.min(750, t.braked) : null) : t.braked;
+  // Tågvikten: räknat på att bilen är fullastad (bilens totalvikt).
+  const byTrain = t.train && t.total ? t.train - t.total : null;
+  const limits = [carMax, byTrain].filter((x) => x != null);
+  const maxTrailer = limits.length ? Math.min(...limits) : null; // vad släpet får väga, lastat, bakom den här bilen
+  const allowed = maxTrailer != null ? Math.min(total, maxTrailer) : total;
+  const L = [];
+  if (maxTrailer != null) L.push(total <= maxTrailer
+    ? [true, `Bilen får dra släpet fullastat (${fmt(total)} kg).`]
+    : [false, `Bilen får dra släpet, men det får bara väga ${fmt(maxTrailer)} kg med lasten, inte ${fmt(total)} kg.`]);
+  if (curb != null && curb < allowed) L.push([true, `Du får lasta ${fmt(allowed - curb)} kg på släpet.`]);
+  else if (curb != null) L.push([false, "Släpet väger redan för mycket utan last."]);
+  // Körkortet: B räcker om släpets totalvikt (enligt registreringsbeviset) är högst gränsen i bilens registrering.
+  if (t.b != null) {
+    const lic = total <= t.b ? "B räcker." : t.b96 != null && total <= t.b96 ? "Det krävs utökad B (B96)." : "Det krävs körkort BE.";
+    L.push([total <= t.b, `Körkort: ${lic}`]);
+  }
+  if (byTrain != null && carMax != null && byTrain < carMax) L.push([null, `Tågvikten begränsar: med fullastad bil får släpet väga högst ${fmt(byTrain)} kg.`]);
+  out.innerHTML = `<div class="tc-res">${L.map(([ok, s]) => `<p class="${ok === true ? "ok" : ok === false ? "bad" : ""}">${ok === true ? icon("check", 16) : ok === false ? icon("close", 16) : ""} ${esc(s)}</p>`).join("")}</div>
+    <p class="hint">Räknat på uppgifterna från Transportstyrelsen. Kontrollera alltid mot bilens och släpets registreringsbevis.</p>`;
+}
+document.addEventListener("input", (ev) => { if (["tc-total", "tc-curb"].includes(ev.target.id)) trailerCalc(); });
+document.addEventListener("change", (ev) => { if (ev.target.id === "tc-unbraked") trailerCalc(); });
 
 function renderCarSetup() {
   setScreen("car-setup", `
@@ -3085,7 +3392,7 @@ const CARD_NAMES = { koll: "På gång", todo: "Att göra", recent: "Senaste akti
 // Korten som går att flytta, per vy. Översikt sparas under "cards" (som förut) och Bilen under "cards.bilen".
 const CARD_VIEWS = {
   oversikt: { names: CARD_NAMES, pref: "cards", title: "Översikten" },
-  bilen: { get names() { return { upp: "Uppgifter", maint: "Underhåll", dack: "Däck", media: "Bilder och dokument", book: "Servicebok" }; }, pref: "cards.bilen", title: "Bilen" },
+  bilen: { get names() { return { upp: "Uppgifter", maint: "Underhåll", dack: "Däck", media: "Bilder och dokument", book: "Servicebok", reg: "Från Transportstyrelsen", slap: "Släpvagn" }; }, pref: "cards.bilen", title: "Bilen" },
   ekonomi: { names: { month: "Kostnad per månad", year: "Hela året", rec: "Återkommande kostnader", tank: "Tankningar", facts: "Bilåret i siffror" }, pref: "cards.ekonomi", title: "Ekonomi" },
 };
 function cardPrefs(view = "oversikt") {
@@ -3768,6 +4075,8 @@ function viewCar() {
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>
+    <!--card:reg-->${regCard(c)}
+    <!--card:slap-->${trailerCard(c)}
     <!--card:maint--><div class="card" id="underhall" style="scroll-margin-top:16px">
       <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
       <div class="rows">${st.filter((s) => s.item.mil || s.item.months || s.lastDate).map((s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
@@ -7219,6 +7528,13 @@ const ACTIONS = {
       render();
     } catch (e) { onWriteError(e); }
   },
+  "reg-lookup"() { regFormLookup(true); },
+  "reg-refresh"() { const c = car(); if (!c?.plate) return showToast("Fyll i registreringsnumret först, under Uppgifter."); regRefreshSheet(c); },
+  "reg-retry"(el) {
+    const box = el.closest("[data-plate]");
+    if (box?.id === "cf-reg-status") return regFormLookup(true);
+    if (box?._save) regLookup(box, box.dataset.plate, box._save, { manualHint: "Hämta dem från Transportstyrelsen i stället:" });
+  },
   "car-switch"() {
     openSheet("Byt bil", `<div class="rows car-switch">${S.cars.map((x) => `<button class="dl as-btn" type="button" data-act="pick-car" data-id="${esc(x.id)}"><span class="dl-ic">${icon("car", 20)}</span>
       <span><span class="dl-t">${esc(carName(x))}</span><span class="dl-s">${esc([x.year, x.plate, carLocked(x) ? "Låst utan Plus" : ""].filter(Boolean).join(" · "))}</span></span>${x.id === S.carId ? `<span class="pill ok">Vald</span>` : carLocked(x) ? icon("lock", 18) : "<span></span>"}</button>`).join("")}</div>
@@ -7585,6 +7901,14 @@ async function saveNewCar(form) {
   if (!data.make || !data.model) return formError("Fyll i märke och modell.") ?? showToast("Fyll i märke och modell.");
   const startOdo = data.odometer;
   delete data.odometer;
+  // Uppgifterna från Transportstyrelsen: sparas på bilen, och besiktning och skatt tas därifrån.
+  const reg = regFromForm(form);
+  if (reg) {
+    const d = regToCar(reg.f);
+    if (d.besiktning) data.besiktning = d.besiktning;
+    if (d.skattBelopp && data.skattBelopp == null) data.skattBelopp = d.skattBelopp;
+    data.reg = reg;
+  }
   if (startOdo != null && (startOdo < 0 || startOdo > 200000)) return formError("Mätarställningen ser fel ut. Ange den i mil, till exempel 21 480.") ?? showToast("Mätarställningen ser fel ut. Ange den i mil.");
   const cRef = doc(col("cars"));
   if (startOdo != null) {
