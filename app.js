@@ -4506,7 +4506,7 @@ function renderVoiceAdmin() {
   if (!v || !box) return;
   const rates = [[0.9, "Lugnare"], [1, "Normal"], [1.1, "Lite snabbare"], [1.2, "Snabbare"]];
   const row = (x) => `<div class="dl"><span class="dl-ic">${icon("spark", 18)}</span>
-    <span><span class="dl-t">${esc(voiceLabel(x.name))}</span><span class="dl-s">${x.gender === "MALE" ? "Man" : x.gender === "FEMALE" ? "Kvinna" : "Neutral"}${!v.auto && x.name === v.current ? " · vald" : v.auto && x.name === v.current ? " · vald automatiskt" : ""}</span></span>
+    <span><span class="dl-t">${esc(voiceLabel(x.name))}</span><span class="dl-s">${x.gender === "MALE" ? "Man" : x.gender === "FEMALE" ? "Kvinna" : "Neutral"}${!v.auto && x.name === v.current ? " · vald" : v.auto && x.name === v.current ? " · vald automatiskt" : ""}${!v.auto && x.name === v.autoVoice ? " · Glenns röst från början" : ""}</span></span>
     <span class="trash-acts"><button class="btn-soft" type="button" data-act="admin-voice-play" data-v="${esc(x.name)}">Lyssna</button>${x.name === v.current && !v.auto ? (Math.abs(v.rate - v.savedRate) > 0.01 ? `<button class="link" type="button" data-act="admin-voice-set" data-v="${esc(x.name)}">Spara takt</button>` : "") : `<button class="link" type="button" data-act="admin-voice-set" data-v="${esc(x.name)}">Välj</button>`}</span></div>`;
   box.innerHTML = `<p class="label" style="margin:0 0 6px">Takt</p>
     <div class="seg" role="group" aria-label="Takt">${rates.map(([r, l]) => `<button type="button" data-act="admin-voice-rate" data-v="${r}" aria-pressed="${Math.abs(v.rate - r) < 0.01}">${l}</button>`).join("")}</div>
@@ -7700,7 +7700,7 @@ const ACTIONS = {
     openSheet("Glenns röst", `<div id="av-box"><p class="loading">Hämtar rösterna …</p></div>`);
     try {
       const r = await callFn("adminVoice", { action: "list" });
-      S.voiceAdmin = { voices: r.voices, current: r.current, auto: r.auto, rate: r.rate || 1, savedRate: r.rate || 1 };
+      S.voiceAdmin = { voices: r.voices, current: r.current, autoVoice: r.autoVoice, auto: r.auto, rate: r.rate || 1, savedRate: r.rate || 1 };
       renderVoiceAdmin();
     } catch (e) { $("#av-box").innerHTML = `<p class="err">${esc(`Det gick inte: ${e.message || e}`)}</p>`; }
   },
