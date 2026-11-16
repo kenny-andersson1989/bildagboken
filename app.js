@@ -1394,7 +1394,28 @@ function speakDevice(text, id) {
     speechSynthesis.speak(u);
   });
 }
+let warmAt = 0;
+function warmVoice() {
+  if (window.__ttsMock || Date.now() - warmAt < 120000) return;
+  warmAt = Date.now();
+  callFn("glennPratar", { warm: true }).catch(() => {});
+}
+// Delar upp svaret: första meningen för sig (så att Glenn börjar prata direkt), sedan bitar på upp till 300 tecken.
+function speechChunks(text) {
+  const sents = String(text).split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
+  if (!sents.length) return [];
+  let first = sents.shift();
+  if (first.length < 40 && sents.length) first += " " + sents.shift(); // "Tjenare!" ensamt blir för kort
+  const out = [first];
+  let cur = "";
+  for (const x of sents) {
+    if (cur && (cur + " " + x).length > 300) { out.push(cur); cur = x; } else cur = cur ? `${cur} ${x}` : x;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
 // Läser upp ett svar. Ljudet sparas med meddelandet, så att Lyssna igen inte kostar något.
+// Bitarna hämtas samtidigt och spelas i ordning, så att uppläsningen börjar när den första biten är klar.
 async function sayText(m) {
   stopSpeech();
   const id = sayId;
@@ -1402,14 +1423,36 @@ async function sayText(m) {
   if (!text) return;
   let mouth = 0;
   const talk = () => {
+    if (mouth) return;
     m.speaking = true;
     mouth = setInterval(() => { glennMouth = !glennMouth; refreshGlenn(); }, 160);
   };
+  const fetchOne = (t) => (window.__ttsMock ? window.__ttsMock(t) : callFn("glennPratar", { hid: S.hid, text: t }).then((r) => r?.audio));
   try {
     try {
-      if (!m.audio) m.audio = window.__ttsMock ? await window.__ttsMock(text) : (await callFn("glennPratar", { hid: S.hid, text }))?.audio;
-      if (id !== sayId) return;
-      if (m.audio) { talk(); return await playB64(m.audio, id); }
+      if (!m.audios) {
+        const chunks = speechChunks(text);
+        const jobs = chunks.map((t) => fetchOne(t).catch(() => null));
+        const got = [];
+        for (let k = 0; k < jobs.length; k++) {
+          const a = await jobs[k];
+          if (id !== sayId) return;
+          if (!a) {
+            // En bit gick inte att få fram: läs resten med telefonens röst.
+            talk(); await speakDevice(chunks.slice(k).join(" "), id);
+            return;
+          }
+          got.push(a);
+          talk();
+          await playB64(a, id);
+          if (id !== sayId) return;
+        }
+        m.audios = got;
+        return;
+      }
+      talk();
+      for (const a of m.audios) { if (id !== sayId) return; await playB64(a, id); }
+      return;
     } catch (e) { console.warn("Glenns röst", e); }
     if (id === sayId) { talk(); await speakDevice(text, id); }
   } finally {
@@ -1527,6 +1570,8 @@ async function askCar(q, { voice = false } = {}) {
   q = String(q || "").trim();
   if (!q || st.busy) return null;
   if (!voice) unlockAudio();
+  // Ska svaret läsas upp: väck Glenns röst redan nu, medan han tänker, så att den är redo när svaret kommer.
+  if (voice || pref.get("chatSpeak") === "1") warmVoice();
   st.msgs.push({ role: "user", text: q });
   st.busy = true;
   redrawChat();

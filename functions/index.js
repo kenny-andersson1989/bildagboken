@@ -518,10 +518,16 @@ async function weather(input = {}, here) {
 // påslaget i projektet (gcloud services enable texttospeech.googleapis.com). Tak per hushåll och månad i tecken.
 const TTS_MONTHLY_CHARS = 20000;
 let ttsVoice = null;
+// Nyckeln till Googles tjänster sparas tills strax innan den går ut, så att varje uppläsning slipper hämta en ny.
+let gToken = null, gTokenUntil = 0;
 async function googleToken() {
+  if (gToken && Date.now() < gTokenUntil) return gToken;
   const r = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", { headers: { "Metadata-Flavor": "Google" } });
   if (!r.ok) throw new Error("token " + r.status);
-  return (await r.json()).access_token;
+  const j = await r.json();
+  gToken = j.access_token;
+  gTokenUntil = Date.now() + Math.max(0, (j.expires_in || 300) - 120) * 1000;
+  return gToken;
 }
 // Bästa svenska mansrösten som finns: Chirp 3 HD, annars Neural2, annars WaveNet.
 async function pickVoice(token) {
@@ -555,29 +561,28 @@ function spoken(t) {
 exports.glennPratar = onCall({ timeoutSeconds: 60, memory: "256MiB", maxInstances: 3 }, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
+  // Väckning: appen anropar när man ställer en fråga, så att rösten är redo när svaret kommer.
+  if (req.data?.warm) { googleToken().then(pickVoice).catch(() => {}); return { ok: true }; }
   const { hid } = req.data || {};
   const text = spoken(String(req.data?.text || "")).slice(0, 1500);
   if (typeof hid !== "string" || !text) throw new HttpsError("invalid-argument", "Texten saknas.");
-  const house = (await db.doc(`households/${hid}`).get()).data();
+  const usageRef = db.doc(`households/${hid}/ai/${todayStr().slice(0, 7)}`);
+  // Hushållet, månadens användning och Googles nyckel hämtas samtidigt.
+  const [houseSnap, usageSnap, token] = await Promise.all([db.doc(`households/${hid}`).get(), usageRef.get(), googleToken().catch(() => null)]);
+  const house = houseSnap.data();
   if (!house || !(house.members || []).includes(uid)) throw new HttpsError("permission-denied", "Du hör inte till hushållet.");
   const plus = (house.plus?.until?.toMillis?.() ?? house.plus?.until ?? 0) > Date.now();
   if (!plus && uid !== ADMIN_UID) throw new HttpsError("permission-denied", "Glenns röst ingår i Bildagboken Plus.");
-
-  const usageRef = db.doc(`households/${hid}/ai/${todayStr().slice(0, 7)}`);
-  const ok = await db.runTransaction(async (tx) => {
-    const n = ((await tx.get(usageRef)).data()?.ttsChars || 0) + text.length;
-    if (n > TTS_MONTHLY_CHARS) return false;
-    tx.set(usageRef, { ttsChars: n, updatedAt: Date.now() }, { merge: true });
-    return true;
-  });
-  if (!ok) throw new HttpsError("resource-exhausted", "Glenns röst är slut för den här månaden. Svaren läses upp med telefonens röst i stället.");
+  if ((usageSnap.data()?.ttsChars || 0) + text.length > TTS_MONTHLY_CHARS) throw new HttpsError("resource-exhausted", "Glenns röst är slut för den här månaden. Svaren läses upp med telefonens röst i stället.");
+  // Räknas upp utan att vänta, så att flera delar av samma svar kan läsas in samtidigt.
+  usageRef.set({ ttsChars: admin.firestore.FieldValue.increment(text.length), updatedAt: Date.now() }, { merge: true }).catch(() => {});
 
   try {
-    const token = await googleToken();
-    const voice = await pickVoice(token);
+    const tok = token || await googleToken();
+    const voice = await pickVoice(tok);
     const r = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
       body: JSON.stringify({ input: { text }, voice: { languageCode: "sv-SE", ...(voice ? { name: voice } : { ssmlGender: "MALE" }) }, audioConfig: { audioEncoding: "MP3" } }),
     });
     if (!r.ok) { logger.error("Text-till-tal svarade med fel", { status: r.status, body: (await r.text()).slice(0, 300) }); throw new Error("tts " + r.status); }
