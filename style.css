@@ -1753,3 +1753,6 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 /* Cirkeln i röstläget krymper aldrig, så att den alltid är rund (eller kvadratisk i Glenns teman). */
 .voice-orb { flex: none; aspect-ratio: 1; height: auto; max-height: 38vh; width: auto; }
 .voice-orb { width: min(170px, 38vh); }
+/* Toppknapparna står alltid längst till höger, på samma ställe på alla sidor (även med tillbaka-pil). */
+.top .top-actions { margin-left: auto; flex: none; }
+.top .hello { flex: 1 1 auto; }
