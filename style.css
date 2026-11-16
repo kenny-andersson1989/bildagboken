@@ -1544,3 +1544,122 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 .ai-row .msg.ai { max-width: none; }
 .glenn-av { flex: none; width: 52px; height: 52px; image-rendering: pixelated; border-radius: 50%; }
 .chat-play { margin-left: 66px !important; }
+.cb-speak { flex: none; width: 44px; height: 44px; margin-left: -10px; border-radius: 50%; display: grid; place-items: center; border: 0; cursor: pointer; background: transparent; color: var(--ink-3); }
+.cb-speak.on { color: var(--accent); }
+/* Tankningen som Glenn har fyllt i. */
+.glenn-card { align-self: flex-start; margin-left: 60px; padding: 12px 14px; border-radius: 16px; border: 2px dashed var(--accent); background: var(--accent-soft); max-width: 80%; }
+.glenn-card .gc-t { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.glenn-card .gc-s { margin-top: 2px; color: var(--ink-2); font-size: 14px; }
+.glenn-card .review-btns { margin-top: 8px; }
+.glenn-card.done { border-style: solid; }
+.glenn-card .gc-ok { margin-top: 6px; display: flex; align-items: center; gap: 4px; color: var(--sage); font-weight: 700; font-size: 14px; }
+
+/* Pixeltypsnittet Pixelify Sans (SIL Open Font License) ligger i appen, så att temat fungerar utan nät.
+   Det laddas bara när temat Glenns Garage används. */
+@font-face { font-family: "Pixelify Sans"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(fonts/pixelify-latin.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Pixelify Sans"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(fonts/pixelify-latin-ext.woff2) format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+/* ===================================================================== Glenns Garage
+   Ett eget tema i pixelstil, som Glenn: pixeltypsnitt, fyrkantiga kort med hårda skuggor, betonggolv,
+   varningsränder och göteborgsblått. Alltid mörkt, som en verkstad en novemberkväll. */
+:root[data-theme="garage"] {
+  --ground: #222427;
+  --glow-1: transparent;
+  --glow-2: transparent;
+  --glass: #33363b;
+  --glass-strong: #2c2f33;
+  --glass-edge: #121315;
+  --input: #1b1d20;
+  --ink: #F4F0E6;
+  --ink-2: #CFC9BC;
+  --ink-3: #A39D90;
+  --line: rgba(255, 255, 255, .12);
+  --accent: #F2C230;
+  --accent-ink: #1a1500;
+  --accent-soft: rgba(242, 194, 48, .16);
+  --accent-text: #F2C230;
+  --danger: #FF6B57;
+  --danger-soft: rgba(255, 107, 87, .16);
+  --sage: #7FC4A4;
+  --sage-soft: rgba(127, 196, 164, .16);
+  --sand: #8a7d71;
+  --warn: #F2C230;
+  --warn-soft: rgba(242, 194, 48, .15);
+  --track: rgba(255, 255, 255, .1);
+  --car-glass: #3c464b;
+  --scrim: rgba(0, 0, 0, .6);
+  --shadow: 4px 4px 0 #0b0c0e;
+  --f-display: "Pixelify Sans", "Urbanist", system-ui, sans-serif;
+  --f-body: "Pixelify Sans", "Figtree", system-ui, sans-serif;
+  --r-card: 0px;
+  --r-chip: 0px;
+  --gblue: #2456A0;
+  --edge: #121315;
+  --hard: #0b0c0e;
+  color-scheme: dark;
+}
+/* Betonggolv med svagt rutmönster. */
+:root[data-theme="garage"] body {
+  background-color: #222427;
+  background-image:
+    linear-gradient(45deg, rgba(255,255,255,.028) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.028) 75%),
+    linear-gradient(45deg, rgba(255,255,255,.028) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.028) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+  font-size: 16px;
+  -webkit-font-smoothing: none;
+}
+:root[data-theme="garage"] body::after { display: none; }
+/* Fyrkantigt överallt, utom det som ska vara runt (Glenn och bilden på bilen). */
+:root[data-theme="garage"] :is(.card, .sheet, .nav-inner, .btn, .btn-soft, .chip-btn, .icon-btn, input, select, textarea, .seg, .seg button, .msg, .chat-bar, .pill, .new-pill, .toast-msg, .dl-ic, .hero-tile, .plate, .theme-btn, .theme-sw, .suggest, .glenn-card, .rz-tile, .hh-ghost, .fab, .tab, .badge, .stat, .tripbar, .tb-stop, .rz-start, .rz-stop, .rz-ghost, details.more, .filters button, .cb-go, .cb-mic, .cb-speak, .review-btns button, .auto-box, .hint.plus-hint, .net-pill, .confirm, .hh-invite, .car-chips button, .add, .kollrow, .koll-row, .review-row) { border-radius: 0 !important; }
+:root[data-theme="garage"] :is(.card, .sheet, .nav-inner, .msg, .chat-bar, .tripbar, .toast-msg, .hero-tile, .voice) { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+:root[data-theme="garage"] .card { background: #33363b; border: 3px solid var(--edge); box-shadow: 4px 4px 0 var(--hard); position: relative; }
+:root[data-theme="garage"] .card h2 { text-transform: uppercase; letter-spacing: .05em; font-size: 16px; font-weight: 600; }
+:root[data-theme="garage"] .hello h1 { font-weight: 700; letter-spacing: .02em; }
+:root[data-theme="garage"] .hero-tile, :root[data-theme="garage"] .rz-tile, :root[data-theme="garage"] .stat { background: #26282c; border: 2px solid var(--edge); }
+:root[data-theme="garage"] :is(input, select, textarea):not([type=checkbox]):not([type=radio]) { background: var(--input); border: 2px solid var(--edge); box-shadow: inset 2px 2px 0 #0f1012; }
+:root[data-theme="garage"] .chat-bar textarea { border: 0; box-shadow: none; }
+/* Knappar: gula med svart kant och hård skugga, som trycks ner när man trycker. */
+:root[data-theme="garage"] :is(.btn.primary, .rz-start, .fab, .cb-go, .chat-send) { background: var(--accent); color: var(--accent-ink); border: 3px solid var(--edge); box-shadow: 3px 3px 0 var(--hard); }
+:root[data-theme="garage"] :is(.btn-soft, .chip-btn, .review-btns .btn-soft) { background: var(--gblue); color: #fff; border: 2px solid var(--edge); box-shadow: 3px 3px 0 var(--hard); }
+:root[data-theme="garage"] :is(.btn, .btn-soft, .chip-btn, .fab, .cb-go, .rz-start):active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--hard); }
+:root[data-theme="garage"] .icon-btn { background: #33363b; border: 2px solid var(--edge); box-shadow: 2px 2px 0 var(--hard); }
+:root[data-theme="garage"] .sheet { background: #2c2f33; border: 3px solid var(--edge); box-shadow: 0 -4px 0 var(--hard); }
+:root[data-theme="garage"] .nav-inner { background: #2a2c30; border: 3px solid var(--edge); box-shadow: 4px 4px 0 var(--hard); position: relative; }
+/* Varningsränder i gult och svart. */
+:root[data-theme="garage"] .nav-inner::before, .hazard {
+  content: ""; display: block; height: 6px;
+  background: repeating-linear-gradient(45deg, #F2C230 0 8px, #141414 8px 16px);
+}
+:root[data-theme="garage"] .nav-inner::before { position: absolute; left: -3px; right: -3px; top: -9px; border: 2px solid var(--edge); border-bottom: 0; }
+:root[data-theme="garage"] .msg.me { background: var(--gblue); color: #fff; }
+:root[data-theme="garage"] .msg.ai { background: #3d4046; border: 2px solid var(--edge); }
+:root[data-theme="garage"] .chat-bar { background: #1b1d20; border: 3px solid var(--edge); box-shadow: 3px 3px 0 var(--hard); }
+:root[data-theme="garage"] .plate { background: #f4f0e6; color: #121315; border: 2px solid var(--edge); }
+:root[data-theme="garage"] .voice-orb { border-radius: 0 !important; border: 4px solid var(--edge); box-shadow: 6px 6px 0 var(--hard); background: #fde2cd; }
+:root[data-theme="garage"] .glenn-av { border-radius: 0; border: 2px solid var(--edge); }
+:root[data-theme="garage"] .toast-msg { border: 3px solid var(--edge); box-shadow: 4px 4px 0 var(--hard); }
+:root[data-theme="garage"] .theme-btn[data-v="garage"] .theme-sw { background: repeating-linear-gradient(45deg, #F2C230 0 6px, #141414 6px 12px) !important; }
+
+/* Skylten högst upp på Översikt, med Glenn och en pratbubbla. */
+.garage-sign { position: relative; margin-bottom: 14px; padding: 14px 14px 10px; background: #1a1c1f; border: 3px solid #121315; box-shadow: 4px 4px 0 #0b0c0e; overflow: hidden; }
+.gs-row { display: flex; align-items: center; gap: 12px; }
+.gs-board { flex: 1; min-width: 0; }
+.gs-t { display: block; font-family: "Pixelify Sans", system-ui, sans-serif; font-weight: 700; font-size: 26px; line-height: 1.05; letter-spacing: .04em; color: #FFD447; text-shadow: 0 0 6px rgba(255, 196, 40, .7), 3px 3px 0 #6b4a00; animation: neon 6s infinite steps(1); }
+.gs-s { display: block; margin-top: 4px; font-family: "Pixelify Sans", system-ui, sans-serif; font-size: 14px; color: #9fc3ff; letter-spacing: .06em; text-transform: uppercase; }
+@keyframes neon { 0%, 91%, 95%, 100% { opacity: 1; } 92%, 94% { opacity: .35; } }
+.gs-av { flex: none; width: 76px; height: 76px; padding: 0; border: 3px solid #121315; background: #fde2cd; box-shadow: 3px 3px 0 #0b0c0e; cursor: pointer; }
+.gs-av img { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+.gs-av:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #0b0c0e; }
+.gs-bubble { position: relative; margin: 12px 0 8px; padding: 9px 12px; background: #f4f0e6; color: #1a1a1a; border: 3px solid #121315; font-family: "Pixelify Sans", system-ui, sans-serif; font-size: 15px; line-height: 1.3; }
+.gs-bubble::before { content: ""; position: absolute; right: 30px; top: -11px; width: 12px; height: 8px; background: #f4f0e6; border: 3px solid #121315; border-bottom: 0; clip-path: polygon(0 100%, 50% 0, 100% 100%); }
+.gs-props { display: flex; align-items: flex-end; gap: 10px; margin: 2px 0 6px; }
+.gs-props img { width: 34px; height: 34px; image-rendering: pixelated; }
+.garage-sign .hazard { margin: 0 -14px -10px; }
+/* Saker från verkstaden som står på korten. */
+.deco { position: absolute; top: -22px; right: 14px; width: 40px; height: 40px; image-rendering: pixelated; pointer-events: none; z-index: 1; }
+/* Easter egget: skruvar som sprätter och bilen som lyfts upp på pelarlyften. */
+.bolt-fx { position: fixed; z-index: 50; width: 16px; height: 16px; image-rendering: pixelated; pointer-events: none; animation: bolt 1s ease-out forwards; }
+@keyframes bolt { to { transform: translate(var(--dx), var(--dy)) rotate(540deg); opacity: 0; } }
+.hero.lift .car-pick { animation: lift 2.6s ease-in-out; }
+@keyframes lift { 0% { transform: none; } 25%, 75% { transform: translateY(-38px); } 100% { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .gs-t, .bolt-fx, .hero.lift .car-pick { animation: none !important; } }

@@ -1257,6 +1257,7 @@ async function sayText(m) {
 const micSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>`;
 const waveSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 10v4M9.5 7v10M14.5 5v14M19 9.5v5"/></svg>`;
 const sendSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>`;
+const speakerOffSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/></svg>`;
 const speakerSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>`;
 
 // Rutan som i ChatGPT: samtalet, och längst ner en rad med fältet, mikrofonen (prata in text) och
@@ -1268,12 +1269,12 @@ function chatSheet() {
   openSheet(`Fråga ${AI_NAME}`, `<div class="chat">
     <div class="chat-log" id="chat-log" aria-live="polite">${chatLogHtml(st)}</div>
     <form class="chat-bar" data-form="chat" novalidate>
+      ${speakBtn()}
       <textarea id="chat-in" name="q" rows="1" placeholder="${esc(`Fråga ${AI_NAME}`)}" enterkeyhint="send"></textarea>
       ${canDictate() ? `<button class="cb-mic" type="button" data-act="chat-mic" aria-label="Prata in text">${micSvg}</button>` : ""}
       <button class="cb-go${canDictate() ? "" : " has-text"}" id="chat-go" type="button" data-act="chat-go" aria-label="${canDictate() ? `Prata med ${AI_NAME}` : "Skicka"}"><span class="go-voice">${waveSvg}</span><span class="go-send">${sendSvg}</span></button>
     </form>
     <div class="chat-foot">
-      <label class="check"><input type="checkbox" id="chat-speak"${pref.get("chatSpeak") === "1" ? " checked" : ""} data-act="chat-speak"> ${esc(`${AI_NAME} läser upp svaren`)}</label>
       <p class="hint">${esc(`${AI_NAME} svarar utifrån det ni har loggat om ${carName(car())}. AI kan ha fel, så kontrollera viktiga saker.`)}</p>
     </div>
     <div class="voice" id="voice" hidden>
@@ -1284,6 +1285,35 @@ function chatSheet() {
     </div></div>`);
   scrollChat();
 }
+// Knappen längst till vänster i raden: Glenn läser upp svaren, eller inte.
+const speakOn = () => pref.get("chatSpeak") === "1";
+const speakBtn = () => `<button class="cb-speak${speakOn() ? " on" : ""}" type="button" data-act="chat-speak" aria-pressed="${speakOn()}" aria-label="${esc(`${AI_NAME} läser upp svaren`)}" title="${esc(`${AI_NAME} läser upp svaren`)}">${speakOn() ? speakerSvg.replace(/16/g, "22") : speakerOffSvg}</button>`;
+// Tankningen som Glenn har fyllt i: ett kort med Spara och Ändra under hans svar.
+function tankCardHtml(m, i) {
+  const a = m.action;
+  if (!a || a.type !== "tank") return "";
+  const sum = [`${fmtKr(a.amount)} kr`, a.station, a.full ? "Full tank" : "Inte full tank", fmtDateShort(a.date), a.odometer ? `${fmt(a.odometer)} mil` : ""].filter(Boolean).join(" · ");
+  return `<div class="glenn-card${m.actionDone === "saved" ? " done" : ""}"><div class="gc-t">${icon("fuel", 18)} Tankning</div><div class="gc-s">${esc(sum)}</div>
+    ${m.actionDone === "saved" ? `<div class="gc-ok">${icon("check", 16)} Sparad</div>` : `<div class="review-btns"><button class="btn-soft" type="button" data-act="glenn-save" data-i="${i}">Spara</button><button class="link" type="button" data-act="glenn-edit" data-i="${i}">Ändra</button></div>`}</div>`;
+}
+function glennTank(i, save) {
+  const st = chatState();
+  const m = st.msgs[i];
+  if (!m?.action) return;
+  const a = m.action;
+  stopSpeech();
+  entryForm("tank", { amount: a.amount, full: a.full, station: a.station, date: a.date, odometer: a.odometer ?? undefined });
+  if (!save) return;
+  $('form[data-form="entry"]')?.requestSubmit();
+  // Sparades den stängs formuläret, och då går vi tillbaka till Glenn. Annars ligger formuläret kvar att rätta.
+  setTimeout(() => {
+    if ($('form[data-form="entry"]')) return;
+    m.actionDone = "saved";
+    st.msgs.push({ role: "assistant", text: a.full ? "Klart, tankningen är loggad! Gött med full tank." : "Klart, tankningen är loggad!", mood: "thumb", gestureUntil: Date.now() + 3500 });
+    chatSheet();
+    setTimeout(refreshGlenn, 3600);
+  }, 700);
+}
 function chatLogHtml(st) {
   const av = (i) => `<img class="glenn-av" ${i == null ? "" : `data-i="${i}" `}src="${glennSrc(i == null ? "base" : glennFrame(st.msgs[i]))}" alt="" width="52" height="52">`;
   if (!st.msgs.length) return `<div class="ai-row">${av(null)}<div class="msg ai intro">${esc(`Tjenare! Jag är ${AI_NAME}. Jag har koll på allt ni har loggat om ${carName(car())}. Vad undrar du?`)}</div></div>
@@ -1291,7 +1321,7 @@ function chatLogHtml(st) {
   return st.msgs.map((m, i) => {
     const bubble = `<div class="msg ${m.role === "user" ? "me" : "ai"}${m.err ? " err" : ""}"${m.err ? "" : " data-notr"}>${esc(m.text).replace(/\n/g, "<br>")}</div>`;
     if (m.role === "user") return bubble;
-    return `<div class="ai-row">${av(i)}${bubble}</div>${!m.err ? `<button class="link chat-play" type="button" data-act="chat-play" data-i="${i}">${speakerSvg} Lyssna</button>` : ""}`;
+    return `<div class="ai-row">${av(i)}${bubble}</div>${tankCardHtml(m, i)}${!m.err ? `<button class="link chat-play" type="button" data-act="chat-play" data-i="${i}">${speakerSvg} Lyssna</button>` : ""}`;
   }).join("")
     + (st.busy ? `<div class="ai-row">${av(null)}<div class="msg ai busy" aria-label="${esc(`${AI_NAME} tänker`)}"><span></span><span></span><span></span></div></div>` : "")
     + (st.left != null && st.left <= 5 ? `<p class="hint chat-left">${esc(`${st.left} frågor kvar den här månaden.`)}</p>` : "");
@@ -1321,7 +1351,7 @@ async function askCar(q, { voice = false } = {}) {
   let answer = null;
   try {
     const res = window.__chatMock ? await window.__chatMock(payload) : await callFn("fragaBilen", payload);
-    const m = { role: "assistant", text: res?.answer || "Jag hittade inget svar.", mood: res?.mood === "thumb" || res?.mood === "wink" ? res.mood : null };
+    const m = { role: "assistant", text: res?.answer || "Jag hittade inget svar.", mood: res?.mood === "thumb" || res?.mood === "wink" ? res.mood : null, action: res?.action?.type === "tank" ? res.action : null };
     st.msgs.push(m);
     answer = m;
     if (m.mood) m.gestureUntil = Date.now() + 3500;
@@ -1365,6 +1395,7 @@ async function voiceLoop() {
       if (!st.voice || !ans) break;
       voiceUi("talk", ans.text);
       await sayText(ans);
+      if (ans.action) break;
     }
   } finally {
     if (st.voice) endVoice();
@@ -1392,6 +1423,80 @@ async function dictateField(btn) {
   finally { btn?.classList.remove("on"); }
 }
 
+/* --------------------------------------------------------- glenns garage */
+// Temat Glenns Garage: skylten på Översikt, saker från verkstaden på några av korten och ett easter egg.
+const isGarage = () => document.documentElement.dataset.theme === "garage";
+const GARAGE_QUIPS = [
+  "Tjena! Ska vi kika på kärran?",
+  "Kaffet är på och verktygen är framme.",
+  "Gött väder för ett oljebyte, eller hur?",
+  "Här lagar vi allt utom Ullevis gräsmatta.",
+  "Låter det konstigt? Fråga mig, så kollar vi.",
+  "Har du kollat lufttrycket? Det är gratis på macken!",
+];
+const GARAGE_JOKES = [
+  "Vad sa bromsen till gaspedalen? Ta't lugnt, jag stoppar dig ändå!",
+  "Varför åkte bilbatteriet till Liseberg? Det ville bli laddat med glädje!",
+  "Vad sa kamremmen till mig? Du har perfekt timing, Glenn!",
+  "Varför är oljebyte som en göteborgsvits? Det blir bättre ju oftare man gör det!",
+  "Hur många göteborgare behövs för att byta en glödlampa? En, och nio som står och drar vitsar!",
+  "Vad sa däcket till fälgen? Vi har det runt, du och jag!",
+];
+let garageTaps = 0, garageTapTimer = 0;
+function garageSign() {
+  const quip = GARAGE_QUIPS[new Date().getDate() % GARAGE_QUIPS.length];
+  return `<div class="garage-sign" aria-label="Glenns Garage">
+    <div class="gs-row">
+      <div class="gs-board"><span class="gs-t" data-notr>GLENNS GARAGE</span><span class="gs-s">Bilverkstad · Göteborg</span></div>
+      <button class="gs-av" type="button" data-act="garage-glenn" aria-label="Glenn"><img id="gs-glenn" src="${glennSrc("base")}" alt="" width="76" height="76"></button>
+    </div>
+    <p class="gs-bubble" id="gs-bubble" data-notr>${esc(EN ? tr(quip) : quip)}</p>
+    <div class="gs-props" aria-hidden="true"><img src="icons/garage/tire.png" alt=""><img src="icons/garage/cone.png" alt=""><img src="icons/garage/oil.png" alt=""><img src="icons/garage/toolbox.png" alt=""><img src="icons/garage/coffee.png" alt=""></div>
+    <div class="hazard"></div>
+  </div>`;
+}
+// Saker från verkstaden på korten, efter rubriken (svenska eller engelska).
+const GARAGE_DECO = [[/^(däck|tyres)/i, "tire"], [/^(underhåll|maintenance)/i, "oil"], [/^(uppgifter|details)/i, "toolbox"], [/^(på gång|coming up)/i, "cone"], [/^(att göra|to do)/i, "coffee"], [/^(sparade platser|saved places)/i, "cone"], [/^(tankningar|refuelling)/i, "oil"]];
+function garageDeco(root) {
+  if (!isGarage()) return;
+  root.querySelectorAll(".card > h2").forEach((h) => {
+    const t = h.textContent.trim();
+    const hit = GARAGE_DECO.find(([re]) => re.test(t));
+    if (hit && !h.parentElement.querySelector(":scope > .deco")) h.parentElement.insertAdjacentHTML("afterbegin", `<img class="deco" src="icons/garage/${hit[1]}.png" alt="" aria-hidden="true">`);
+  });
+}
+// Easter egget: tryck på Glenn fem gånger, så drar han en göteborgsvits, ger tummen upp och sprätter skruvar.
+// Tio gånger, så lyfter han upp bilen på pelarlyften.
+function garageEgg(btn) {
+  garageTaps++;
+  clearTimeout(garageTapTimer);
+  garageTapTimer = setTimeout(() => { garageTaps = 0; }, 2500);
+  const img = $("#gs-glenn"), bubble = $("#gs-bubble");
+  if (img) { img.src = glennSrc("wink"); setTimeout(() => { img.src = glennSrc("base"); }, 500); }
+  if (garageTaps === 5 || garageTaps === 10) {
+    const joke = GARAGE_JOKES[Math.floor(Math.random() * GARAGE_JOKES.length)];
+    if (bubble) bubble.textContent = EN ? tr(joke) : joke;
+    if (img) { img.src = glennSrc("thumb"); setTimeout(() => { img.src = glennSrc("base"); }, 2500); }
+    const r = btn.getBoundingClientRect();
+    for (let k = 0; k < 14; k++) {
+      const b = document.createElement("img");
+      b.src = "icons/garage/bolt.png"; b.className = "bolt-fx"; b.alt = "";
+      b.style.left = `${r.left + r.width / 2}px`; b.style.top = `${r.top + r.height / 2}px`;
+      b.style.setProperty("--dx", `${Math.round((Math.random() - .5) * 260)}px`);
+      b.style.setProperty("--dy", `${Math.round(-40 - Math.random() * 200)}px`);
+      document.body.appendChild(b);
+      setTimeout(() => b.remove(), 1100);
+    }
+    if (garageTaps === 5 && !pref.get("garageEgg")) { pref.set("garageEgg", "1"); showToast("Du hittade Glenns hemliga vitslåda!"); }
+  }
+  if (garageTaps === 10) {
+    const hero = $(".card.hero");
+    if (hero) { hero.classList.remove("lift"); void hero.offsetWidth; hero.classList.add("lift"); setTimeout(() => hero.classList.remove("lift"), 2700); }
+    if (bubble) bubble.textContent = EN ? "Up on the lift she goes! Looks good underneath." : "Upp på lyften med henne! Ser fint ut därunder.";
+    garageTaps = 0;
+  }
+}
+
 /* -------------------------------------------------------------- rendering */
 
 const app = $("#app");
@@ -1414,6 +1519,7 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   app.dataset.screen = key;
   app.innerHTML = html;
   markRequired(app);
+  garageDeco(app);
   arrangeColumns();
   addHideButtons();
   if (active) {
@@ -2650,6 +2756,7 @@ function shortcutsCard() {
 function viewOverview() {
   const c = car();
   const parts = [headerMain()];
+  if (isGarage()) parts.push(garageSign());
 
 
   // Bilkortet: namn och regnummer, bilden, och under den två rutor: mätarställning och bränsle.
@@ -3533,7 +3640,7 @@ function viewSettings() {
       <div class="seg" role="group" aria-label="Ljust eller mörkt">
         ${Object.entries(MODES).map(([k, l]) => `<button type="button" data-act="theme-mode" data-v="${k}" aria-pressed="${themePrefs().mode === k}">${l}</button>`).join("")}
       </div>
-      <p class="hint" style="margin-top:8px">Automatiskt följer telefonen: ljust på dagen och mörkt när telefonen har mörkt läge påslaget.</p>
+      <p class="hint" style="margin-top:8px">${themePrefs().color === "garage" ? "Glenns Garage är alltid mörkt, som en verkstad en novemberkväll." : "Automatiskt följer telefonen: ljust på dagen och mörkt när telefonen har mörkt läge påslaget."}</p>
       <p class="label" style="margin:16px 0 8px">Färg</p>
       <div class="theme-grid colors" role="group" aria-label="Färg">
         ${Object.entries(COLORS).map(([k, t]) => { const v = t[isDarkNow() ? "dark" : "light"]; return `<button class="theme-btn" type="button" data-act="theme-color" data-v="${k}" aria-pressed="${themePrefs().color === k}">
@@ -6078,9 +6185,11 @@ const COLORS = {
   gron: { name: "Grön", light: { theme: "gron", sw: "#E1E8DE", dot: "#2E7D4F" }, dark: { theme: "gron-dark", sw: "#121914", dot: "#4FBF7E" } },
   hav: { name: "Blå", light: { theme: "hav", sw: "#E0E7EF", dot: "#2563EB" }, dark: { theme: "hav-dark", sw: "#10161F", dot: "#5B8DEF" } },
   lila: { name: "Lila", light: { theme: "lila", sw: "#E8E6F3", dot: "#6D5BD8" }, dark: { theme: "natt", sw: "#12131C", dot: "#8B7CF6" } },
+  // Glenns Garage: pixelstil som Glenn, alltid mörkt.
+  garage: { name: "Glenns Garage", light: { theme: "garage", sw: "#222427", dot: "#F2C230" }, dark: { theme: "garage", sw: "#222427", dot: "#F2C230" } },
 };
 const MODES = { auto: "Automatiskt", light: "Ljust", dark: "Mörkt" };
-const DARK_THEMES = ["dark", "gron-dark", "hav-dark", "natt"];
+const DARK_THEMES = ["dark", "gron-dark", "hav-dark", "natt", "garage"];
 const darkMq = matchMedia("(prefers-color-scheme: dark)");
 function themePrefs() {
   const old = { auto: ["orange", "auto"], light: ["orange", "light"], dark: ["orange", "dark"], gron: ["gron", "light"], hav: ["hav", "light"], natt: ["lila", "dark"] }[pref.get("theme") || "auto"] || ["orange", "auto"];
@@ -6698,11 +6807,13 @@ const ACTIONS = {
     if (state === "idle" && !st.voice) voiceLoop();
   },
   "voice-end"() { endVoice(); },
+  "glenn-save"(el) { glennTank(Number(el.dataset.i), true); },
+  "glenn-edit"(el) { glennTank(Number(el.dataset.i), false); },
   "chat-speak"(el) {
-    // Trycket avbryts av appen (preventDefault), så rutan sätts här efteråt, utifrån det sparade valet.
-    const on = pref.get("chatSpeak") !== "1";
+    const on = !speakOn();
     pref.set("chatSpeak", on ? "1" : "0");
-    setTimeout(() => { el.checked = on; }, 0);
+    el.outerHTML = speakBtn();
+    showToast(on ? `${AI_NAME} läser upp svaren` : `${AI_NAME} läser inte upp svaren`);
     if (!on) return stopSpeech();
     unlockAudio();
     const last = [...chatState().msgs].reverse().find((m) => m.role === "assistant" && !m.err);
@@ -6875,6 +6986,7 @@ const ACTIONS = {
     pref.set("lang", v);
     location.reload();
   },
+  "garage-glenn"(el) { garageEgg(el); },
   "theme-color"(el) { pref.set("themeColor", el.dataset.v); applyTheme(); render(); },
   "theme-mode"(el) { pref.set("themeMode", el.dataset.v); applyTheme(); render(); },
   async "copy-invite"() {

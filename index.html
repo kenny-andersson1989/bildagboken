@@ -27,7 +27,7 @@
     var oldMap = { auto: ["orange", "auto"], light: ["orange", "light"], dark: ["orange", "dark"], gron: ["gron", "light"], hav: ["hav", "light"], natt: ["lila", "dark"] }[old] || ["orange", "auto"];
     var c = ls.getItem("bildagboken.themeColor") || oldMap[0], m = ls.getItem("bildagboken.themeMode") || oldMap[1];
     var dk = m === "dark" || (m === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
-    var th = { orange: ["light", "dark"], gron: ["gron", "gron-dark"], hav: ["hav", "hav-dark"], lila: ["lila", "natt"] }[c] || ["light", "dark"];
+    var th = { orange: ["light", "dark"], gron: ["gron", "gron-dark"], hav: ["hav", "hav-dark"], lila: ["lila", "natt"], garage: ["garage", "garage"] }[c] || ["light", "dark"];
     document.documentElement.dataset.theme = th[dk ? 1 : 0];
   } catch (e) {}
 </script>
