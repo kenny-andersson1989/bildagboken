@@ -588,3 +588,26 @@ exports.glennPratar = onCall({ timeoutSeconds: 60, memory: "256MiB", maxInstance
   }
 });
 
+
+// Administratören ger ett hushåll Plus (till exempel till testare eller vänner), förlänger eller tar bort det.
+// Klienter får inte skriva plus själva (säkerhetsreglerna), så det görs här.
+exports.adminPlus = onCall({ timeoutSeconds: 20, memory: "256MiB", maxInstances: 1 }, async (req) => {
+  if (req.auth?.uid !== ADMIN_UID) throw new HttpsError("permission-denied", "Bara administratören.");
+  const hid = String(req.data?.hid || "");
+  const months = Number(req.data?.months);
+  if (!/^[A-Za-z0-9]{10,40}$/.test(hid) || !Number.isInteger(months) || months < 0 || months > 120) throw new HttpsError("invalid-argument", "Fel uppgifter.");
+  const ref = db.doc(`households/${hid}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError("not-found", "Hittade inte hushållet.");
+  if (months === 0) {
+    // Ta bort en gåva. Plus som någon betalar för (plus.by) rör vi inte.
+    if (snap.data().plus?.by) throw new HttpsError("failed-precondition", "Hushållet betalar själv för Plus.");
+    await ref.update({ plus: admin.firestore.FieldValue.delete() });
+    return { ok: true, until: null };
+  }
+  const cur = snap.data().plus?.until?.toMillis?.() ?? 0;
+  const from = new Date(Math.max(Date.now(), cur));
+  const until = new Date(from.getFullYear(), from.getMonth() + months, from.getDate(), 23, 59);
+  await ref.update({ "plus.until": admin.firestore.Timestamp.fromDate(until), "plus.gift": true });
+  return { ok: true, until: until.getTime() };
+});
