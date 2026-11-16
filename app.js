@@ -1478,21 +1478,21 @@ async function dictateField(btn) {
 
 /* --------------------------------------------------------- glenns garage */
 // Temat Glenns Garage: skylten på Översikt, saker från verkstaden på några av korten och ett easter egg.
-const isGarage = () => document.documentElement.dataset.theme === "garage";
+const isGarage = () => !!document.documentElement.dataset.garage;
 const GARAGE_QUIPS = [
   "Tjena! Ska vi kika på kärran?",
   "Kaffet är på och verktygen är framme.",
   "Gött väder för ett oljebyte, eller hur?",
-  "Här lagar vi allt utom Ullevis gräsmatta.",
+  "Här lagar vi allt utom dåligt humör.",
   "Låter det konstigt? Fråga mig, så kollar vi.",
   "Har du kollat lufttrycket? Det är gratis på macken!",
 ];
 const GARAGE_JOKES = [
   "Vad sa bromsen till gaspedalen? Ta't lugnt, jag stoppar dig ändå!",
-  "Varför åkte bilbatteriet till Liseberg? Det ville bli laddat med glädje!",
+  "Varför åkte bilbatteriet på semester? Det behövde bli laddat!",
   "Vad sa kamremmen till mig? Du har perfekt timing, Glenn!",
-  "Varför är oljebyte som en göteborgsvits? Det blir bättre ju oftare man gör det!",
-  "Hur många göteborgare behövs för att byta en glödlampa? En, och nio som står och drar vitsar!",
+  "Varför är oljebyte som ett bra skämt? Det blir bättre ju oftare man gör det!",
+  "Hur många mekaniker behövs för att byta en glödlampa? En, och tre som står och ger goda råd!",
   "Vad sa däcket till fälgen? Vi har det runt, du och jag!",
 ];
 let garageTaps = 0, garageTapTimer = 0;
@@ -1500,7 +1500,7 @@ function garageSign() {
   const quip = GARAGE_QUIPS[new Date().getDate() % GARAGE_QUIPS.length];
   return `<div class="garage-sign" aria-label="Glenns Garage">
     <div class="gs-row">
-      <div class="gs-board"><span class="gs-t" data-notr>GLENNS GARAGE</span><span class="gs-s">Bilverkstad · Göteborg</span></div>
+      <div class="gs-board"><span class="gs-t" data-notr>GLENNS GARAGE</span><span class="gs-s">Service &amp; reparationer</span></div>
       <button class="gs-av" type="button" data-act="garage-glenn" aria-label="Glenn"><img id="gs-glenn" src="${glennSrc("base")}" alt="" width="76" height="76"></button>
     </div>
     <p class="gs-bubble" id="gs-bubble" data-notr>${esc(EN ? tr(quip) : quip)}</p>
@@ -3693,11 +3693,16 @@ function viewSettings() {
       <div class="seg" role="group" aria-label="Ljust eller mörkt">
         ${Object.entries(MODES).map(([k, l]) => `<button type="button" data-act="theme-mode" data-v="${k}" aria-pressed="${themePrefs().mode === k}">${l}</button>`).join("")}
       </div>
-      <p class="hint" style="margin-top:8px">${themePrefs().color === "garage" ? "Glenns Garage är alltid mörkt, som en verkstad en novemberkväll." : "Automatiskt följer telefonen: ljust på dagen och mörkt när telefonen har mörkt läge påslaget."}</p>
+      <p class="hint" style="margin-top:8px">${COLORS[themePrefs().color]?.garage ? "Glenns Garage har egna färger och följer inte ljust och mörkt läge." : "Automatiskt följer telefonen: ljust på dagen och mörkt när telefonen har mörkt läge påslaget."}</p>
       <p class="label" style="margin:16px 0 8px">Färg</p>
       <div class="theme-grid colors" role="group" aria-label="Färg">
-        ${Object.entries(COLORS).map(([k, t]) => { const v = t[isDarkNow() ? "dark" : "light"]; return `<button class="theme-btn" type="button" data-act="theme-color" data-v="${k}" aria-pressed="${themePrefs().color === k}">
+        ${Object.entries(COLORS).filter(([, t]) => !t.garage).map(([k, t]) => { const v = t[isDarkNow() ? "dark" : "light"]; return `<button class="theme-btn" type="button" data-act="theme-color" data-v="${k}" aria-pressed="${themePrefs().color === k}">
           <span class="theme-sw" style="background:${v.sw}" aria-hidden="true"><i style="background:${v.dot}"></i></span>${t.name}</button>`; }).join("")}
+      </div>
+      <p class="label" style="margin:16px 0 8px">Glenns Garage</p>
+      <div class="theme-grid colors garage-grid" role="group" aria-label="Glenns Garage">
+        ${Object.entries(COLORS).filter(([, t]) => t.garage).map(([k, t]) => `<button class="theme-btn" type="button" data-act="theme-color" data-v="${k}" aria-pressed="${themePrefs().color === k}">
+          <span class="theme-sw ${t.garage}" aria-hidden="true"></span>${t.name}</button>`).join("")}
       </div>
       <p class="label" style="margin:16px 0 8px">Språk</p>
       <div class="seg" role="group" aria-label="Språk">
@@ -6245,11 +6250,13 @@ const COLORS = {
   gron: { name: "Grön", light: { theme: "gron", sw: "#E1E8DE", dot: "#2E7D4F" }, dark: { theme: "gron-dark", sw: "#121914", dot: "#4FBF7E" } },
   hav: { name: "Blå", light: { theme: "hav", sw: "#E0E7EF", dot: "#2563EB" }, dark: { theme: "hav-dark", sw: "#10161F", dot: "#5B8DEF" } },
   lila: { name: "Lila", light: { theme: "lila", sw: "#E8E6F3", dot: "#6D5BD8" }, dark: { theme: "natt", sw: "#12131C", dot: "#8B7CF6" } },
-  // Glenns Garage: pixelstil som Glenn, alltid mörkt.
-  garage: { name: "Glenns Garage", light: { theme: "garage", sw: "#222427", dot: "#F2C230" }, dark: { theme: "garage", sw: "#222427", dot: "#F2C230" } },
+  // Glenns Garage: tre teman i pixelstil som Glenn. De har egna färger och följer inte ljust och mörkt läge.
+  garage: { name: "Femtiotals\u00admack", garage: "g-diner", light: { theme: "garage", sw: "#bfe3d0", dot: "#d7263d" }, dark: { theme: "garage", sw: "#bfe3d0", dot: "#d7263d" } },
+  "garage-neon": { name: "Neonnatt", garage: "g-neon", light: { theme: "garage-neon", sw: "#2a1446", dot: "#ff4fd8" }, dark: { theme: "garage-neon", sw: "#2a1446", dot: "#ff4fd8" } },
+  "garage-cozy": { name: "Mysig verkstad", garage: "g-cozy", light: { theme: "garage-cozy", sw: "#efe2c8", dot: "#5d7a3a" }, dark: { theme: "garage-cozy", sw: "#efe2c8", dot: "#5d7a3a" } },
 };
 const MODES = { auto: "Automatiskt", light: "Ljust", dark: "Mörkt" };
-const DARK_THEMES = ["dark", "gron-dark", "hav-dark", "natt", "garage"];
+const DARK_THEMES = ["dark", "gron-dark", "hav-dark", "natt", "garage-neon"];
 const darkMq = matchMedia("(prefers-color-scheme: dark)");
 function themePrefs() {
   const old = { auto: ["orange", "auto"], light: ["orange", "light"], dark: ["orange", "dark"], gron: ["gron", "light"], hav: ["hav", "light"], natt: ["lila", "dark"] }[pref.get("theme") || "auto"] || ["orange", "auto"];
@@ -6261,6 +6268,7 @@ function applyTheme() {
   const { color } = themePrefs();
   const v = COLORS[color][isDarkNow() ? "dark" : "light"];
   document.documentElement.dataset.theme = v.theme;
+  if (COLORS[color].garage) document.documentElement.dataset.garage = "1"; else delete document.documentElement.dataset.garage;
   document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.content = v.sw; });
 }
 // Följer telefonen när den byter mellan ljust och mörkt (vid läget Automatiskt).

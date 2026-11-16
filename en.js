@@ -1,6 +1,17 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Femtiotals\u00admack": "Fifties gas station",
+  "Femtiotalsmack": "Fifties gas station",
+  "Neonnatt": "Neon night",
+  "Mysig verkstad": "Cosy workshop",
+  "Glenns Garage": "Glenn's Garage",
+  "Glenns Garage har egna färger och följer inte ljust och mörkt läge.": "Glenn's Garage has its own colours and doesn't follow light and dark mode.",
+  "Service & reparationer": "Service & repairs",
+  "Här lagar vi allt utom dåligt humör.": "We fix everything here except a bad mood.",
+  "Varför åkte bilbatteriet på semester? Det behövde bli laddat!": "Why did the car battery go on holiday? It needed a recharge!",
+  "Varför är oljebyte som ett bra skämt? Det blir bättre ju oftare man gör det!": "Why is an oil change like a good joke? It gets better the more often you do it!",
+  "Hur många mekaniker behövs för att byta en glödlampa? En, och tre som står och ger goda råd!": "How many mechanics does it take to change a light bulb? One, and three standing around giving advice!",
   "Kör dit": "Go there",
   "Öppet dygnet runt": "Open 24 hours",
   "Jag lyssnar … Tryck på mig när du är klar.": "I'm listening … Tap me when you're done.",
