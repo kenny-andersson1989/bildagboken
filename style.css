@@ -1682,3 +1682,7 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 
 .theme-grid.garage-grid { grid-template-columns: repeat(3, 1fr); }
 .theme-grid.garage-grid .theme-btn { font-size: 13px; hyphens: manual; line-height: 1.2; }
+/* Plusknappen i Glenns teman: ovanpå den randiga listen, med en ring i menyns färg så att den sticker upp ur menyn. */
+:root[data-garage] .nav-inner::before { z-index: 0; }
+:root[data-garage] .fab { position: relative; z-index: 2; border: 4px solid var(--g-nav); box-shadow: 0 0 0 3px var(--g-edge), 0 4px 0 3px var(--g-edge); }
+:root[data-theme="garage-neon"] .fab { box-shadow: 0 0 0 3px #5ef2ff, 0 0 18px rgba(255, 79, 216, .6); }
