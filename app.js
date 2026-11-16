@@ -450,7 +450,10 @@ function recurringEntries(c) {
 }
 // Gratisversionens gränser. Avstängda tills Plus går att köpa: sätt då `from` till startdagen, till exempel "2027-03-01".
 // Hushåll som skapades före den dagen och inte har Plus har inga gränser. Plus har egna gränser (PLUS).
-const FREE = { from: null, cars: 1, members: 2, photos: 30 };
+// Hushåll som skapas från och med 16 november 2026 har gratisgränserna. De som fanns innan har inga gränser.
+const FREE = { from: "2026-11-16", cars: 1, members: 2, photos: 30 };
+// Går Plus att köpa? Tills dess har nya hushåll gratisversionen, och Plus visas som "kommer snart".
+const PLUS_ON_SALE = false;
 // Plus är för en familj, som familjeabonnemang brukar vara: upp till sex personer och sex bilar.
 const PLUS = { cars: 6, members: 6, photos: 2000 };
 // Testläge för administratören: visa appen som gratisversionen (med gränserna) eller som Plus.
@@ -463,8 +466,8 @@ function limited(h = S.house) {
   const made = tsMs(h.createdAt);
   return !made || made >= Date.parse(FREE.from);
 }
-// Plus visas för alla först när det går att köpa (FREE.from är satt). Administratören ser det i testläget.
-const plusOnSale = () => !!FREE.from || !!testMode();
+// Plus visas för alla först när det går att köpa. Administratören ser det i testläget.
+const plusOnSale = () => PLUS_ON_SALE || !!testMode();
 // "Ni har Plus till 3 mars 2027", eller utan datum (testläget).
 const plusUntilText = () => { const u = tsMs(S.house?.plus?.until); return u > Date.now() ? `Ni har Plus till ${fmtDate(ymd(new Date(u)))}` : "Ni har Plus"; };
 // Fördelarna med Plus, i den ordning de visas överallt.
@@ -497,6 +500,7 @@ function limitSheet(kind) {
     photos: `Gratisversionen har plats för ${FREE.photos} bilder. Alla bilder finns kvar, men för att lägga till nya behöver ni ta bort några eller skaffa Bildagboken Plus.`,
   }[kind];
   openSheet("Bildagboken Plus", `<p>${esc(text)}</p>
+    ${plusOnSale() ? "" : `<p class="muted">Bildagboken Plus går inte att köpa än, men kommer snart.</p>`}
     <div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="plus">Läs om Bildagboken Plus</button></div>`);
 }
 // Utan Plus fungerar bara en bil. Ägaren väljer vilken (activeCar), annars den som lades till först.
@@ -541,7 +545,7 @@ function viewLocked() {
 const membersFull = () => { const c = caps(); return !!c && (S.house?.members || []).length >= c.members; };
 // Ett tips om Plus på Översikt, en gång, när appen har hunnit göra nytta (20 loggade saker eller en månad).
 function plusTipCard() {
-  if (!limited() || pref.get("plusTip." + S.hid)) return "";
+  if (!limited() || !plusOnSale() || pref.get("plusTip." + S.hid)) return "";
   const month = Date.now() - tsMs(S.house?.createdAt) > 30 * 864e5;
   if (S.entries.length < 20 && !month) return "";
   return `<article class="card plus-tip">
@@ -566,8 +570,9 @@ function plusSheet() {
     <table class="plus-t"><thead><tr><th></th><th>Gratis</th><th>Plus</th></tr></thead>
       <tbody>${rows.map(([a, b, c]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td><td><b>${esc(c)}</b></td></tr>`).join("")}</tbody></table>
     ${hasPlus() && !tripsVisible() ? `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="trips-on">${icon("route", 18)} Slå på körjournalen</button></div>` : ""}
-    ${hasPlus() ? "" : `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="plus-buy">Skaffa Plus</button>
-      <p class="hint">39 kr per månad. Prova gratis i 14 dagar. Avsluta när du vill.</p></div>`}`);
+    ${hasPlus() ? "" : plusOnSale() ? `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="plus-buy">Skaffa Plus</button>
+      <p class="hint">39 kr per månad. Prova gratis i 14 dagar. Avsluta när du vill.</p></div>`
+      : `<p class="hint" style="margin-top:16px">Plus går inte att köpa än, men kommer snart. Allt ni loggar nu finns kvar när ni uppgraderar.</p>`}`);
 }
 // Hushållets ägare: den som betalar för Plus (plus.by, skrivs av servern vid köpet), annars den som skapade
 // hushållet. Bara ägaren kan ta bort andra (också i säkerhetsreglerna).

@@ -36,6 +36,8 @@ export const EN = {
   "Motoreffekt": "Engine power",
   "Mätarställning vid besiktning": "Odometer at inspection",
   "Släpvagn": "Trailer",
+  "Bildagboken Plus går inte att köpa än, men kommer snart.": "Bildagboken Plus can't be bought yet, but it's coming soon.",
+  "Plus går inte att köpa än, men kommer snart. Allt ni loggar nu finns kvar när ni uppgraderar.": "Plus can't be bought yet, but it's coming soon. Everything you log now is kept when you upgrade.",
   "Växellåda, tank och släp": "Gearbox, tank and trailer",
   "Manuell": "Manual",
   "Automat": "Automatic",
