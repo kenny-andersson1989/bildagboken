@@ -510,6 +510,13 @@ function activeCarId() {
 const carLocked = (c) => { const a = activeCarId(); return !!(a && c && c.id !== a); };
 // När ägaren får byta bil nästa gång (0 = nu).
 const activeCarNext = () => { const t = tsMs(S.house?.activeCarAt); return t && Date.now() - t < ACTIVE_CAR_DAYS * 864e5 ? t + ACTIVE_CAR_DAYS * 864e5 : 0; };
+// Raden med bilarna (tryck för att byta) och Lägg till bil. Samma på Översikt och Bilen.
+function carChips(c, add = true) {
+  return `<div class="car-chips" role="group" aria-label="Välj bil">
+    ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon(carLocked(x) ? "lock" : "car", 16)}${esc(carName(x))}</button>`).join("")}
+    ${add ? `<button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>` : ""}
+  </div>`;
+}
 function viewLocked() {
   const c = car(), a = S.cars.find((x) => x.id === activeCarId());
   const next = activeCarNext();
@@ -3121,7 +3128,7 @@ function shortcutsCard() {
 
 function viewOverview() {
   const c = car();
-  const parts = [headerMain()];
+  const parts = [headerMain(), carChips(c)];
   if (isGarage()) parts.push(garageSign());
   // Utan Plus fungerar en bil. Har ägaren inte valt vilken än, får ägaren välja här.
   if (activeCarId() && !S.house?.activeCar && !pref.get("activeCarTip." + S.hid)) parts.push(`<article class="card locked-tip">
@@ -3137,7 +3144,7 @@ function viewOverview() {
   // Bilkortet: namn och regnummer, bilden, och under den två rutor: mätarställning och bränsle.
   parts.push(`<article class="card hero">
     <div class="hero-car">
-      <button class="hero-name as-link" type="button" data-act="car-switch" aria-label="${esc(`${carName(c)}. Byt bil eller lägg till en`)}">${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}<b>${esc(carName(c))}</b>${icon("down", 16)}</button>
+      <div class="hero-name">${c.plate ? `<span class="plate">${esc(c.plate)}</span>` : ""}<b>${esc(carName(c))}</b></div>
       <div class="sub">${esc([c.year, c.fuel].filter(Boolean).join(" · "))}</div>
     </div>
     <label class="car-pick" title="Byt bild på bilen">
@@ -3906,10 +3913,7 @@ function viewCar() {
     return `<div class="dl"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div></div><span class="pill ${low ? "soon" : on ? "ok" : "none"}">${low ? "Slitna" : on ? "På" : "Förråd"}</span></div>`;
   }).join("");
   return arrangeCards(`${subHeader([c.year, c.fuel].filter(Boolean).join(" · "), carName(c), false, "Bilen")}
-    <div class="car-chips" role="group" aria-label="Välj bil">
-      ${S.cars.map((x) => `<button type="button" data-act="pick-car" data-id="${esc(x.id)}" aria-pressed="${x.id === c.id}">${icon(carLocked(x) ? "lock" : "car", 16)}${esc(carName(x))}</button>`).join("")}
-      <button type="button" class="add" data-act="add-car">${icon("plus", 16)}Lägg till bil</button>
-    </div>
+    ${carChips(c)}
     <!--card:upp--><div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,more,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
         ${c.vin ? `<div><dt>Chassinummer</dt><dd class="vin-dd"><span data-notr>${esc(c.vin)}</span><button class="link" type="button" data-act="copy-vin">Kopiera</button></dd></div>` : ""}
@@ -7359,7 +7363,7 @@ const ACTIONS = {
     $("#item-rows").innerHTML = fresh.map(itemRowHtml).join("");
     showToast("Standardpunkterna är inlagda. Tryck Spara för att behålla dem.");
   },
-  "pick-car"(el) { S.carId = el.dataset.id; S.lockSeen = S.carId; if (!carLocked(car())) pref.set("car", S.carId); if (el.closest(".car-switch")) closeSheet(); render(); },
+  "pick-car"(el) { S.carId = el.dataset.id; S.lockSeen = S.carId; if (!carLocked(car())) pref.set("car", S.carId); render(); },
   "active-car-tip"() { pref.set("activeCarTip." + S.hid, 1); render(); },
   async "set-active-car"(el) {
     const c = S.cars.find((x) => x.id === el.dataset.id);
@@ -7376,11 +7380,6 @@ const ACTIONS = {
     } catch (e) { onWriteError(e); }
   },
   license(el) { pref.set("license", el.dataset.v); render(); },
-  "car-switch"() {
-    openSheet("Byt bil", `<div class="rows car-switch">${S.cars.map((x) => `<button class="dl as-btn" type="button" data-act="pick-car" data-id="${esc(x.id)}"><span class="dl-ic">${icon("car", 20)}</span>
-      <span><span class="dl-t">${esc(carName(x))}</span><span class="dl-s">${esc([x.year, x.plate, carLocked(x) ? "Låst utan Plus" : ""].filter(Boolean).join(" · "))}</span></span>${x.id === S.carId ? `<span class="pill ok">Vald</span>` : carLocked(x) ? icon("lock", 18) : "<span></span>"}</button>`).join("")}</div>
-      <div class="form" style="margin-top:14px"><button class="btn-soft" type="button" data-act="add-car">${icon("plus", 16)} Lägg till bil</button></div>`);
-  },
   async "delete-car"(el) {
     const c = S.cars.find((x) => x.id === el.dataset.id) || car();
     if (!c) return;
