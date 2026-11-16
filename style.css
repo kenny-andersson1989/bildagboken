@@ -1777,7 +1777,7 @@ body.car-locked .fab { display: none; }
 .tc-res p svg { flex: none; margin-top: 3px; }
 .tc-res p.ok svg { color: var(--sage); }
 .tc-res p.bad { color: var(--danger); }
-.tow-answer { margin-top: 12px; padding: 12px 14px; border-radius: var(--r-chip, 14px); background: var(--accent-soft); }
+.tow-answer { margin-top: 12px; padding: 12px 14px; border-radius: 16px; background: var(--accent-soft); }
 .tow-answer p { margin: 0 0 4px; }
 .tow-answer b { font-size: 17px; color: var(--ink); }
 .tow-row .dl-ic { width: 32px; height: 32px; }
@@ -1785,3 +1785,26 @@ body.car-locked .fab { display: none; }
 .tow-row.warn .dl-ic { color: var(--accent-text); background: var(--accent-soft); }
 .tow-row.bad .dl-ic { color: var(--danger); }
 .tc-res p.warn { color: var(--accent-text); }
+/* Tre släp med bild under valet av körkort */
+.tow-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.tow-tile { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; padding: 10px 6px; border-radius: 16px; background: var(--glass, rgba(0,0,0,.03)); border: 1px solid var(--line); color: var(--ink); min-width: 0; }
+.tow-tile svg { width: 100%; max-width: 110px; height: auto; color: var(--ink-2); margin-bottom: 4px; }
+.tow-tile b { font: 700 14px/1.2 var(--f-body); }
+.tow-tile .tt-kg { font: 700 14px/1.2 var(--f-body); white-space: nowrap; }
+.tow-tile .tt-sub { font-size: 12px; font-weight: 600; }
+.tow-tile .tt-typ { font-size: 11px; color: var(--ink-2); }
+.tow-tile.ok .tt-kg, .tow-tile.ok .tt-sub { color: var(--sage); }
+.tow-tile.warn .tt-kg, .tow-tile.warn .tt-sub { color: var(--accent-text); }
+.tow-tile.bad .tt-kg, .tow-tile.bad .tt-sub { color: var(--danger); }
+.tow-tile .tp-ground { stroke: currentColor; stroke-width: 1.5; opacity: .35; fill: none; }
+.tow-tile .tp-line { stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; fill: none; }
+.tow-tile .tp-line-f { stroke: currentColor; stroke-width: 2; fill: none; }
+.tow-tile .tp-body { fill: var(--card, #fff); stroke: currentColor; stroke-width: 2.5; stroke-linejoin: round; }
+.tow-tile.ok .tp-body { fill: var(--sage-soft); }
+.tow-tile.warn .tp-body { fill: var(--accent-soft); }
+.tow-tile .tp-win { fill: currentColor; opacity: .25; }
+.tow-tile .tp-wheel { fill: var(--ink); }
+.tow-tile .tp-hub { fill: var(--ground, #ccc); }
+[data-garage] .tow-tile svg { shape-rendering: crispEdges; }
+@media (max-width: 340px) { .tow-tile .tt-typ { display: none; } }
+@media (max-width: 370px) { .tow-tile .tt-kg { font-size: 12px; } .tow-tile b { font-size: 13px; } }
