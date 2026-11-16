@@ -573,14 +573,17 @@ async function pickVoice(token) {
   if (ttsVoice) return ttsVoice;
   const r = await fetch("https://texttospeech.googleapis.com/v1/voices?languageCode=sv-SE", { headers: { Authorization: `Bearer ${token}` } });
   if (!r.ok) throw new Error("voices " + r.status);
-  const voices = ((await r.json()).voices || []).filter((v) => (v.languageCodes || []).includes("sv-SE"));
+  ttsVoice = autoVoice(((await r.json()).voices || []).filter((v) => (v.languageCodes || []).includes("sv-SE")));
+  return ttsVoice;
+}
+// Det automatiska valet: den första svenska mansrösten av den bästa sorten som finns.
+function autoVoice(voices) {
   const male = voices.filter((v) => v.ssmlGender === "MALE");
   for (const kind of ["Chirp3-HD", "Chirp-HD", "Neural2", "Wavenet"]) {
-    const v = male.find((x) => x.name.includes(kind)) || null;
-    if (v) { ttsVoice = v.name; return ttsVoice; }
+    const v = male.find((x) => x.name.includes(kind));
+    if (v) return v.name;
   }
-  ttsVoice = (male[0] || voices[0])?.name || null;
-  return ttsVoice;
+  return (male[0] || voices[0])?.name || null;
 }
 
 // Text som ska läsas upp: "21 480" blir ett tal, "6,3" blir "6 komma 3" och "kr" blir kronor.
@@ -907,11 +910,12 @@ exports.adminVoice = onCall({ timeoutSeconds: 30, memory: "256MiB", maxInstances
   const token = await googleToken();
   if (action === "list") {
     const r = await fetch("https://texttospeech.googleapis.com/v1/voices?languageCode=sv-SE", { headers: { Authorization: `Bearer ${token}` } });
-    const voices = ((await r.json()).voices || []).filter((v) => (v.languageCodes || []).includes("sv-SE"))
-      .map((v) => ({ name: v.name, gender: v.ssmlGender }))
+    const all = ((await r.json()).voices || []).filter((v) => (v.languageCodes || []).includes("sv-SE"));
+    const auto = autoVoice(all);
+    const voices = all.map((v) => ({ name: v.name, gender: v.ssmlGender }))
       .sort((a, b) => (a.gender === b.gender ? a.name.localeCompare(b.name) : a.gender === "MALE" ? -1 : 1));
     const cfg = await glennVoiceCfg();
-    return { ok: true, voices, current: cfg.voice || ttsVoice || null, auto: !cfg.voice, rate: ttsRate(cfg.rate) };
+    return { ok: true, voices, current: cfg.voice || auto, autoVoice: auto, auto: !cfg.voice, rate: ttsRate(cfg.rate) };
   }
   const voice = String(req.data?.voice || "");
   if (voice && !/^sv-SE-[A-Za-z0-9-]+$/.test(voice)) throw new HttpsError("invalid-argument", "Fel röst.");
