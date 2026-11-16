@@ -1139,7 +1139,73 @@ const AI_NAME = "Glenn";
    Gesten kommer från svaret (taggen [tumme] eller [blink], som funktionen fragaBilen gör om till mood) och visas
    en stund när svaret kommer och medan det läses upp. Munnen rör sig bara när han pratar. */
 const GLENN_FRAMES = ["base", "base-talk", "wink", "wink-talk", "thumb", "thumb-talk"];
-const glennSrc = (f) => `icons/glenn/${f}.png?v=1`;
+// Små bilder (ansikte och axlar) och hela Glenn (i röstläget).
+const glennSrc = (f, full = false) => `icons/glenn/${full ? "full-" : ""}${f}.png?v=2`;
+
+/* Glenns väder och kläder. Bakgrunden visar vädret där man är (Open-Meteo, utan nyckel), och Glenn klär sig
+   efter det: sydväst i regn, mössa i snö och kyla, solglasögon när det är soligt och varmt. På högtider har han
+   högtidens kläder: julmössa, nyårshatt, stjärngossestrut på Lucia, blomsterkrans på midsommar och en kyckling
+   på påsk. Platsen hämtas bara om appen redan har fått lov; annars blir det dag eller natt efter klockan. */
+function easterSunday(y) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  return new Date(y, Math.floor((h + l - 7 * m + 114) / 31) - 1, ((h + l - 7 * m + 114) % 31) + 1);
+}
+function holidayNow(now = new Date()) {
+  const M = now.getMonth() + 1, D = now.getDate(), y = now.getFullYear();
+  if ((M === 12 && D === 31) || (M === 1 && D === 1)) return "party";
+  if (M === 12 && D === 13) return "lucia";
+  if (M === 12 && D <= 26) return "santa";
+  // Midsommarafton är fredagen mellan 19 och 25 juni; midsommardagen dagen efter.
+  if (M === 6 && ((D >= 19 && D <= 25 && now.getDay() === 5) || (D >= 20 && D <= 26 && now.getDay() === 6))) return "midsummer";
+  const e = easterSunday(y), day = Math.round((new Date(y, M - 1, D) - e) / 864e5);
+  if (day >= -2 && day <= 1) return "easter";
+  return null;
+}
+const WX_RAIN = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82], WX_SNOW = [71, 73, 75, 77, 85, 86], WX_STORM = [95, 96, 99];
+function glennLook() {
+  const wx = S.wx;
+  const hour = new Date().getHours();
+  const day = wx ? wx.day : hour >= 7 && hour < 18;
+  const code = wx?.code ?? 1;
+  const kind = WX_STORM.includes(code) ? "storm" : WX_SNOW.includes(code) ? "snow" : WX_RAIN.includes(code) ? "rain" : [45, 48].includes(code) ? "fog" : code >= 2 ? "cloud" : "clear";
+  const sky = day ? kind : kind === "clear" ? "night" : "night-cloud";
+  const holiday = holidayNow();
+  const acc = holiday || (kind === "rain" || kind === "storm" ? "rain" : kind === "snow" || (wx && wx.temp <= 0) ? "beanie" : kind === "clear" && day && wx && wx.temp >= 18 ? "sun" : null);
+  const fx = holiday === "party" ? "party" : kind === "rain" || kind === "storm" ? "rain" : kind === "snow" ? "snow" : null;
+  return { sky, acc, fx };
+}
+// Glenn med bakgrund och kläder. img är bilden av Glenn (som byts när han blinkar, pratar med mera).
+function glennFig(img, full = false, cls = "") {
+  const L = glennLook();
+  const style = [`--sky:url(icons/glenn/sky-${L.sky}.png?v=2)`, L.acc ? `--acc:url(icons/glenn/acc-${full ? "full-" : ""}${L.acc}.png?v=2)` : "", L.fx ? `--fx:url(icons/glenn/fx-${L.fx}.png?v=2)` : ""].filter(Boolean).join(";");
+  return `<span class="gfig${full ? " full" : ""}${L.fx ? ` fx-${L.fx}` : ""}${cls ? ` ${cls}` : ""}" style="${style}">${img}</span>`;
+}
+// Vädret där man är, högst en gång i halvtimmen. Platsen används bara om appen redan har fått lov.
+async function loadWeather() {
+  try {
+    const cached = JSON.parse(pref.get("wx") || "null");
+    if (cached && Date.now() - cached.at < 30 * 60000) { S.wx = cached; return; }
+  } catch { /* ingen sparad */ }
+  let loc = null;
+  try { loc = JSON.parse(pref.get("lastLoc") || "null"); } catch { loc = null; }
+  if (!loc) {
+    let ok = false;
+    try { ok = (await navigator.permissions?.query({ name: "geolocation" }))?.state === "granted"; } catch { ok = false; }
+    if (!ok) return;
+    loc = await Promise.race([tripPosition(), new Promise((r) => setTimeout(() => r(null), 6000))]);
+    if (!loc) return;
+    pref.set("lastLoc", JSON.stringify({ lat: Math.round(loc.lat * 100) / 100, lon: Math.round(loc.lon * 100) / 100 }));
+  }
+  try {
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,weather_code,is_day&timezone=auto`);
+    if (!r.ok) return;
+    const c = (await r.json()).current || {};
+    S.wx = { code: c.weather_code ?? 1, temp: c.temperature_2m ?? 10, day: c.is_day !== 0, at: Date.now() };
+    pref.set("wx", JSON.stringify(S.wx));
+    render();
+  } catch { /* utan nät: dag eller natt efter klockan */ }
+}
 let glennMouth = false;
 function glennFrame(m) {
   const gesture = m?.mood && (m.speaking || (m.gestureUntil || 0) > Date.now()) ? m.mood : "base";
@@ -1154,7 +1220,7 @@ function refreshGlenn() {
   const big = $("#voice-glenn");
   if (big) {
     const m = st.msgs.find((x) => x.speaking) || [...st.msgs].reverse().find((x) => x.role === "assistant" && !x.err);
-    const src = glennSrc(glennFrame(m));
+    const src = glennSrc(glennFrame(m), true);
     if (big.getAttribute("src") !== src) big.setAttribute("src", src);
   }
 }
@@ -1312,7 +1378,7 @@ const speakerSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" 
 function chatSheet() {
   if (!chatOn()) return plusOnSale() ? plusSheet() : null;
   const st = chatState();
-  GLENN_FRAMES.forEach((f) => { new Image().src = glennSrc(f); });
+  GLENN_FRAMES.forEach((f) => { new Image().src = glennSrc(f); new Image().src = glennSrc(f, true); });
   openSheet(`Fråga ${AI_NAME}`, `<div class="chat">
     <div class="chat-log" id="chat-log" aria-live="polite">${chatLogHtml(st)}</div>
     <form class="chat-bar" data-form="chat" novalidate>
@@ -1325,7 +1391,7 @@ function chatSheet() {
       <p class="hint">${esc(`${AI_NAME} svarar utifrån det ni har loggat om ${carName(car())}. AI kan ha fel, så kontrollera viktiga saker.`)}</p>
     </div>
     <div class="voice" id="voice" hidden>
-      <button class="voice-orb" type="button" data-act="voice-orb" aria-label="Prata"><img id="voice-glenn" src="${glennSrc("base")}" alt="" width="150" height="150"></button>
+      <button class="voice-orb" type="button" data-act="voice-orb" aria-label="Prata">${glennFig(`<img id="voice-glenn" src="${glennSrc("base", true)}" alt="" width="128" height="136">`, true)}</button>
       <p class="voice-state" id="voice-state" aria-live="polite"></p>
       <p class="voice-text" id="voice-text" data-notr></p>
       <button class="btn-soft voice-end" type="button" data-act="voice-end">Avsluta</button>
@@ -1367,7 +1433,7 @@ function glennTank(i, save) {
   }, 700);
 }
 function chatLogHtml(st) {
-  const av = (i) => `<img class="glenn-av" ${i == null ? "" : `data-i="${i}" `}src="${glennSrc(i == null ? "base" : glennFrame(st.msgs[i]))}" alt="" width="52" height="52">`;
+  const av = (i) => glennFig(`<img class="glenn-av" ${i == null ? "" : `data-i="${i}" `}src="${glennSrc(i == null ? "base" : glennFrame(st.msgs[i]))}" alt="" width="52" height="52">`, false, "gfig-av");
   if (!st.msgs.length) return `<div class="ai-row">${av(null)}<div class="msg ai intro">${esc(`Tjenare! Jag är ${AI_NAME}. Jag har koll på allt ni har loggat om ${carName(car())}. Vad undrar du?`)}</div></div>
     <div class="chat-sugg">${CHAT_SUGGESTIONS.map((q) => `<button class="chip-btn" type="button" data-act="chat-ask" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
   return st.msgs.map((m, i) => {
@@ -1401,6 +1467,7 @@ async function hereForChat() {
   const name = await Promise.race([reverseAddress(loc.lat, loc.lon).catch(() => ""), new Promise((r) => setTimeout(() => r(""), 3000))]);
   const v = { lat: Math.round(loc.lat * 1e4) / 1e4, lon: Math.round(loc.lon * 1e4) / 1e4, name: name || "" };
   chatHere = { v, at: Date.now() };
+  pref.set("lastLoc", JSON.stringify({ lat: Math.round(loc.lat * 100) / 100, lon: Math.round(loc.lon * 100) / 100 }));
   return v;
 }
 // Skickar frågan och ger svaret (eller null). I röstläget läses svaret upp där, inte här.
@@ -1515,7 +1582,7 @@ function garageSign() {
   return `<div class="garage-sign" aria-label="Glenns Garage">
     <div class="gs-row">
       <div class="gs-board"><span class="gs-t" data-notr>GLENNS GARAGE</span><span class="gs-s">Service &amp; reparationer</span></div>
-      <button class="gs-av" type="button" data-act="garage-glenn" aria-label="Glenn"><img id="gs-glenn" src="${glennSrc("base")}" alt="" width="76" height="76"></button>
+      <button class="gs-av" type="button" data-act="garage-glenn" aria-label="Glenn">${glennFig(`<img id="gs-glenn" src="${glennSrc("base")}" alt="" width="76" height="76">`)}</button>
     </div>
     <p class="gs-bubble" id="gs-bubble" data-notr>${esc(EN ? tr(quip) : quip)}</p>
     <div class="gs-props" aria-hidden="true"><img src="icons/garage/tire.png" alt=""><img src="icons/garage/cone.png" alt=""><img src="icons/garage/oil.png" alt=""><img src="icons/garage/toolbox.png" alt=""><img src="icons/garage/coffee.png" alt=""></div>
@@ -1553,7 +1620,7 @@ function pixelCar(root) {
 function garagePicker() {
   const list = Object.entries(COLORS).filter(([, t]) => t.garage);
   return `<div class="gp-pick">
-    <div class="gp-head"><img src="${glennSrc("base")}" alt="" width="56" height="56"><div><b>GLENNS GARAGE</b><span>Tre teman i pixelstil</span></div></div>
+    <div class="gp-head">${glennFig(`<img src="${glennSrc("base")}" alt="" width="56" height="56">`, false, "gp-fig")}<div><b>GLENNS GARAGE</b><span>Tre teman i pixelstil</span></div></div>
     <div class="gp-minis" role="group" aria-label="Glenns Garage">${list.map(([k, t]) => `<button class="gp-mini ${t.garage}" type="button" data-act="theme-color" data-v="${k}" aria-pressed="${themePrefs().color === k}" aria-label="${esc(t.name.replace(/\u00ad/g, ""))}">
       <span class="gm-screen" aria-hidden="true"><span class="gm-sign"><img src="${glennSrc("base")}" alt="">GLENNS GARAGE</span><span class="gm-card"><i></i><i></i></span><span class="gm-card"><i></i></span><span class="gm-nav"><i></i></span></span>
       <span class="gm-name">${t.name}</span></button>`).join("")}</div>
@@ -1784,6 +1851,8 @@ function render() {
     bell.setAttribute("aria-label", `Aviseringar${n ? `, ${n} nya` : ""}`);
   }
   ensureCarImage(car());
+  // Vädret för Glenns bakgrund och kläder: en gång när appen öppnas, sedan varje halvtimme.
+  if (!loadWeather.started) { loadWeather.started = true; loadWeather(); setInterval(loadWeather, 30 * 60000); }
   updateWidget();
   if (S.trips.some((t) => t.odoEnd == null)) setTimeout(updateTripEstimate, 500);
   renderTripBar();
