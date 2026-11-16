@@ -1663,3 +1663,6 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 .hero.lift .car-pick { animation: lift 2.6s ease-in-out; }
 @keyframes lift { 0% { transform: none; } 25%, 75% { transform: translateY(-38px); } 100% { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .gs-t, .bolt-fx, .hero.lift .car-pick { animation: none !important; } }
+/* Chatten när tangentbordet är uppe: samtalet blir lägre, den lilla texten under raden göms. */
+.sheet.kb .chat-log { min-height: 80px; max-height: calc(var(--vvh, 60vh) - 190px); }
+.sheet.kb .chat-foot { display: none; }
