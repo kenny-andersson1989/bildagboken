@@ -1814,3 +1814,4 @@ body.car-locked .fab { display: none; }
 .tow-row.warn .tow-head { color: var(--accent-text); }
 .tow-row.bad .tow-head { color: var(--danger); }
 .tc-res p.tc-sub { display: block; font-weight: 400; color: var(--ink-2); margin-top: 0; }
+.admin-plus { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 2px; }

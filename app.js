@@ -1934,7 +1934,7 @@ function renderLogin(error = "") {
         ${ANDROID ? "" : `<button class="btn apple block" type="button" data-act="login" data-provider="apple">${icon("apple", 20)} Fortsätt med Apple</button>`}
         <button class="btn google block" type="button" data-act="login" data-provider="google">${icon("google", 20)} Fortsätt med Google</button>
         ${error ? `<p class="err">${esc(error)}</p>` : ""}
-        <p class="la-legal">Har du fått en inbjudan? Logga in först, sedan skriver du in koden.<br><a href="${LANG === "en" ? "privacy.html" : "integritet.html"}" target="_blank" rel="noopener">Så hanteras dina uppgifter</a></p>
+        <p class="la-legal">Har du fått en inbjudan? Logga in först, sedan skriver du in koden.<br><a href="${LANG === "en" ? "privacy.html" : "integritet.html"}" target="_blank" rel="noopener">Så hanteras dina uppgifter</a>${NATIVE ? "" : ` · <a href="installera.html" target="_blank" rel="noopener">Lägg till på hemskärmen</a>`}</p>
       </div>
     </section>`);
 }
@@ -4230,6 +4230,8 @@ function viewAdmin() {
         <div class="dl-t">${esc(h.name || "Utan namn")}</div>
         <div class="dl-s">${h.cars.map((c) => esc(carName(c))).join(", ") || "Ingen bil"} · ${h.entries.length === 1 ? "1 post" : `${h.entries.length} poster`}${lastEntry(h) ? ` · senast loggat ${esc(fmtDateShort(lastEntry(h)))}` : ""}</div>
         ${(h.members || []).map((m) => { const i = h.memberInfo?.[m] || {}; return `<div class="admin-user" data-notr><span>${esc(i.name || "Okänt namn")}</span><small>${esc(i.email || "")}</small><small>${seen(i) ? `öppnade appen ${esc(timeAgo(seen(i)).toLowerCase())}` : ""}</small></div>`; }).join("")}
+        <div class="admin-plus">${tsMs(h.plus?.until) > Date.now() ? `<span class="pill ok">${esc(`Plus till ${fmtDate(ymd(new Date(tsMs(h.plus.until))))}${h.plus.by ? "" : " (gåva)"}`)}</span>` : `<span class="pill none">${limited(h) ? "Gratis" : "Inga gränser (från före gratisgränserna)"}</span>`}
+          <button class="link" type="button" data-act="admin-plus" data-id="${esc(h.id)}">Ändra Plus</button></div>
         <div class="hint" data-notr style="font-size:11px">${esc(h.id)}</div>
       </div>`).join("")}</div>
       <p class="hint" style="margin-top:10px">Behöver du ändra något åt någon: Firebase → Firestore → households → id:t ovan. Fråga personen först.</p>
@@ -7299,6 +7301,28 @@ const ACTIONS = {
     pref.set("plusTip." + S.hid, "1");
     render();
     if (el.dataset.id === "read") plusSheet();
+  },
+  "admin-plus"(el) {
+    const h = S.adminData?.houses?.find((x) => x.id === el.dataset.id);
+    if (!h || !isAdmin()) return;
+    const paid = !!h.plus?.by;
+    openSheet(`Plus för ${h.name || "hushållet"}`, `<p class="muted">${esc(tsMs(h.plus?.until) > Date.now() ? `Har Plus till ${fmtDate(ymd(new Date(tsMs(h.plus.until))))}.` : "Har inte Plus.")} Plus gäller alla i hushållet. Ger du mer läggs det till efter nuvarande slutdatum.</p>
+      <div class="form" style="margin-top:12px">
+        ${[[1, "Ge 1 månad"], [3, "Ge 3 månader"], [12, "Ge 1 år"]].map(([m, l]) => `<button class="btn block" type="button" data-act="admin-plus-set" data-id="${esc(h.id)}" data-m="${m}">${l}</button>`).join("")}
+        ${tsMs(h.plus?.until) > Date.now() && !paid ? `<button class="btn block solid-danger" type="button" data-act="admin-plus-set" data-id="${esc(h.id)}" data-m="0">Ta bort Plus</button>` : ""}
+        ${paid ? `<p class="hint">Hushållet betalar själv för Plus, så det går inte att ta bort här.</p>` : ""}
+      </div>`);
+  },
+  async "admin-plus-set"(el) {
+    if (!isAdmin()) return;
+    el.disabled = true;
+    try {
+      const r = await callFn("adminPlus", { hid: el.dataset.id, months: Number(el.dataset.m) });
+      closeSheet();
+      showToast(r.until ? `Plus till ${fmtDate(ymd(new Date(r.until)))}` : "Plus är borttaget");
+      S.adminData = null;
+      render();
+    } catch (e) { el.disabled = false; showToast(`Det gick inte: ${e.message || e}`, 6000); }
   },
   "plus-buy"() { showToast("Köpet går inte att göra än."); },
   "add-car"() {

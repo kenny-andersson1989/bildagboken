@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lägg till Bildagboken på hemskärmen</title>
+<meta name="description" content="Så lägger du till Bildagboken på hemskärmen på iPhone och Android, så att den ser ut och fungerar som en app.">
+<meta name="theme-color" content="#E9E4DF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171514" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="icons/logo-symbol.svg?v=4" type="image/svg+xml">
+<style>
+  :root { --bg: #E9E4DF; --card: #FBF9F7; --ink: #211D1A; --ink-2: #5B544E; --accent: #D9662B; --soft: rgba(217, 102, 43, .12); --line: rgba(35, 34, 33, .1); color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #171514; --card: #221F1D; --ink: #F1ECE7; --ink-2: #B5ADA5; --accent: #F08A52; --soft: rgba(240, 138, 82, .14); --line: rgba(255, 255, 255, .09); } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: calc(24px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom)); }
+  h1 { font-size: 28px; line-height: 1.2; margin: 8px 0 6px; }
+  h2 { font-size: 20px; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
+  p { color: var(--ink-2); margin: 6px 0; }
+  a { color: var(--accent); }
+  .back { font-weight: 600; text-decoration: none; }
+  .tabs { display: flex; gap: 8px; margin: 18px 0 4px; }
+  .tabs a { flex: 1; text-align: center; padding: 10px; border-radius: 999px; background: var(--card); color: var(--ink); font-weight: 600; text-decoration: none; border: 1px solid var(--line); }
+  article { background: var(--card); border-radius: 20px; padding: 20px; margin-top: 14px; scroll-margin-top: 12px; }
+  ol { list-style: none; counter-reset: s; padding: 0; margin: 14px 0 4px; }
+  ol li { counter-increment: s; position: relative; padding: 0 0 16px 44px; color: var(--ink); }
+  ol li::before { content: counter(s); position: absolute; left: 0; top: -2px; width: 30px; height: 30px; border-radius: 50%; background: var(--soft); color: var(--accent); font-weight: 700; display: grid; place-items: center; }
+  ol li small { display: block; color: var(--ink-2); font-size: 14px; margin-top: 2px; }
+  .ic { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: var(--soft); color: var(--accent); vertical-align: -7px; margin: 0 2px; }
+  .ic svg { width: 17px; height: 17px; }
+  b.ui { background: var(--soft); padding: 1px 7px; border-radius: 6px; font-weight: 600; white-space: nowrap; }
+  .note { border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; margin-top: 10px; }
+  .cta { display: block; text-align: center; margin: 22px 0 0; padding: 14px; border-radius: 14px; background: var(--accent); color: #fff; font-weight: 700; text-decoration: none; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">‹ Till Bildagboken</a>
+  <h1>Lägg till Bildagboken på hemskärmen</h1>
+  <p>Bildagboken fungerar direkt i webbläsaren på bildagboken.com. Lägger du till den på hemskärmen öppnas den i helskärm med en egen ikon, precis som en vanlig app. Det är gratis och tar en halv minut.</p>
+  <nav class="tabs" aria-label="Välj telefon"><a href="#iphone">iPhone</a><a href="#android">Android</a></nav>
+
+  <article id="iphone">
+    <h2>iPhone</h2>
+    <p>Använd Safari. Det går också i Chrome på iPhone, på samma sätt.</p>
+    <ol>
+      <li>Öppna <b>Safari</b> och gå till <a href="./">bildagboken.com</a>.</li>
+      <li>Tryck på <b>Dela</b> <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></span>
+        <small>Den ligger längst ner på skärmen. Ser du den inte, tryck först på <b class="ui">⋯</b> vid adressfältet och sedan på Dela.</small></li>
+      <li>Scrolla ner och tryck på <b class="ui">Lägg till på hemskärmen</b>
+        <small>Finns den inte i listan, tryck på Redigera åtgärder längst ner och lägg till den.</small></li>
+      <li>Låt <b class="ui">Öppna som webbapp</b> vara påslaget om det finns, och tryck på <b class="ui">Lägg till</b>.</li>
+      <li>Öppna Bildagboken från hemskärmen och logga in med Apple eller Google.</li>
+    </ol>
+    <p class="note">Vill du ha påminnelser? Slå på notiser under Inställningar i Bildagboken. På iPhone fungerar notiser bara när appen är tillagd på hemskärmen.</p>
+  </article>
+
+  <article id="android">
+    <h2>Android</h2>
+    <p>Använd Chrome. Andra webbläsare fungerar nästan likadant, se längst ner.</p>
+    <ol>
+      <li>Öppna <b>Chrome</b> och gå till <a href="./">bildagboken.com</a>.</li>
+      <li>Tryck på menyn <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></span> uppe till höger.</li>
+      <li>Tryck på <b class="ui">Installera appen</b> eller <b class="ui">Lägg till på startskärmen</b>.
+        <small>Ibland visar Chrome själv en ruta längst ner som frågar om du vill installera. Då kan du trycka där i stället.</small></li>
+      <li>Tryck på <b class="ui">Installera</b> för att bekräfta.</li>
+      <li>Öppna Bildagboken från startskärmen eller bland dina appar och logga in med Google.</li>
+    </ol>
+    <p class="note"><b>Samsung Internet:</b> tryck på menyn <b class="ui">≡</b> längst ner, välj <b class="ui">Lägg till sida på</b> och sedan <b class="ui">Startskärm</b>.</p>
+  </article>
+
+  <article>
+    <h2>Bra att veta</h2>
+    <p>Du loggar in med samma Apple- eller Google-konto överallt, så ser du samma bilar och logg på telefonen och datorn. Delar ni bilen bjuder du in de andra med koden under Inställningar.</p>
+    <p>En iPhone-app i App Store, med några extra saker som widget och automatisk körjournal, kommer snart.</p>
+    <a class="cta" href="./">Öppna Bildagboken</a>
+  </article>
+</main>
+</body>
+</html>
