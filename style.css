@@ -1777,3 +1777,11 @@ body.car-locked .fab { display: none; }
 .tc-res p svg { flex: none; margin-top: 3px; }
 .tc-res p.ok svg { color: var(--sage); }
 .tc-res p.bad { color: var(--danger); }
+.tow-answer { margin-top: 12px; padding: 12px 14px; border-radius: var(--r-chip, 14px); background: var(--accent-soft); }
+.tow-answer p { margin: 0 0 4px; }
+.tow-answer b { font-size: 17px; color: var(--ink); }
+.tow-row .dl-ic { width: 32px; height: 32px; }
+.tow-row.ok .dl-ic { color: var(--sage); background: var(--sage-soft); }
+.tow-row.warn .dl-ic { color: var(--accent-text); background: var(--accent-soft); }
+.tow-row.bad .dl-ic { color: var(--danger); }
+.tc-res p.warn { color: var(--accent-text); }
