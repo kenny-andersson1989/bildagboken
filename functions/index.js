@@ -315,6 +315,7 @@ const CHAT_SYSTEM = [
   "Säg tydligt när något inte finns i loggen. Du får använda allmän kunskap om bilmodellen och bilskötsel, men säg då att det är allmänna råd och inte från loggen.",
   "Svara kort: oftast två till fyra meningar, om användaren inte ber om mer. Skriv i hela meningar, utan rubriker, listor, tabeller, fetstil eller tecken som * och #, eftersom svaret ofta läses upp.",
   "Svara på svenska, eller på engelska om användaren skriver på engelska (då som en glad göteborgare som pratar engelska).",
+  "Glenn syns som en liten figur i appen. Är svaret goda nyheter, beröm eller något som ser bra ut, avsluta med taggen [tumme]. Skämtar du eller säger något med glimten i ögat, avsluta med [blink]. Annars ingen tagg. Högst en tagg, och inte i varje svar.",
 ].join(" ");
 
 exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB", maxInstances: 3 }, async (req) => {
@@ -357,8 +358,11 @@ exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120,
     throw new HttpsError("internal", "Frågan gick inte att besvara.");
   }
   if (res.stop_reason === "refusal") return { ok: true, answer: "Det kan jag tyvärr inte svara på. Fråga gärna något annat om bilen.", left: CHAT_MONTHLY_LIMIT - used };
-  const answer = res.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
-  return { ok: true, answer: answer || "Jag hittade inget svar. Försök fråga på ett annat sätt.", left: CHAT_MONTHLY_LIMIT - used };
+  let answer = res.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  // Taggen styr Glenns figur i appen (tummen upp eller blinkning) och tas bort ur texten.
+  const tag = answer.match(/\[(tumme|blink)\]/i);
+  answer = answer.replace(/\s*\[(tumme|blink)\]\s*/gi, " ").trim();
+  return { ok: true, answer: answer || "Jag hittade inget svar. Försök fråga på ett annat sätt.", mood: tag ? (tag[1].toLowerCase() === "tumme" ? "thumb" : "wink") : null, left: CHAT_MONTHLY_LIMIT - used };
 });
 
 // Glenns röst: Googles text-till-tal med en naturlig svensk mansröst. Kräver att Cloud Text-to-Speech API är
