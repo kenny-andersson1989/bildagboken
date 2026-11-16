@@ -36,6 +36,7 @@ export const EN = {
   "Motoreffekt": "Engine power",
   "Mätarställning vid besiktning": "Odometer at inspection",
   "Släpvagn": "Trailer",
+  "Skriv registreringsnumret och tryck på Hämta, så fylls bilens uppgifter i.": "Type the registration number and tap Fetch to fill in the car's details.",
   "Skriv ett registreringsnummer, till exempel ABC 123.": "Type a registration number, for example ABC 123.",
   "Tryck på Hämta för att fylla i uppgifterna från registret igen.": "Tap Fetch to fill in the details from the register again.",
   "Koldioxid (g/km)": "CO₂ (g/km)",
