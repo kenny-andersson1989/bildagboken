@@ -4505,9 +4505,13 @@ function renderVoiceAdmin() {
   const v = S.voiceAdmin, box = $("#av-box");
   if (!v || !box) return;
   const rates = [[0.9, "Lugnare"], [1, "Normal"], [1.1, "Lite snabbare"], [1.2, "Snabbare"]];
-  const row = (x) => `<div class="dl"><span class="dl-ic">${icon("spark", 18)}</span>
-    <span><span class="dl-t">${esc(voiceLabel(x.name))}</span><span class="dl-s">${x.gender === "MALE" ? "Man" : x.gender === "FEMALE" ? "Kvinna" : "Neutral"}${!v.auto && x.name === v.current ? " · vald" : v.auto && x.name === v.current ? " · vald automatiskt" : ""}${!v.auto && x.name === v.autoVoice ? " · Glenns röst från början" : ""}</span></span>
-    <span class="trash-acts"><button class="btn-soft" type="button" data-act="admin-voice-play" data-v="${esc(x.name)}">Lyssna</button>${x.name === v.current && !v.auto ? (Math.abs(v.rate - v.savedRate) > 0.01 ? `<button class="link" type="button" data-act="admin-voice-set" data-v="${esc(x.name)}">Spara takt</button>` : "") : `<button class="link" type="button" data-act="admin-voice-set" data-v="${esc(x.name)}">Välj</button>`}</span></div>`;
+  const row = (x) => {
+    const sel = x.name === v.current;
+    const btn = v.loading === x.name ? "Hämtar …" : v.playing === x.name ? "Stoppa" : "Lyssna";
+    return `<div class="dl voice-row${sel ? " sel" : ""}"><span class="dl-ic">${icon(sel ? "check" : "spark", 18)}</span>
+    <span><span class="dl-t">${esc(voiceLabel(x.name))}${sel ? ` <span class="pill ok">${v.auto ? "Vald automatiskt" : "Glenns röst"}</span>` : ""}</span><span class="dl-s">${x.gender === "MALE" ? "Man" : x.gender === "FEMALE" ? "Kvinna" : "Neutral"}${!v.auto && x.name === v.autoVoice ? " · Glenns röst från början" : ""}</span></span>
+    <span class="trash-acts"><button class="btn-soft${v.playing === x.name ? " on" : ""}" type="button" data-act="admin-voice-play" data-v="${esc(x.name)}"${v.loading === x.name ? " disabled" : ""}>${btn}</button>${x.name === v.current && !v.auto ? (Math.abs(v.rate - v.savedRate) > 0.01 ? `<button class="link" type="button" data-act="admin-voice-set" data-v="${esc(x.name)}">Spara takt</button>` : "") : `<button class="link" type="button" data-act="admin-voice-set" data-v="${esc(x.name)}">Välj</button>`}</span></div>`;
+  };
   box.innerHTML = `<p class="label" style="margin:0 0 6px">Takt</p>
     <div class="seg" role="group" aria-label="Takt">${rates.map(([r, l]) => `<button type="button" data-act="admin-voice-rate" data-v="${r}" aria-pressed="${Math.abs(v.rate - r) < 0.01}">${l}</button>`).join("")}</div>
     <p class="hint" style="margin:6px 0 12px">Lyssna med den takt du har valt. Takten sparas när du trycker på Välj.</p>
@@ -7704,13 +7708,31 @@ const ACTIONS = {
       renderVoiceAdmin();
     } catch (e) { $("#av-box").innerHTML = `<p class="err">${esc(`Det gick inte: ${e.message || e}`)}</p>`; }
   },
+  // Lyssna: en röst i taget. Trycker man på en annan stannar den förra, och knappen blir Lyssna igen.
+  // Trycker man på samma knapp medan den spelar stannar den.
   async "admin-voice-play"(el) {
     const v = S.voiceAdmin; if (!v) return;
-    el.disabled = true; const label = el.innerHTML; el.textContent = "…";
+    const name = el.dataset.v, playing = v.playing === name;
+    stopSpeech();
+    try { voiceAudio?.pause(); } catch { /* inget ljud */ }
+    v.playing = null; v.loading = null;
+    renderVoiceAdmin();
+    if (playing) return;
+    unlockAudio();
+    v.loading = name; renderVoiceAdmin();
+    const key = `${name}|${v.rate}`;
     try {
-      const r = await callFn("adminVoice", { action: "sample", voice: el.dataset.v, rate: v.rate });
-      unlockAudio(); stopSpeech(); await playB64(r.audio, sayId);
-    } catch (e) { showToast(`Det gick inte: ${e.message || e}`, 5000); } finally { el.disabled = false; el.innerHTML = label; }
+      v.samples = v.samples || {};
+      const audio = v.samples[key] || (v.samples[key] = (await callFn("adminVoice", { action: "sample", voice: name, rate: v.rate })).audio);
+      if (v.loading !== name) return; // man har hunnit trycka på en annan
+      v.loading = null; v.playing = name; renderVoiceAdmin();
+      const id = sayId;
+      await playB64(audio, id);
+      if (v.playing === name && id === sayId) { v.playing = null; renderVoiceAdmin(); }
+    } catch (e) {
+      if (v.loading === name) { v.loading = null; renderVoiceAdmin(); }
+      showToast(`Det gick inte: ${e.message || e}`, 5000);
+    }
   },
   async "admin-voice-set"(el) {
     const v = S.voiceAdmin; if (!v) return;
