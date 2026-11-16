@@ -307,12 +307,14 @@ exports._reminders = reminders;
 // Fråga om bilen (Bildagboken Plus): svarar på frågor utifrån det hushållet har loggat om bilen.
 // Appen skickar bilens uppgifter som text (med summor och snitt redan uträknade) och samtalet hittills.
 const CHAT_SYSTEM = [
-  "Du är assistenten i appen Bildagboken och svarar på frågor om användarens bil.",
+  "Du heter Glenn och är AI:n i appen Bildagboken. Du svarar på frågor om användarens bil.",
+  "Du är en go och glad göteborgare: varm, positiv och lite skämtsam, med koll på bilar som en erfaren mekaniker.",
+  "Skriv vanlig svenska med en lätt göteborgsk ton (till exempel Tjenare, go, gött, ba), och slå ibland till med en kort göteborgsvits, men inte i varje svar och aldrig när det gäller säkerhet eller pengar som är på väg att bli dyra.",
   "Bilens uppgifter, underhåll, kostnader, förbrukning, körjournal och hela loggen finns nedan. Utgå från dem.",
-  "Summor, snitt och förbrukning är redan uträknade av appen. Använd de siffrorna i stället för att räkna själv.",
+  "Summor, snitt och förbrukning är redan uträknade av appen. Använd de siffrorna i stället för att räkna själv, och hitta aldrig på siffror.",
   "Säg tydligt när något inte finns i loggen. Du får använda allmän kunskap om bilmodellen och bilskötsel, men säg då att det är allmänna råd och inte från loggen.",
-  "Svara kort och tydligt, i hela meningar, utan rubriker, tabeller, fetstil eller tecken som * och #. Svaret kan läsas upp.",
-  "Svara på svenska, eller på engelska om användaren skriver på engelska.",
+  "Svara kort: oftast två till fyra meningar, om användaren inte ber om mer. Skriv i hela meningar, utan rubriker, listor, tabeller, fetstil eller tecken som * och #, eftersom svaret ofta läses upp.",
+  "Svara på svenska, eller på engelska om användaren skriver på engelska (då som en glad göteborgare som pratar engelska).",
 ].join(" ");
 
 exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB", maxInstances: 3 }, async (req) => {
@@ -357,4 +359,64 @@ exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120,
   if (res.stop_reason === "refusal") return { ok: true, answer: "Det kan jag tyvärr inte svara på. Fråga gärna något annat om bilen.", left: CHAT_MONTHLY_LIMIT - used };
   const answer = res.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
   return { ok: true, answer: answer || "Jag hittade inget svar. Försök fråga på ett annat sätt.", left: CHAT_MONTHLY_LIMIT - used };
+});
+
+// Glenns röst: Googles text-till-tal med en naturlig svensk mansröst. Kräver att Cloud Text-to-Speech API är
+// påslaget i projektet (gcloud services enable texttospeech.googleapis.com). Tak per hushåll och månad i tecken.
+const TTS_MONTHLY_CHARS = 20000;
+let ttsVoice = null;
+async function googleToken() {
+  const r = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", { headers: { "Metadata-Flavor": "Google" } });
+  if (!r.ok) throw new Error("token " + r.status);
+  return (await r.json()).access_token;
+}
+// Bästa svenska mansrösten som finns: Chirp 3 HD, annars Neural2, annars WaveNet.
+async function pickVoice(token) {
+  if (ttsVoice) return ttsVoice;
+  const r = await fetch("https://texttospeech.googleapis.com/v1/voices?languageCode=sv-SE", { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) throw new Error("voices " + r.status);
+  const voices = ((await r.json()).voices || []).filter((v) => (v.languageCodes || []).includes("sv-SE"));
+  const male = voices.filter((v) => v.ssmlGender === "MALE");
+  for (const kind of ["Chirp3-HD", "Chirp-HD", "Neural2", "Wavenet"]) {
+    const v = male.find((x) => x.name.includes(kind)) || null;
+    if (v) { ttsVoice = v.name; return ttsVoice; }
+  }
+  ttsVoice = (male[0] || voices[0])?.name || null;
+  return ttsVoice;
+}
+
+exports.glennPratar = onCall({ timeoutSeconds: 60, memory: "256MiB", maxInstances: 3 }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
+  const { hid } = req.data || {};
+  const text = String(req.data?.text || "").replace(/[*#_`]/g, "").trim().slice(0, 1500);
+  if (typeof hid !== "string" || !text) throw new HttpsError("invalid-argument", "Texten saknas.");
+  const house = (await db.doc(`households/${hid}`).get()).data();
+  if (!house || !(house.members || []).includes(uid)) throw new HttpsError("permission-denied", "Du hör inte till hushållet.");
+  const plus = (house.plus?.until?.toMillis?.() ?? house.plus?.until ?? 0) > Date.now();
+  if (!plus && uid !== ADMIN_UID) throw new HttpsError("permission-denied", "Glenns röst ingår i Bildagboken Plus.");
+
+  const usageRef = db.doc(`households/${hid}/ai/${todayStr().slice(0, 7)}`);
+  const ok = await db.runTransaction(async (tx) => {
+    const n = ((await tx.get(usageRef)).data()?.ttsChars || 0) + text.length;
+    if (n > TTS_MONTHLY_CHARS) return false;
+    tx.set(usageRef, { ttsChars: n, updatedAt: Date.now() }, { merge: true });
+    return true;
+  });
+  if (!ok) throw new HttpsError("resource-exhausted", "Glenns röst är slut för den här månaden. Svaren läses upp med telefonens röst i stället.");
+
+  try {
+    const token = await googleToken();
+    const voice = await pickVoice(token);
+    const r = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ input: { text }, voice: { languageCode: "sv-SE", ...(voice ? { name: voice } : { ssmlGender: "MALE" }) }, audioConfig: { audioEncoding: "MP3" } }),
+    });
+    if (!r.ok) { logger.error("Text-till-tal svarade med fel", { status: r.status, body: (await r.text()).slice(0, 300) }); throw new Error("tts " + r.status); }
+    return { ok: true, audio: (await r.json()).audioContent, voice };
+  } catch (e) {
+    logger.error("Glenns röst fungerade inte", { message: e?.message });
+    throw new HttpsError("unavailable", "Glenns röst fungerar inte just nu.");
+  }
 });

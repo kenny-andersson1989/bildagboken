@@ -83,6 +83,10 @@
 		<string>bildagboken.com</string>
 		<string>auth.bildagboken.com</string>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Bildagboken använder mikrofonen när du pratar med Glenn i Fråga om bilen.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Det du säger till Glenn görs om till text, så att han kan svara.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>

@@ -460,7 +460,7 @@ const plusUntilText = () => { const u = tsMs(S.house?.plus?.until); return u > D
 // Fördelarna med Plus, i den ordning de visas överallt.
 const PLUS_PERKS = [
   ["route", "Körjournal", "Logga tjänsteresor och privata resor. Milersättningen räknas ut, och iPhone-appen kan logga resorna själv."],
-  ["spark", "Fråga om bilen", "Skriv eller prata med AI om allt ni har loggat: kostnader, service, däck och förbrukning."],
+  ["spark", "Fråga Glenn", "Glenn är appens AI. Skriv eller prata med honom om allt ni har loggat: kostnader, service, däck och förbrukning."],
   ["camera", "Läsning med AI", "Fota kvittot, servicefakturan eller besiktningsprotokollet, så fylls allt i åt dig."],
   ["car", "Upp till 6 bilar", "Hela familjens bilar i samma app."],
   ["home", "Upp till 6 personer", "Alla i familjen som kör bilarna."],
@@ -509,7 +509,7 @@ function plusSheet() {
     ["Bilder", `${FREE.photos}`, fmt(PLUS.photos)],
     ["Körjournal", "–", "Ingår"],
     ["Läsning med AI", "–", "Ingår"],
-    ["Fråga om bilen", "–", "Ingår"],
+    ["Fråga Glenn (AI)", "–", "Ingår"],
   ];
   openSheet("Bildagboken Plus", `
     <p>${hasPlus() ? esc(`${plusUntilText()}. Det gäller alla i hushållet.`) : "Ett köp gäller alla i hushållet. Allt ni har loggat finns kvar, vad ni än väljer."}</p>
@@ -1105,88 +1105,242 @@ function carContext(c) {
 
 const chatOn = () => aiOn();
 const chatState = () => { if (!S.chat || S.chat.carId !== S.carId) S.chat = { carId: S.carId, msgs: [], busy: false }; return S.chat; };
+const AI_NAME = "Glenn";
+const callFn = async (name, payload) => {
+  const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-functions.js");
+  return (await httpsCallable(getFunctions(fb, "europe-west1"), name, { timeout: 120000 })(payload)).data;
+};
+
+/* Diktering: i iPhone-appen (från 1.2) med Apples taligenkänning (SpeechInput i SceneDelegate.swift),
+   i webbläsaren med webbläsarens. Texten kommer löpande, och det sista resultatet när man har slutat prata. */
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-// Röststyrning i webbläsaren. I iPhone-appen pratar man med mikrofonen på tangentbordet.
-const canListen = () => !!SpeechRec && !NATIVE;
-const canSpeak = () => "speechSynthesis" in window;
+const nativeSpeech = () => (NATIVE && !ANDROID ? nativePlugin("SpeechInput") : null);
+const canDictate = () => !!nativeSpeech() || !!SpeechRec;
+let dictStop = null;
+function dictate(onText) {
+  return new Promise((resolve, reject) => {
+    let text = "", done = false, quiet = 0, max = 0, sub = null;
+    const finish = () => { if (done) return; done = true; clearTimeout(quiet); clearTimeout(max); dictStop = null; try { sub?.remove?.(); } catch { /* redan borta */ } resolve(text.trim()); };
+    const fail = (e) => { if (done) return; done = true; clearTimeout(quiet); clearTimeout(max); dictStop = null; try { sub?.remove?.(); } catch { /* redan borta */ } reject(e); };
+    const lang = EN ? "en-GB" : "sv-SE";
+    const ns = nativeSpeech();
+    if (ns) {
+      const stopNow = () => { Promise.resolve(ns.stop()).catch(() => {}); setTimeout(finish, 2500); };
+      (async () => {
+        try {
+          sub = await ns.addListener("partial", (d) => {
+            if (d?.text) { text = d.text; onText(text); }
+            if (d?.final) return finish();
+            // Färdig när det har varit tyst en stund efter att man har sagt något.
+            clearTimeout(quiet); quiet = setTimeout(stopNow, text ? 1600 : 8000);
+          });
+          await ns.start({ lang });
+          dictStop = stopNow;
+          quiet = setTimeout(stopNow, 8000);
+          max = setTimeout(stopNow, 45000);
+        } catch (e) { fail(e); }
+      })();
+      return;
+    }
+    if (!SpeechRec) return fail(new Error("unsupported"));
+    const rec = new SpeechRec();
+    rec.lang = lang;
+    rec.interimResults = true;
+    rec.onresult = (ev) => { text = [...ev.results].map((r) => r[0].transcript).join(""); onText(text); };
+    rec.onerror = (ev) => { if (ev.error === "not-allowed" || ev.error === "service-not-allowed") fail(new Error("denied")); };
+    rec.onend = finish;
+    dictStop = () => { try { rec.stop(); } catch { finish(); } };
+    try { rec.start(); } catch (e) { fail(e); }
+  });
+}
+function dictateError(e) {
+  const m = String(e?.message || e?.code || "");
+  if (/denied|tillåten/i.test(m)) return showToast("Tillåt mikrofonen och taligenkänning för Bildagboken i telefonens inställningar.", 6000);
+  showToast(NATIVE ? "Prata in kräver den nya versionen av appen. Tryck på mikrofonen på tangentbordet så länge." : "Prata in fungerar inte i den här webbläsaren.", 6000);
+}
+
+/* Glenns röst: en naturlig röst från Google (funktionen glennPratar). Fungerar den inte används telefonens röst.
+   Ljudet spelas i ett och samma ljudelement, som låses upp vid första trycket (krävs på iPhone). */
+const canSpeak = () => true;
+const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+let voiceAudio = null, sayId = 0;
+function unlockAudio() {
+  try {
+    if (!voiceAudio) { voiceAudio = new Audio(); voiceAudio.setAttribute("playsinline", ""); }
+    if (!voiceAudio.src || voiceAudio.src === SILENT || voiceAudio.paused) { voiceAudio.src = SILENT; voiceAudio.play()?.catch?.(() => {}); }
+  } catch { /* inget ljud */ }
+  try { if ("speechSynthesis" in window && !speechSynthesis.speaking) speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch { /* ingen röst */ }
+}
+const stopSpeech = () => {
+  sayId++;
+  try { voiceAudio?.pause(); } catch { /* inget att stoppa */ }
+  try { if ("speechSynthesis" in window && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel(); } catch { /* inget att stoppa */ }
+  document.querySelectorAll(".chat-play.on").forEach((b) => b.classList.remove("on"));
+};
+function playB64(b64, id) {
+  return new Promise((resolve) => {
+    if (id !== sayId) return resolve();
+    if (!voiceAudio) voiceAudio = new Audio();
+    voiceAudio.onended = () => resolve();
+    voiceAudio.onerror = () => resolve();
+    voiceAudio.src = "data:audio/mpeg;base64," + b64;
+    try { voiceAudio.play()?.catch?.(() => resolve()); } catch { resolve(); }
+  });
+}
+function speakDevice(text, id) {
+  return new Promise((resolve) => {
+    if (!("speechSynthesis" in window) || id !== sayId) return resolve();
+    const lang = EN ? "en" : "sv";
+    const voices = speechSynthesis.getVoices().filter((v) => v.lang?.toLowerCase().startsWith(lang));
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = EN ? "en-GB" : "sv-SE";
+    u.voice = voices.find((v) => /premium|enhanced|förbättrad|natural/i.test(v.name)) || voices[0] || null;
+    u.onend = () => resolve(); u.onerror = () => resolve();
+    speechSynthesis.speak(u);
+  });
+}
+// Läser upp ett svar. Ljudet sparas med meddelandet, så att Lyssna igen inte kostar något.
+async function sayText(m) {
+  stopSpeech();
+  const id = sayId;
+  const text = String(m?.text || "").replace(/[*#_`]/g, "");
+  if (!text) return;
+  try {
+    if (!m.audio) m.audio = window.__ttsMock ? await window.__ttsMock(text) : (await callFn("glennPratar", { hid: S.hid, text }))?.audio;
+    if (id !== sayId) return;
+    if (m.audio) return await playB64(m.audio, id);
+  } catch (e) { console.warn("Glenns röst", e); }
+  if (id === sayId) await speakDevice(text, id);
+}
+
+const micSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>`;
+const waveSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 10v4M9.5 7v10M14.5 5v14M19 9.5v5"/></svg>`;
+const sendSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>`;
 const speakerSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>`;
-const micSvg = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>`;
+
+// Rutan som i ChatGPT: samtalet, och längst ner en rad med fältet, mikrofonen (prata in text) och
+// röstläget (prata med Glenn). När det står något i fältet blir röstknappen en skicka-knapp.
 function chatSheet() {
   if (!chatOn()) return plusOnSale() ? plusSheet() : null;
   const st = chatState();
-  openSheet("Fråga om bilen", `<div class="chat">
+  openSheet(`Fråga ${AI_NAME}`, `<div class="chat">
     <div class="chat-log" id="chat-log" aria-live="polite">${chatLogHtml(st)}</div>
-    <form class="chat-form" data-form="chat" novalidate>
-      <textarea id="chat-in" name="q" rows="1" placeholder="Skriv din fråga" enterkeyhint="send"></textarea>
-      ${canListen() ? `<button class="chat-mic" type="button" data-act="chat-mic" aria-label="Prata">${micSvg}</button>` : ""}
-      <button class="chat-send" type="submit" aria-label="Skicka">${icon("next", 20)}</button>
+    <form class="chat-bar" data-form="chat" novalidate>
+      <textarea id="chat-in" name="q" rows="1" placeholder="${esc(`Fråga ${AI_NAME}`)}" enterkeyhint="send"></textarea>
+      ${canDictate() ? `<button class="cb-mic" type="button" data-act="chat-mic" aria-label="Prata in text">${micSvg}</button>` : ""}
+      <button class="cb-go${canDictate() ? "" : " has-text"}" id="chat-go" type="button" data-act="chat-go" aria-label="${canDictate() ? `Prata med ${AI_NAME}` : "Skicka"}"><span class="go-voice">${waveSvg}</span><span class="go-send">${sendSvg}</span></button>
     </form>
     <div class="chat-foot">
-      ${canSpeak() ? `<label class="check"><input type="checkbox" id="chat-speak"${pref.get("chatSpeak") === "1" ? " checked" : ""} data-act="chat-speak"> Läs upp svaren</label>` : ""}
-      <p class="hint">${esc(`${canListen() || !NATIVE ? "" : "Vill du prata? Tryck på mikrofonen på tangentbordet. "}Svaren bygger på det ni har loggat om ${carName(car())}. AI kan ha fel, så kontrollera viktiga saker.`)}</p>
+      <label class="check"><input type="checkbox" id="chat-speak"${pref.get("chatSpeak") === "1" ? " checked" : ""} data-act="chat-speak"> ${esc(`${AI_NAME} läser upp svaren`)}</label>
+      <p class="hint">${esc(`${AI_NAME} svarar utifrån det ni har loggat om ${carName(car())}. AI kan ha fel, så kontrollera viktiga saker.`)}</p>
+    </div>
+    <div class="voice" id="voice" hidden>
+      <button class="voice-orb" type="button" data-act="voice-orb" aria-label="Prata"><span></span></button>
+      <p class="voice-state" id="voice-state" aria-live="polite"></p>
+      <p class="voice-text" id="voice-text" data-notr></p>
+      <button class="btn-soft voice-end" type="button" data-act="voice-end">Avsluta</button>
     </div></div>`);
   scrollChat();
 }
 function chatLogHtml(st) {
-  if (!st.msgs.length) return `<p class="muted chat-intro">Fråga vad du vill om bilen: kostnader, service, däck, förbrukning eller resor.</p>
+  if (!st.msgs.length) return `<div class="msg ai intro">${esc(`Tjenare! Jag är ${AI_NAME}. Jag har koll på allt ni har loggat om ${carName(car())}. Vad undrar du?`)}</div>
     <div class="chat-sugg">${CHAT_SUGGESTIONS.map((q) => `<button class="chip-btn" type="button" data-act="chat-ask" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
-  return st.msgs.map((m, i) => `<div class="msg ${m.role === "user" ? "me" : "ai"}${m.err ? " err" : ""}"${m.err ? "" : " data-notr"}>${esc(m.text).replace(/\n/g, "<br>")}</div>${m.role === "assistant" && !m.err && canSpeak() ? `<button class="link chat-play" type="button" data-act="chat-play" data-i="${i}">${speakerSvg} Lyssna</button>` : ""}`).join("")
-    + (st.busy ? `<div class="msg ai busy" aria-label="AI tänker"><span></span><span></span><span></span></div>` : "")
+  return st.msgs.map((m, i) => `<div class="msg ${m.role === "user" ? "me" : "ai"}${m.err ? " err" : ""}"${m.err ? "" : " data-notr"}>${esc(m.text).replace(/\n/g, "<br>")}</div>${m.role === "assistant" && !m.err ? `<button class="link chat-play" type="button" data-act="chat-play" data-i="${i}">${speakerSvg} Lyssna</button>` : ""}`).join("")
+    + (st.busy ? `<div class="msg ai busy" aria-label="${esc(`${AI_NAME} tänker`)}"><span></span><span></span><span></span></div>` : "")
     + (st.left != null && st.left <= 5 ? `<p class="hint chat-left">${esc(`${st.left} frågor kvar den här månaden.`)}</p>` : "");
 }
 function scrollChat() { const l = $("#chat-log"); if (l) l.scrollTop = l.scrollHeight; }
 function redrawChat() { const l = $("#chat-log"); if (l) { l.innerHTML = chatLogHtml(chatState()); if (EN && typeof trTree === "function") trTree(l); scrollChat(); } }
-async function askCar(q) {
+function chatInputChanged() {
+  const i = $("#chat-in"), go = $("#chat-go");
+  if (!i || !go) return;
+  const has = !!i.value.trim() || !canDictate();
+  go.classList.toggle("has-text", has);
+  go.setAttribute("aria-label", has ? "Skicka" : `Prata med ${AI_NAME}`);
+  // Fältet växer med texten, upp till några rader.
+  i.style.height = "auto";
+  i.style.height = Math.min(i.scrollHeight, 140) + "px";
+}
+// Skickar frågan och ger svaret (eller null). I röstläget läses svaret upp där, inte här.
+async function askCar(q, { voice = false } = {}) {
   const st = chatState();
   q = String(q || "").trim();
-  if (!q || st.busy) return;
+  if (!q || st.busy) return null;
+  if (!voice) unlockAudio();
   st.msgs.push({ role: "user", text: q });
   st.busy = true;
   redrawChat();
   const payload = { hid: S.hid, context: carContext(car()), messages: st.msgs.filter((m) => !m.err).slice(-12).map((m) => ({ role: m.role, text: m.text })) };
+  let answer = null;
   try {
-    let res;
-    if (window.__chatMock) res = await window.__chatMock(payload);
-    else {
-      const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-functions.js");
-      res = (await httpsCallable(getFunctions(fb, "europe-west1"), "fragaBilen", { timeout: 120000 })(payload)).data;
-    }
-    st.msgs.push({ role: "assistant", text: res?.answer || "Jag hittade inget svar." });
+    const res = window.__chatMock ? await window.__chatMock(payload) : await callFn("fragaBilen", payload);
+    const m = { role: "assistant", text: res?.answer || "Jag hittade inget svar." };
+    st.msgs.push(m);
+    answer = m;
     if (res?.left != null) st.left = res.left;
-    if (pref.get("chatSpeak") === "1") speak(res?.answer || "");
   } catch (e) {
     const code = String(e?.code || e?.message || "").replace(/^functions\//, "");
-    st.msgs.push({ role: "assistant", err: true, text: /resource-exhausted|permission-denied|failed-precondition|unavailable/.test(code) ? e.message : !navigator.onLine ? "Fråga om bilen behöver nät." : `Det gick inte att få ett svar (${code || "okänt fel"}). Försök igen.` });
+    st.msgs.push({ role: "assistant", err: true, text: /resource-exhausted|permission-denied|failed-precondition|unavailable/.test(code) ? e.message : !navigator.onLine ? `${AI_NAME} behöver nät.` : `Det gick inte att få ett svar (${code || "okänt fel"}). Försök igen.` });
   } finally {
     st.busy = false;
     redrawChat();
   }
+  if (answer && !voice && pref.get("chatSpeak") === "1") sayText(answer);
+  return answer;
 }
-// På iPhone får uppläsningen bara starta direkt av ett tryck, och den hörs inte när telefonen står på ljudlöst
-// (i appen från 1.2 hörs den ändå). Därför finns Lyssna under varje svar, och den avbryts innan man pratar in.
-const stopSpeech = () => { try { if (canSpeak() && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel(); } catch { /* inget att stoppa */ } };
-function speak(text) {
-  if (!canSpeak() || !text) return;
+
+// Röstläget: lyssna, skicka, läs upp svaret och lyssna igen, tills man trycker Avsluta.
+function voiceUi(state, text = "") {
+  const v = $("#voice");
+  if (!v) return;
+  v.hidden = false;
+  v.dataset.state = state;
+  const label = { listen: "Jag lyssnar …", think: `${AI_NAME} tänker …`, talk: `${AI_NAME} pratar. Tryck på cirkeln för att avbryta.`, idle: "Tryck på cirkeln och prata." }[state] || "";
+  $("#voice-state").textContent = EN ? tr(label) : label;
+  $("#voice-text").textContent = text;
+}
+async function voiceLoop() {
+  const st = chatState();
+  if (st.voice) return;
+  st.voice = true;
+  unlockAudio();
+  try {
+    while (st.voice && $("#voice")) {
+      voiceUi("listen");
+      let q;
+      try { q = await dictate((t) => voiceUi("listen", t)); } catch (e) { dictateError(e); break; }
+      if (!st.voice) break;
+      if (!q) { voiceUi("idle"); st.voice = false; return; }
+      voiceUi("think", q);
+      const ans = await askCar(q, { voice: true });
+      if (!st.voice || !ans) break;
+      voiceUi("talk", ans.text);
+      await sayText(ans);
+    }
+  } finally {
+    if (st.voice) endVoice();
+  }
+}
+function endVoice() {
+  const st = chatState();
+  st.voice = false;
+  try { dictStop?.(); } catch { /* redan stoppad */ }
   stopSpeech();
-  const u = new SpeechSynthesisUtterance(text.replace(/[*#_`]/g, ""));
-  u.lang = EN ? "en-GB" : "sv-SE";
-  speechSynthesis.speak(u);
+  const v = $("#voice"); if (v) v.hidden = true;
+  scrollChat();
 }
-let listening = null;
-function listen(btn) {
-  if (listening) { listening.stop(); return; }
+// Prata in text i fältet (mikrofonen), som i ChatGPT. Texten går att ändra innan man skickar.
+async function dictateField(btn) {
+  if (dictStop) { dictStop(); return; }
   stopSpeech();
   const input = $("#chat-in");
-  const rec = new SpeechRec();
-  rec.lang = EN ? "en-GB" : "sv-SE";
-  rec.interimResults = true;
-  let text = "";
-  rec.onresult = (ev) => { text = [...ev.results].map((r) => r[0].transcript).join(""); if (input) input.value = text; };
-  rec.onerror = (ev) => { if (ev.error === "not-allowed" || ev.error === "service-not-allowed") showToast("Tillåt mikrofonen för att prata med appen.", 5000); };
-  rec.onend = () => { listening = null; btn?.classList.remove("on"); if (text.trim()) { if (input) input.value = ""; askCar(text); } };
-  listening = rec;
+  const before = input?.value.trim() ? input.value.trim() + " " : "";
   btn?.classList.add("on");
-  try { rec.start(); } catch { listening = null; btn?.classList.remove("on"); }
+  try {
+    const text = await dictate((t) => { if (input) { input.value = before + t; chatInputChanged(); } });
+    if (input && text) { input.value = before + text; chatInputChanged(); }
+  } catch (e) { dictateError(e); }
+  finally { btn?.classList.remove("on"); }
 }
 
 /* -------------------------------------------------------------- rendering */
@@ -1821,7 +1975,7 @@ function headerMain() {
 function topActions() {
   const n = unseenFromOthers().length;
   return `<div class="top-actions">
-      ${chatOn() || plusOnSale() ? `<button class="icon-btn ai-btn" type="button" data-act="chat" aria-label="Fråga om bilen">${icon("spark")}</button>` : ""}
+      ${chatOn() || plusOnSale() ? `<button class="icon-btn ai-btn" type="button" data-act="chat" aria-label="Fråga Glenn">${icon("spark")}</button>` : ""}
       <button class="icon-btn" type="button" data-go="aviseringar" aria-label="Aviseringar${n ? `, ${n} nya` : ""}">${icon("bell")}${n ? `<span class="badge">${n > 9 ? "9+" : n}</span>` : ""}</button>
       <button class="icon-btn" type="button" data-go="installningar" aria-label="Inställningar">${icon("gear")}</button>
     </div>`;
@@ -3662,6 +3816,7 @@ function unlockScroll() {
 }
 let reloadWhenClosed = false;
 function closeSheet(fromBack = false) {
+  if (S.chat?.voice) endVoice();
   if (typeof stopSpeech === "function") stopSpeech();
   // Vänta en stund, så att det som just sparades hinner skrivas innan sidan laddas om.
   if (reloadWhenClosed) { reloadWhenClosed = false; setTimeout(() => location.reload(), 900); }
@@ -6480,22 +6635,38 @@ const ACTIONS = {
   "trip-here"() { fillTripFrom(true); },
   chat() { chatSheet(); },
   "chat-ask"(el) { askCar(EN ? el.textContent : el.dataset.q); },
-  "chat-mic"(el) { listen(el); },
+  "chat-mic"(el) { dictateField(el); },
+  "chat-go"() {
+    const i = $("#chat-in");
+    if (i?.value.trim() || !canDictate()) return i?.form?.requestSubmit();
+    voiceLoop();
+  },
+  "voice-orb"() {
+    const st = chatState();
+    const state = $("#voice")?.dataset.state;
+    if (state === "listen") return dictStop?.();
+    if (state === "talk") return stopSpeech();
+    if (state === "idle" && !st.voice) voiceLoop();
+  },
+  "voice-end"() { endVoice(); },
   "chat-speak"(el) {
     // Trycket avbryts av appen (preventDefault), så rutan sätts här efteråt, utifrån det sparade valet.
     const on = pref.get("chatSpeak") !== "1";
     pref.set("chatSpeak", on ? "1" : "0");
     setTimeout(() => { el.checked = on; }, 0);
     if (!on) return stopSpeech();
-    // Läs upp senaste svaret direkt, så att uppläsningen är igång (iPhone kräver ett tryck första gången).
+    unlockAudio();
     const last = [...chatState().msgs].reverse().find((m) => m.role === "assistant" && !m.err);
-    if (last) speak(last.text); else showToast("Svaren läses upp när de kommer. Kontrollera att telefonen inte står på ljudlöst.", 5000);
+    if (last) sayText(last);
   },
   "chat-play"(el) {
     const m = chatState().msgs[Number(el.dataset.i)];
     if (!m) return;
-    if (canSpeak() && speechSynthesis.speaking) return stopSpeech();
-    speak(m.text);
+    if (el.classList.contains("on")) return stopSpeech();
+    unlockAudio();
+    stopSpeech();
+    el.classList.add("on");
+    sayText(m).finally(() => el.classList.remove("on"));
   },
   "new-place"() { placeForm(); },
   "edit-place"(el) { const p = S.places.find((x) => x.id === el.dataset.id); if (p) placeForm(p); },
@@ -6822,7 +6993,7 @@ async function onSubmit(ev) {
     if (kind === "rec-price") return saveRecPrice(form);
     if (kind === "trip") return saveTrip(form);
     if (kind === "place") return savePlace(form);
-    if (kind === "chat") { const i = $("#chat-in"); const q = i?.value || ""; if (i) i.value = ""; return askCar(q); }
+    if (kind === "chat") { const i = $("#chat-in"); const q = i?.value || ""; if (i) i.value = ""; chatInputChanged(); return askCar(q); }
     if (kind === "doc") return await saveDoc(form);
     if (kind === "rename-one") {
       const v = String(new FormData(form).get("v") || "").trim();
@@ -7080,6 +7251,7 @@ function updateNextInspection() {
 }
 
 function onInput(ev) {
+  if (ev.target.id === "chat-in") chatInputChanged();
   if (ev.target.id === "ef-date" && $("#ef-future")) $("#ef-future").hidden = !(ev.target.value > todayStr());
   if (ev.isTrusted && ev.target.classList?.contains("from-receipt")) ev.target.classList.remove("from-receipt");
   if (ev.target.classList?.contains("invalid") && String(ev.target.value || "").trim()) ev.target.classList.remove("invalid");
