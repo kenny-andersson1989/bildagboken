@@ -742,3 +742,70 @@ exports.adminRewind = onCall({ timeoutSeconds: 120, memory: "512MiB", maxInstanc
   }
   throw new HttpsError("invalid-argument", "Okänd åtgärd.");
 });
+
+// Bilens uppgifter från registreringsnumret, via registreringsnummerapi.se (betaltjänst, ca 2 kr per sökning).
+// Användarnamnet hos tjänsten är en hemlighet (REGNR_USERNAME) och sätts med:
+//   firebase functions:secrets:set REGNR_USERNAME
+// Svaret sparas per registreringsnummer i 30 dagar (regcache), så att samma bil inte kostar två gånger.
+// Varje hushåll får göra högst REGNR_PER_MONTH nya sökningar i månaden.
+const REGNR_USERNAME = defineSecret("REGNR_USERNAME");
+const REGNR_PER_MONTH = 10;
+const xmlText = (s) => String(s).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, "&");
+// Gör om svaret till en platt lista { k, v }. Objekt som { CurrentTextValue: "Volvo" } blir bara "Volvo".
+function flattenVehicle(obj, prefix = "", out = []) {
+  if (obj == null || out.length > 200) return out;
+  if (typeof obj !== "object") { const v = String(obj).trim(); if (v && v !== "null" && prefix) out.push({ k: prefix, v: v.slice(0, 300) }); return out; }
+  if (Array.isArray(obj)) {
+    if (obj.every((x) => x == null || typeof x !== "object")) { const v = obj.filter((x) => x != null && x !== "").join(", "); if (v) out.push({ k: prefix, v: v.slice(0, 300) }); return out; }
+    obj.forEach((x, i) => flattenVehicle(x, `${prefix}[${i}]`, out));
+    return out;
+  }
+  if ("CurrentTextValue" in obj && Object.keys(obj).length <= 3) return flattenVehicle(obj.CurrentTextValue, prefix, out);
+  for (const [k, v] of Object.entries(obj)) flattenVehicle(v, prefix ? `${prefix}.${k}` : k, out);
+  return out;
+}
+function parseRegResponse(body) {
+  const json = body.match(/<vehicleJson>([\s\S]*?)<\/vehicleJson>/i);
+  if (json) {
+    try { return flattenVehicle(JSON.parse(xmlText(json[1]))); } catch { /* inte JSON, prova XML nedan */ }
+  }
+  try { return flattenVehicle(JSON.parse(body)); } catch { /* inte ren JSON */ }
+  // Annars: alla <Fält>värde</Fält> i XML-svaret.
+  const out = [];
+  for (const m of body.matchAll(/<([A-Za-z][\w.]*)>([^<]{1,300})<\/\1>/g)) out.push({ k: m[1], v: xmlText(m[2]).trim() });
+  return out.filter((x) => x.v);
+}
+exports.hamtaFordon = onCall({ secrets: [REGNR_USERNAME], timeoutSeconds: 30, memory: "256MiB", maxInstances: 3 }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
+  const { hid } = req.data || {};
+  const plate = String(req.data?.plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!/^[A-Z0-9]{2,7}$/.test(plate)) throw new HttpsError("invalid-argument", "Registreringsnumret ser fel ut.");
+  if (typeof hid !== "string") throw new HttpsError("invalid-argument", "Hushållet saknas.");
+  const house = (await db.doc(`households/${hid}`).get()).data();
+  if (!house || !(house.members || []).includes(uid)) throw new HttpsError("permission-denied", "Du hör inte till hushållet.");
+  // Samma bil nyligen: svaret finns redan, och kostar inget.
+  const cacheRef = db.doc(`regcache/${plate}`);
+  const cached = (await cacheRef.get()).data();
+  if (cached && cached.at > Date.now() - 30 * 864e5 && cached.fields?.length) return { ok: true, fields: cached.fields, cached: true };
+  const usageRef = db.doc(`households/${hid}/ai/${todayStr().slice(0, 7)}`);
+  const used = (await usageRef.get()).data()?.regnr || 0;
+  if (used >= REGNR_PER_MONTH && uid !== ADMIN_UID) return { ok: false, reason: "limit" };
+  const user = REGNR_USERNAME.value();
+  if (!user) { logger.error("REGNR_USERNAME saknas"); return { ok: false, reason: "config" }; }
+  let body;
+  try {
+    const r = await fetch(`https://www.registreringsnummerapi.se/API/reg.asmx/CheckSweden?RegistrationNumber=${encodeURIComponent(plate)}&username=${encodeURIComponent(user)}`, { signal: AbortSignal.timeout(15000) });
+    body = await r.text();
+    if (!r.ok) { logger.info("Regnummer svarade med fel", { status: r.status, body: body.slice(0, 300) }); return { ok: false, reason: /credit|kredit|saldo|balance/i.test(body) ? "credits" : "notfound" }; }
+  } catch (e) {
+    logger.warn("Regnummer gick inte att nå", { message: String(e?.message || e).slice(0, 150) });
+    return { ok: false, reason: "network" };
+  }
+  await usageRef.set({ regnr: admin.firestore.FieldValue.increment(1), updatedAt: Date.now() }, { merge: true });
+  const fields = parseRegResponse(body).filter((x) => !/owner|ägare|address|adress|personnummer/i.test(x.k));
+  if (fields.length < 2) { logger.info("Regnummer utan uppgifter", { body: body.slice(0, 300) }); return { ok: false, reason: "notfound" }; }
+  await cacheRef.set({ fields, at: Date.now() }).catch(() => {});
+  logger.info("Regnummer hämtat", { keys: fields.map((x) => x.k).join(",").slice(0, 900) });
+  return { ok: true, fields };
+});

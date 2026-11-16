@@ -1816,3 +1816,18 @@ body.car-locked .fab { display: none; }
 .tc-res p.tc-sub { display: block; font-weight: 400; color: var(--ink-2); margin-top: 0; }
 .admin-plus { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 2px; }
 .trash-acts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* Uppgifter från registreringsnumret: sökning med laddningssymbol */
+.reg-look > label { display: block; font: 600 13px var(--f-body); color: var(--ink-2); margin-bottom: 6px; }
+.reg-look .geo-row input { text-transform: uppercase; letter-spacing: .08em; }
+.reg-look .geo-row .btn-soft { flex: none; }
+.reg-status { margin-top: 8px; }
+.reg-busy, .reg-ok { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--accent-soft); color: var(--accent-text); font: 600 14px/1.35 var(--f-body); }
+.reg-ok { background: color-mix(in srgb, var(--sage) 16%, transparent); color: var(--ink); }
+.reg-ok svg { flex: none; color: var(--sage); }
+.reg-fail { padding: 10px 14px; border-radius: 14px; border: 1px dashed var(--line); }
+.reg-fail p { margin: 0; }
+.reg-spin { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 3px solid currentColor; border-right-color: transparent; animation: regspin .8s linear infinite; }
+[data-garage] .reg-spin { border-radius: 0; animation-timing-function: steps(4); }
+@keyframes regspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .reg-spin { animation-duration: 2s; } }
