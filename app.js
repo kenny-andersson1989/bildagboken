@@ -519,7 +519,10 @@ const activeCarNext = () => { const t = tsMs(S.house?.activeCarAt); return t && 
 const TRASH_DAYS = 30;
 function syncTrash() {
   const gone = new Set((S.trash || []).map((c) => c.id));
-  if (S.allEntries) S.entries = gone.size ? S.allEntries.filter((e) => !gone.has(e.carId)) : S.allEntries;
+  if (S.allEntries) {
+    S.trashEntries = S.allEntries.filter((e) => e.deletedAt && !gone.has(e.carId)).sort((a, b) => tsMs(b.deletedAt) - tsMs(a.deletedAt));
+    S.entries = S.allEntries.filter((e) => !e.deletedAt && !gone.has(e.carId));
+  }
   if (S.allTrips) S.trips = gone.size ? S.allTrips.filter((t) => !gone.has(t.carId)) : S.allTrips;
   if (S.carId && !S.cars.some((c) => c.id === S.carId)) {
     const saved = pref.get("car");
@@ -540,14 +543,26 @@ async function restoreCar(id) {
     render();
   } catch (e) { onWriteError(e); }
 }
+function restoreEntry(id) {
+  updateDoc(ref("entries", id), { deletedAt: deleteField(), deletedBy: deleteField() }).then(() => showToast("Posten är återställd")).catch(onWriteError);
+}
+// En rad för en borttagen post: vad, när, vilken bil och vem som tog bort den.
+function trashEntryRow(e) {
+  const c = S.cars.find((x) => x.id === e.carId);
+  const what = [TYPE[e.type]?.label || "Post", e.date ? fmtDateShort(e.date) : "", e.amount != null ? `${fmtKr(e.amount)} kr` : "", S.cars.length > 1 && c ? carName(c) : ""].filter(Boolean).join(" · ");
+  return `<div class="dl"><span class="dl-ic">${icon(TYPE[e.type]?.icon || "list", 20)}</span>
+    <span><span class="dl-t">${esc(what)}</span><span class="dl-s">${esc(`Borttagen av ${e.deletedBy === uid() ? "dig" : memberName(e.deletedBy)} · raderas för gott ${fmtDate(ymd(trashUntil(e)))}`)}</span></span>
+    <button class="btn-soft" type="button" data-act="trash-entry" data-id="${esc(e.id)}">Återställ</button></div>`;
+}
 function trashCard() {
-  const t = S.trash || [];
-  if (!t.length) return "";
+  const t = S.trash || [], te = S.trashEntries || [];
+  if (!t.length && !te.length) return "";
   return `<div class="card"><h2>Papperskorg</h2>
+    ${te.length ? `<details class="more"${t.length ? "" : " open"}><summary>${esc(`Borttagna poster (${te.length})`)}</summary><div class="rows">${te.slice(0, 50).map(trashEntryRow).join("")}</div></details>` : ""}
     <div class="rows">${t.map((c) => `<div class="dl"><span class="dl-ic">${icon("car", 20)}</span>
       <span><span class="dl-t">${esc(carName(c))}</span><span class="dl-s">${esc(`Raderas för gott ${fmtDate(ymd(trashUntil(c)))}`)}</span></span>
       ${isOwner() ? `<span class="trash-acts"><button class="btn-soft" type="button" data-act="trash-restore" data-id="${esc(c.id)}">Återställ</button><button class="link danger" type="button" data-act="trash-delete" data-id="${esc(c.id)}">Radera nu</button></span>` : "<span></span>"}</div>`).join("")}</div>
-    <p class="hint" style="margin-top:8px">${esc(isOwner() ? `Borttagna bilar ligger här i ${TRASH_DAYS} dagar med hela loggen, så att de går att få tillbaka.` : `Borttagna bilar ligger här i ${TRASH_DAYS} dagar. Hushållets ägare, ${memberName(ownerUid())}, kan återställa dem.`)}</p>
+    <p class="hint" style="margin-top:8px">${esc(`Det som tas bort ligger här i ${TRASH_DAYS} dagar, så att det går att få tillbaka. Sedan raderas det för gott.${t.length && !isOwner() ? ` Bilar kan bara hushållets ägare, ${memberName(ownerUid())}, återställa.` : ""}`)}</p>
   </div>`;
 }
 // Raden med bilarna (tryck för att byta) och Lägg till bil. Samma på Översikt och Bilen.
@@ -4320,7 +4335,8 @@ function viewAdmin() {
         <div class="dl-s">${h.cars.map((c) => esc(carName(c))).join(", ") || "Ingen bil"} · ${h.entries.length === 1 ? "1 post" : `${h.entries.length} poster`}${lastEntry(h) ? ` · senast loggat ${esc(fmtDateShort(lastEntry(h)))}` : ""}</div>
         ${(h.members || []).map((m) => { const i = h.memberInfo?.[m] || {}; return `<div class="admin-user" data-notr><span>${esc(i.name || "Okänt namn")}</span><small>${esc(i.email || "")}</small><small>${seen(i) ? `öppnade appen ${esc(timeAgo(seen(i)).toLowerCase())}` : ""}</small></div>`; }).join("")}
         <div class="admin-plus">${tsMs(h.plus?.until) > Date.now() ? `<span class="pill ok">${esc(`Plus till ${fmtDate(ymd(new Date(tsMs(h.plus.until))))}${h.plus.by ? "" : " (gåva)"}`)}</span>` : `<span class="pill none">${limited(h) ? "Gratis" : "Inga gränser (från före gratisgränserna)"}</span>`}
-          <button class="link" type="button" data-act="admin-plus" data-id="${esc(h.id)}">Ändra Plus</button></div>
+          <button class="link" type="button" data-act="admin-plus" data-id="${esc(h.id)}">Ändra Plus</button>
+          <button class="link" type="button" data-act="admin-rewind" data-id="${esc(h.id)}">Spola tillbaka</button></div>
         <div class="hint" data-notr style="font-size:11px">${esc(h.id)}</div>
       </div>`).join("")}</div>
       <p class="hint" style="margin-top:10px">Behöver du ändra något åt någon: Firebase → Firestore → households → id:t ovan. Fråga personen först.</p>
@@ -7224,19 +7240,15 @@ const ACTIONS = {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (e) entryForm(e.type, e);
   },
+  // En borttagen post läggs i papperskorgen i 30 dagar (med bilder), och kan återställas av alla i hushållet.
   "delete-entry"(el) {
     const e = S.entries.find((x) => x.id === el.dataset.id);
     if (!e) return closeSheet();
-    const { id, ...data } = e;
-    deleteDoc(ref("entries", id)).catch(onWriteError);
-    // Bilden tas bort först när det inte längre går att ångra.
-    const photoTimer = photosOf(e).length ? setTimeout(() => photosOf(e).forEach((pid) => deleteDoc(ref("photos", pid)).catch(() => {})), 8000) : null;
+    updateDoc(ref("entries", e.id), { deletedAt: serverTimestamp(), deletedBy: uid() }).catch(onWriteError);
     closeSheet();
-    showToast(`${TYPE[e.type]?.label || "Posten"} är borttagen`, 6000, () => {
-      clearTimeout(photoTimer);
-      setDoc(ref("entries", id), clean(data)).catch(onWriteError);
-    });
+    showToast(`${TYPE[e.type]?.label || "Posten"} ligger i papperskorgen`, 6000, () => restoreEntry(e.id));
   },
+  "trash-entry"(el) { restoreEntry(el.dataset.id); },
   filter(el) { S.filter = el.dataset.f; render(); },
   "clear-search"() {
     S.query = "";
@@ -7401,6 +7413,47 @@ const ACTIONS = {
         ${tsMs(h.plus?.until) > Date.now() && !paid ? `<button class="btn block solid-danger" type="button" data-act="admin-plus-set" data-id="${esc(h.id)}" data-m="0">Ta bort Plus</button>` : ""}
         ${paid ? `<p class="hint">Hushållet betalar själv för Plus, så det går inte att ta bort här.</p>` : ""}
       </div>`);
+  },
+  // Spola tillbaka ett hushåll: välj en tid de senaste 7 dagarna, se vad som fanns då och återställ det.
+  "admin-rewind"(el) {
+    const h = S.adminData?.houses?.find((x) => x.id === el.dataset.id);
+    if (!h || !isAdmin()) return;
+    const local = (ms) => { const d = new Date(ms - new Date().getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
+    openSheet(`Spola tillbaka ${h.name || "hushållet"}`, `<p class="muted">Välj en tid de senaste 7 dagarna, till exempel strax innan något raderades. Du ser först vad som fanns då, och väljer sedan vad som ska tillbaka. Bara det här hushållet ändras.</p>
+      <div class="form" style="margin-top:12px">
+        <label class="field"><span>Tid</span><input type="datetime-local" id="rw-at" value="${local(Date.now() - 3600000)}" min="${local(Date.now() - 7 * 864e5 + 600000)}" max="${local(Date.now() - 180000)}"></label>
+        <button class="btn primary block" type="button" data-act="admin-rewind-peek" data-id="${esc(h.id)}">Visa hur det såg ut</button>
+        <div id="rw-out" aria-live="polite"></div>
+      </div>`);
+  },
+  async "admin-rewind-peek"(el) {
+    const out = $("#rw-out"), at = Date.parse($("#rw-at").value);
+    if (!out || !at) return;
+    el.disabled = true;
+    out.innerHTML = `<p class="loading">Hämtar …</p>`;
+    try {
+      const r = await callFn("adminRewind", { hid: el.dataset.id, at, action: "peek" });
+      if (!r.house) { out.innerHTML = `<p class="muted">Hushållet fanns inte vid den tiden.</p>`; return; }
+      const nowTxt = { finns: "Finns nu", papperskorgen: "Ligger i papperskorgen nu", borta: "Borta nu" };
+      out.innerHTML = `<p class="label" style="margin:14px 0 4px">${esc(`Bilar ${fmtDate(ymd(new Date(r.at)))} kl ${clock(r.at)}`)}</p>
+        <div class="rows">${r.cars.map((c) => `<div class="dl"><span class="dl-ic">${icon("car", 20)}</span>
+          <span><span class="dl-t">${esc(c.name)}</span><span class="dl-s">${esc(`${c.entries} poster${c.trashThen ? " · låg i papperskorgen då" : ""} · ${nowTxt[c.now]}`)}</span></span>
+          <button class="btn-soft" type="button" data-act="admin-rewind-do" data-id="${esc(el.dataset.id)}" data-car="${esc(c.id)}" data-at="${r.at}" data-name="${esc(c.name)}">Återställ</button></div>`).join("") || `<p class="muted">Inga bilar.</p>`}</div>
+        ${r.missingEntries ? `<button class="btn block" type="button" style="margin-top:12px" data-act="admin-rewind-do" data-id="${esc(el.dataset.id)}" data-at="${r.at}" data-n="${r.missingEntries}">${esc(`Återställ ${r.missingEntries} ${r.missingEntries === 1 ? "post" : "poster"} som har raderats sedan dess`)}</button>` : `<p class="hint" style="margin-top:10px">Inga poster har raderats sedan dess.</p>`}`;
+    } catch (e) { out.innerHTML = `<p class="err">${esc(`Det gick inte: ${e.message || e}`)}</p>`; } finally { el.disabled = false; }
+  },
+  async "admin-rewind-do"(el) {
+    const car = el.dataset.car, at = Number(el.dataset.at);
+    const ok = await confirmDialog(car
+      ? { title: `Återställ ${el.dataset.name}?`, lines: [`Bilen, dess logg, resor och bilder skrivs tillbaka som de var ${fmtDate(ymd(new Date(at)))} kl ${clock(at)}.`, "Det som har lagts till efter det finns kvar. Ändringar efter det skrivs över."], okLabel: "Återställ", warn: "" }
+      : { title: "Återställ raderade poster?", lines: [`${el.dataset.n} ${el.dataset.n === "1" ? "post" : "poster"} som fanns ${fmtDate(ymd(new Date(at)))} kl ${clock(at)} läggs tillbaka.`], okLabel: "Återställ", warn: "" });
+    if (!ok) return;
+    el.disabled = true;
+    try {
+      const r = await callFn("adminRewind", { hid: el.dataset.id, at, action: car ? "car" : "entries", carId: car });
+      showToast(car ? `${el.dataset.name} är återställd med ${r.entries} poster` : `${r.entries} poster är återställda`, 6000);
+      closeSheet(); S.adminData = null; render();
+    } catch (e) { el.disabled = false; showToast(`Det gick inte: ${e.message || e}`, 6000); }
   },
   async "admin-plus-set"(el) {
     if (!isAdmin()) return;

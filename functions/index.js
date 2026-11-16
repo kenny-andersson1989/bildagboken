@@ -149,9 +149,10 @@ exports.morgonpaminnelser = onSchedule({ schedule: "every day 08:00", timeZone: 
     const all = await tokensOf(h.id);
     if (!all.length) continue;
     const byKind = { bookings: all.filter((t) => t.prefs?.bookings !== false), dates: all.filter((t) => t.prefs?.dates !== false) };
-    const cars = await db.collection(`households/${h.id}/cars`).get();
-    const several = cars.size > 1;
-    for (const c of cars.docs) {
+    // Bilar i papperskorgen får inga påminnelser.
+    const cars = (await db.collection(`households/${h.id}/cars`).get()).docs.filter((d) => !d.data().deletedAt);
+    const several = cars.length > 1;
+    for (const c of cars) {
       for (const r of reminders(c.data(), today)) {
         // Med flera bilar står bilens namn först i rubriken.
         const msg = { tag: `${c.id}-${r.tag}`, url: "./#oversikt",
@@ -617,36 +618,127 @@ exports.adminPlus = onCall({ timeoutSeconds: 20, memory: "256MiB", maxInstances:
   return { ok: true, until: until.getTime() };
 });
 
-// Papperskorgen: bilar som har legat borttagna i 30 dagar raderas för gott, med logg, resor och bilder.
+// Papperskorgen: bilar och poster som har legat borttagna i 30 dagar raderas för gott, med logg, resor och bilder.
+// Tre dagar innan en bil raderas får hushållets ägare en påminnelse.
+const photoIdsOf = (d) => (Array.isArray(d.photoIds) && d.photoIds.length ? d.photoIds : d.photoId ? [d.photoId] : []);
+async function deleteRefs(refs) {
+  const seen = new Set();
+  const list = refs.filter((r) => !seen.has(r.path) && seen.add(r.path));
+  for (let i = 0; i < list.length; i += 400) {
+    const b = db.batch();
+    list.slice(i, i + 400).forEach((r) => b.delete(r));
+    await b.commit();
+  }
+  return list.length;
+}
 exports.rensaPapperskorg = onSchedule({ schedule: "every day 03:30", timeZone: TZ, timeoutSeconds: 300 }, async () => {
-  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 30 * 864e5);
-  const houses = await db.collection("households").select().get();
+  const day = 864e5;
+  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 30 * day);
+  const warnFrom = admin.firestore.Timestamp.fromMillis(Date.now() - 28 * day), warnTo = admin.firestore.Timestamp.fromMillis(Date.now() - 27 * day);
+  const houses = await db.collection("households").get();
   for (const h of houses.docs) {
+    // Bilar som raderas om tre dagar: påminn ägaren.
+    const soon = await h.ref.collection("cars").where("deletedAt", ">=", warnFrom).where("deletedAt", "<", warnTo).get();
+    if (!soon.empty) {
+      const hd = h.data();
+      const owner = hd.owner || hd.members?.[0];
+      const toks = (await tokensOf(h.id, "dates")).filter((t) => t.uid === owner);
+      for (const car of soon.docs) {
+        const name = [car.data().make, car.data().model].filter(Boolean).join(" ") || "Bilen";
+        await send(h.id, toks, {
+          tag: `trash-${car.id}`, url: "./#installningar",
+          sv: { title: `${name} raderas om tre dagar`, body: "Den ligger i papperskorgen. Vill du ha kvar den, återställ den under Inställningar." },
+          en: { title: `${name} will be deleted in three days`, body: "It is in the trash. To keep it, restore it under Settings." },
+        }).catch((e) => logger.warn("Påminnelse om papperskorgen", { message: e?.message }));
+      }
+    }
+    // Bilar som har legat i 30 dagar.
     const old = await h.ref.collection("cars").where("deletedAt", "<", cutoff).get();
     for (const car of old.docs) {
       const refs = [car.ref];
-      const photo = car.data().photoId;
-      if (photo) refs.push(h.ref.collection("photos").doc(photo));
+      if (car.data().photoId) refs.push(h.ref.collection("photos").doc(car.data().photoId));
+      if (car.data().shareToken) refs.push(db.doc(`shares/${car.data().shareToken}`));
       for (const sub of ["entries", "trips", "photos"]) {
         const q = await h.ref.collection(sub).where("carId", "==", car.id).get();
         refs.push(...q.docs.map((d) => d.ref));
-        // Bilderna i loggen.
-        if (sub === "entries") for (const e of q.docs) {
-          const d = e.data();
-          const ids = Array.isArray(d.photoIds) && d.photoIds.length ? d.photoIds : d.photoId ? [d.photoId] : [];
-          refs.push(...ids.map((id) => h.ref.collection("photos").doc(id)));
-        }
+        if (sub === "entries") for (const e of q.docs) refs.push(...photoIdsOf(e.data()).map((id) => h.ref.collection("photos").doc(id)));
       }
-      // Samma dokument kan ha kommit med två gånger (en bild med carId som också hör till en post).
-      const seen = new Set();
-      for (let i = refs.length - 1; i >= 0; i--) { if (seen.has(refs[i].path)) refs.splice(i, 1); else seen.add(refs[i].path); }
-      if (car.data().shareToken) refs.push(db.doc(`shares/${car.data().shareToken}`));
-      for (let i = 0; i < refs.length; i += 400) {
-        const b = db.batch();
-        refs.slice(i, i + 400).forEach((r) => b.delete(r));
-        await b.commit();
-      }
-      logger.info("Papperskorgen tömd", { hid: h.id, car: car.id, docs: refs.length });
+      logger.info("Bil raderad ur papperskorgen", { hid: h.id, car: car.id, docs: await deleteRefs(refs) });
+    }
+    // Poster som har legat i 30 dagar.
+    const oldEntries = await h.ref.collection("entries").where("deletedAt", "<", cutoff).get();
+    if (!oldEntries.empty) {
+      const refs = oldEntries.docs.flatMap((e) => [e.ref, ...photoIdsOf(e.data()).map((id) => h.ref.collection("photos").doc(id))]);
+      logger.info("Poster raderade ur papperskorgen", { hid: h.id, docs: await deleteRefs(refs) });
     }
   }
+});
+
+// Spola tillbaka (bara administratören): läser ett hushåll som det såg ut vid en viss minut de senaste 7 dagarna
+// (Firestores point-in-time recovery) och skriver tillbaka en bil med logg, eller poster som har raderats.
+// Bara det valda hushållet rörs. action: "peek" (visa), "car" (återställ en bil), "entries" (återställ raderade poster).
+exports.adminRewind = onCall({ timeoutSeconds: 120, memory: "512MiB", maxInstances: 1 }, async (req) => {
+  if (req.auth?.uid !== ADMIN_UID) throw new HttpsError("permission-denied", "Bara administratören.");
+  const { hid, action, carId } = req.data || {};
+  if (typeof hid !== "string" || !/^[A-Za-z0-9]{10,40}$/.test(hid)) throw new HttpsError("invalid-argument", "Fel hushåll.");
+  // Hela minuter, mellan 2 minuter och 7 dagar bakåt.
+  const at = Math.floor(Number(req.data?.at) / 60000) * 60000;
+  if (!(at > Date.now() - 7 * 864e5 + 120000 && at < Date.now() - 120000)) throw new HttpsError("invalid-argument", "Tiden måste vara inom de senaste 7 dagarna.");
+  const readTime = admin.firestore.Timestamp.fromMillis(at);
+  const H = db.doc(`households/${hid}`);
+  const then = await db.runTransaction(async (tx) => {
+    const [house, cars, entries, trips] = await Promise.all([tx.get(H), tx.get(H.collection("cars")), tx.get(H.collection("entries")), tx.get(H.collection("trips"))]);
+    return { house: house.exists ? house.data() : null, cars: cars.docs, entries: entries.docs, trips: trips.docs };
+  }, { readOnly: true, readTime });
+  if (!then.house) return { ok: true, house: false, cars: [], missingEntries: 0 };
+  const [carsNow, entriesNow] = await Promise.all([H.collection("cars").get(), H.collection("entries").get()]);
+  const nowCar = new Map(carsNow.docs.map((d) => [d.id, d.data()]));
+  const nowEntry = new Map(entriesNow.docs.map((d) => [d.id, d.data()]));
+  // Poster som fanns då men är borta nu, eller ligger i papperskorgen nu.
+  const missing = then.entries.filter((e) => !e.data().deletedAt && (!nowEntry.has(e.id) || nowEntry.get(e.id).deletedAt));
+  const nameOf = (d) => [d.make, d.model].filter(Boolean).join(" ") || "Bil";
+
+  if (action === "peek") {
+    return {
+      ok: true, house: true, at,
+      cars: then.cars.map((c) => ({
+        id: c.id, name: nameOf(c.data()), trashThen: !!c.data().deletedAt,
+        now: !nowCar.has(c.id) ? "borta" : nowCar.get(c.id).deletedAt ? "papperskorgen" : "finns",
+        entries: then.entries.filter((e) => e.data().carId === c.id && !e.data().deletedAt).length,
+      })),
+      missingEntries: missing.length,
+    };
+  }
+  // Bilderna läses vid samma tid, så att de kommer med.
+  const photosAt = async (ids) => {
+    if (!ids.length) return [];
+    return db.runTransaction(async (tx) => (await Promise.all(ids.map((id) => tx.get(H.collection("photos").doc(id))))).filter((d) => d.exists), { readOnly: true, readTime });
+  };
+  const writeAll = async (docs) => {
+    for (let i = 0; i < docs.length; i += 400) {
+      const b = db.batch();
+      docs.slice(i, i + 400).forEach(([ref, data]) => { const d = { ...data }; delete d.deletedAt; delete d.deletedBy; b.set(ref, d); });
+      await b.commit();
+    }
+  };
+  if (action === "car") {
+    const car = then.cars.find((c) => c.id === carId);
+    if (!car) throw new HttpsError("not-found", "Bilen fanns inte då.");
+    const ents = then.entries.filter((e) => e.data().carId === carId && !e.data().deletedAt);
+    const trs = then.trips.filter((t) => t.data().carId === carId);
+    const photoIds = [car.data().photoId, ...ents.flatMap((e) => photoIdsOf(e.data()))].filter(Boolean);
+    const photos = await photosAt([...new Set(photoIds)]);
+    const docs = [[car.ref, car.data()], ...ents.map((e) => [e.ref, e.data()]), ...trs.map((t) => [t.ref, t.data()]), ...photos.map((p) => [p.ref, p.data()])];
+    await writeAll(docs);
+    logger.info("Spolat tillbaka bil", { hid, carId, at, docs: docs.length });
+    return { ok: true, restored: docs.length, entries: ents.length };
+  }
+  if (action === "entries") {
+    const photos = await photosAt([...new Set(missing.flatMap((e) => photoIdsOf(e.data())))]);
+    const docs = [...missing.map((e) => [e.ref, e.data()]), ...photos.map((p) => [p.ref, p.data()])];
+    await writeAll(docs);
+    logger.info("Spolat tillbaka poster", { hid, at, docs: docs.length });
+    return { ok: true, restored: docs.length, entries: missing.length };
+  }
+  throw new HttpsError("invalid-argument", "Okänd åtgärd.");
 });
