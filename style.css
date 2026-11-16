@@ -1513,3 +1513,4 @@ body.has-tripbar .toast-msg { bottom: calc(176px + env(safe-area-inset-bottom, 0
 .chat-mic.on { background: var(--danger); color: #fff; }
 .chat-foot .check { margin: 0 0 6px; }
 .chat-foot .hint { margin: 0; }
+.chat-play { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin: -4px 0 0 6px; font-size: 14px; }
