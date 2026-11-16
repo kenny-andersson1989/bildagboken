@@ -587,3 +587,73 @@ exports.glennPratar = onCall({ timeoutSeconds: 60, memory: "256MiB", maxInstance
     throw new HttpsError("unavailable", "Glenns röst fungerar inte just nu.");
   }
 });
+
+// Fordonsuppgifter från registreringsnumret: läser Transportstyrelsens publika sida "Uppgifter om annat fordon",
+// samma sida som vem som helst kan öppna i webbläsaren. Den är gjord för människor och inget officiellt API,
+// så det här är ett försök: misslyckas det (sidan ändras, kräver robotkontroll eller svarar inte) fyller
+// användaren i själv, eller klistrar in texten från sidan. Inga ägaruppgifter läses eller sparas.
+const TS_VEHICLE_URL = "https://fordon-fu-regnr.transportstyrelsen.se/UppgifterAnnatFordon/TillbakaTillFordonsuppgifter";
+const LOOKUPS_PER_DAY = 20; // per person
+const OWNER_RE = /ägare|innehavare|brukare|leasing|kredit|adress|postnummer|postort|personnummer|organisationsnummer/i;
+const htmlText = (s) => String(s)
+  .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "").replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+  .replace(/<[^>]*>/g, " ")
+  .replace(/&#(x[0-9a-f]+|[0-9]+);/gi, (_, v) => { const n = v[0].toLowerCase() === "x" ? parseInt(v.slice(1), 16) : Number(v); return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ""; })
+  .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+  .replace(/&aring;/g, "å").replace(/&Aring;/g, "Å").replace(/&auml;/g, "ä").replace(/&Auml;/g, "Ä").replace(/&ouml;/g, "ö").replace(/&Ouml;/g, "Ö")
+  .replace(/\s+/g, " ").trim();
+function parseVehiclePage(html) {
+  const out = [];
+  const seen = new Set();
+  const add = (k, v) => {
+    const key = htmlText(k).replace(/:$/, ""), val = htmlText(v);
+    if (!key || !val || key.length > 90 || val.length > 200 || OWNER_RE.test(key) || seen.has(key.toLowerCase())) return;
+    seen.add(key.toLowerCase());
+    out.push([key, val]);
+  };
+  // <p><strong>Etikett</strong><br>Värde</p>
+  for (const m of html.matchAll(/<p\b[^>]*>\s*<strong\b[^>]*>([\s\S]*?)<\/strong>\s*<br\s*\/?>([\s\S]*?)<\/p>/gi)) add(m[1], m[2]);
+  // <dt>Etikett</dt><dd>Värde</dd> och tabellrader, om sidan ser ut så.
+  for (const m of html.matchAll(/<dt\b[^>]*>([\s\S]*?)<\/dt>\s*<dd\b[^>]*>([\s\S]*?)<\/dd>/gi)) add(m[1], m[2]);
+  for (const m of html.matchAll(/<tr\b[^>]*>\s*<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>\s*<td\b[^>]*>([\s\S]*?)<\/td>\s*<\/tr>/gi)) add(m[1], m[2]);
+  return out.slice(0, 150);
+}
+
+exports.hamtaFordon = onCall({ timeoutSeconds: 30, memory: "256MiB", maxInstances: 2 }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
+  const plate = String(req.data?.plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!/^[A-Z]{3}[0-9]{2}[A-Z0-9]$/.test(plate) && !/^[A-Z0-9]{2,7}$/.test(plate)) throw new HttpsError("invalid-argument", "Registreringsnumret ser fel ut.");
+  // Högst några sökningar per person och dag.
+  const usageRef = db.doc(`lookups/${uid}`);
+  const day = todayStr();
+  const used = await db.runTransaction(async (tx) => {
+    const d = (await tx.get(usageRef)).data() || {};
+    const n = (d.day === day ? d.n || 0 : 0) + 1;
+    if (n > LOOKUPS_PER_DAY) return n;
+    tx.set(usageRef, { day, n, updatedAt: Date.now() });
+    return n;
+  });
+  if (used > LOOKUPS_PER_DAY) return { ok: false, reason: "limit" };
+  let html;
+  try {
+    const res = await fetch(`${TS_VEHICLE_URL}?Registreringsnummer=${encodeURIComponent(plate)}`, {
+      headers: { "User-Agent": "Bildagboken/1.0 (+https://bildagboken.com)", Accept: "text/html", "Accept-Language": "sv-SE,sv;q=0.9" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) { logger.info("hamtaFordon http", { status: res.status }); return { ok: false, reason: "http" }; }
+    html = (await res.text()).slice(0, 2_000_000);
+  } catch (e) {
+    logger.info("hamtaFordon fetch", { msg: String(e?.message || e).slice(0, 120) });
+    return { ok: false, reason: "network" };
+  }
+  const fields = parseVehiclePage(html);
+  const reg = fields.find(([k]) => /^registreringsnummer$/i.test(k));
+  // Kontrollera att sidan verkligen gäller rätt bil. Annars (robotkontroll, felsida, ändrad sida) svarar vi att det inte gick.
+  if (!reg || reg[1].toUpperCase().replace(/[^A-Z0-9]/g, "") !== plate || fields.length < 4) {
+    logger.info("hamtaFordon parse", { fields: fields.length, captcha: /captcha|robot/i.test(html) });
+    return { ok: false, reason: "parse" };
+  }
+  return { ok: true, fields };
+});
