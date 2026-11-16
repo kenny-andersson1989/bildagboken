@@ -1172,14 +1172,22 @@ function dictate(onText) {
       return;
     }
     if (!SpeechRec) return fail(new Error("unsupported"));
+    // iPhone slutar inte lyssna av sig själv, så appen avgör när man har pratat klart: en dryg sekunds
+    // tystnad efter att man har sagt något (eller åtta sekunder utan att något sägs).
     const rec = new SpeechRec();
     rec.lang = lang;
     rec.interimResults = true;
-    rec.onresult = (ev) => { text = [...ev.results].map((r) => r[0].transcript).join(""); onText(text); };
+    rec.continuous = true;
+    const stopNow = () => { clearTimeout(quiet); try { rec.stop(); } catch { finish(); } setTimeout(finish, 2500); };
+    rec.onresult = (ev) => {
+      text = [...ev.results].map((r) => r[0].transcript).join("");
+      onText(text);
+      clearTimeout(quiet); quiet = setTimeout(stopNow, text.trim() ? 1500 : 8000);
+    };
     rec.onerror = (ev) => { if (ev.error === "not-allowed" || ev.error === "service-not-allowed") fail(new Error("denied")); };
     rec.onend = finish;
-    dictStop = () => { try { rec.stop(); } catch { finish(); } };
-    try { rec.start(); } catch (e) { fail(e); }
+    dictStop = stopNow;
+    try { rec.start(); quiet = setTimeout(stopNow, 8000); max = setTimeout(stopNow, 45000); } catch (e) { fail(e); }
   });
 }
 function dictateError(e) {
@@ -1374,7 +1382,7 @@ function voiceUi(state, text = "") {
   if (!v) return;
   v.hidden = false;
   v.dataset.state = state;
-  const label = { listen: "Jag lyssnar …", think: `${AI_NAME} tänker …`, talk: `${AI_NAME} pratar. Tryck på cirkeln för att avbryta.`, idle: "Tryck på cirkeln och prata." }[state] || "";
+  const label = { listen: "Jag lyssnar … Tryck på mig när du är klar.", think: `${AI_NAME} tänker …`, talk: `${AI_NAME} pratar. Tryck på cirkeln för att avbryta.`, idle: "Tryck på cirkeln och prata." }[state] || "";
   $("#voice-state").textContent = EN ? tr(label) : label;
   $("#voice-text").textContent = text;
 }
