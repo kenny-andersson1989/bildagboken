@@ -558,7 +558,18 @@ async function googleToken() {
   return gToken;
 }
 // Bästa svenska mansrösten som finns: Chirp 3 HD, annars Neural2, annars WaveNet.
+// Glenns röst kan väljas av administratören (config/glenn: voice, rate). Läses högst var femte minut.
+let voiceCfg = null, voiceCfgAt = 0;
+async function glennVoiceCfg() {
+  if (voiceCfg && Date.now() - voiceCfgAt < 5 * 60000) return voiceCfg;
+  voiceCfg = (await db.doc("config/glenn").get().catch(() => null))?.data() || {};
+  voiceCfgAt = Date.now();
+  return voiceCfg;
+}
+const ttsRate = (r) => (Number.isFinite(r) && r >= 0.7 && r <= 1.4 ? Math.round(r * 100) / 100 : 1);
 async function pickVoice(token) {
+  const cfg = await glennVoiceCfg();
+  if (cfg.voice) return cfg.voice;
   if (ttsVoice) return ttsVoice;
   const r = await fetch("https://texttospeech.googleapis.com/v1/voices?languageCode=sv-SE", { headers: { Authorization: `Bearer ${token}` } });
   if (!r.ok) throw new Error("voices " + r.status);
@@ -611,7 +622,7 @@ exports.glennPratar = onCall({ timeoutSeconds: 60, memory: "256MiB", maxInstance
     const r = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
       method: "POST",
       headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ input: { text }, voice: { languageCode: "sv-SE", ...(voice ? { name: voice } : { ssmlGender: "MALE" }) }, audioConfig: { audioEncoding: "MP3" } }),
+      body: JSON.stringify({ input: { text }, voice: { languageCode: "sv-SE", ...(voice ? { name: voice } : { ssmlGender: "MALE" }) }, audioConfig: { audioEncoding: "MP3", speakingRate: ttsRate((await glennVoiceCfg()).rate) } }),
     });
     if (!r.ok) { logger.error("Text-till-tal svarade med fel", { status: r.status, body: (await r.text()).slice(0, 300) }); throw new Error("tts " + r.status); }
     return { ok: true, audio: (await r.json()).audioContent, voice };
@@ -886,4 +897,38 @@ exports.hamtaFordon = onCall({ secrets: [REGNR_USERNAME], timeoutSeconds: 30, me
   const withLeft = job.then((r) => ({ ...r, left: gate.left }));
   regInflight.set(plate, job);
   try { return await withLeft; } finally { regInflight.delete(plate); }
+});
+
+// Administratören provlyssnar på Googles svenska röster och väljer Glenns röst och takt.
+// action: "list" (rösterna och nuvarande val), "sample" (en provmening med en röst och takt), "set" (spara valet).
+exports.adminVoice = onCall({ timeoutSeconds: 30, memory: "256MiB", maxInstances: 1 }, async (req) => {
+  if (req.auth?.uid !== ADMIN_UID) throw new HttpsError("permission-denied", "Bara administratören.");
+  const { action } = req.data || {};
+  const token = await googleToken();
+  if (action === "list") {
+    const r = await fetch("https://texttospeech.googleapis.com/v1/voices?languageCode=sv-SE", { headers: { Authorization: `Bearer ${token}` } });
+    const voices = ((await r.json()).voices || []).filter((v) => (v.languageCodes || []).includes("sv-SE"))
+      .map((v) => ({ name: v.name, gender: v.ssmlGender }))
+      .sort((a, b) => (a.gender === b.gender ? a.name.localeCompare(b.name) : a.gender === "MALE" ? -1 : 1));
+    const cfg = await glennVoiceCfg();
+    return { ok: true, voices, current: cfg.voice || ttsVoice || null, auto: !cfg.voice, rate: ttsRate(cfg.rate) };
+  }
+  const voice = String(req.data?.voice || "");
+  if (voice && !/^sv-SE-[A-Za-z0-9-]+$/.test(voice)) throw new HttpsError("invalid-argument", "Fel röst.");
+  const rate = ttsRate(Number(req.data?.rate));
+  if (action === "sample") {
+    const text = spoken("Tjenare! Jag är Glenn. Bilen har gått 21 480 mil, och nästa service är om ungefär 1 500 mil. Kör försiktigt nu, det är halt ute!");
+    const r = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
+      method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ input: { text }, voice: { languageCode: "sv-SE", name: voice }, audioConfig: { audioEncoding: "MP3", speakingRate: rate } }),
+    });
+    if (!r.ok) throw new HttpsError("unavailable", `Rösten gick inte att prova (${r.status}).`);
+    return { ok: true, audio: (await r.json()).audioContent };
+  }
+  if (action === "set") {
+    await db.doc("config/glenn").set({ voice: voice || null, rate, updatedAt: Date.now() }, { merge: true });
+    voiceCfg = null; ttsVoice = null;
+    return { ok: true };
+  }
+  throw new HttpsError("invalid-argument", "Okänd åtgärd.");
 });
