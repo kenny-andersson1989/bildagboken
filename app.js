@@ -1146,6 +1146,7 @@ function carContext(c) {
   const v = (x) => x != null && x !== "";
   L.push(`Dagens datum: ${todayStr()}.`, "", "# Bilen");
   const facts = [["Bil", carName(c)], ["Årsmodell", c.year], ["Drivmedel", c.fuel], ["Registreringsnummer", c.plate], ["Färg", c.color],
+    ["Kaross", c.bodyStyle], ["Antal säten", c.seats], ["I trafik första gången", c.firstReg], ["Koldioxid", c.co2 && `${c.co2} g/km`],
     ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : null], ["Sista dag för besiktning", c.besiktning],
     ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${c.forsakringDatum}` : ""].filter(Boolean).join(", ")],
     ["Fordonsskatt betalas", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : null]];
@@ -2453,7 +2454,7 @@ document.addEventListener("input", (ev) => { if (["tc-total", "tc-curb"].include
 const plateKey = (p) => String(p || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 const plateOk = (p) => /^[A-Z]{3}[0-9]{2}[A-Z0-9]$/.test(plateKey(p));
 const fmtPlate = (p) => (plateOk(p) ? `${plateKey(p).slice(0, 3)} ${plateKey(p).slice(3)}` : String(p || "").toUpperCase().trim());
-const regKey = (k) => String(k).toLowerCase().split(".").pop().replace(/\[\d+\]/g, "").normalize("NFD").replace(/[^a-z]/g, "");
+const regKey = (k) => String(k).toLowerCase().split(".").pop().replace(/\[\d+\]/g, "").normalize("NFD").replace(/[^a-z0-9]/g, "");
 function regGet(f, ...names) {
   for (const n of names) { const hit = (f || []).find((x) => regKey(x.k) === n); if (hit?.v) return String(hit.v).trim(); }
   return null;
@@ -2494,6 +2495,19 @@ function regToCar(f) {
   const total = kg("grossweight", "totalvikt", "totalweight", "maxweight");
   const train = kg("trainweight", "tagvikt", "maxtrainweight", "combinedweight");
   if (tow) out.towMax = tow; if (total) out.totalWeight = total; if (train) out.trainWeight = train;
+  const body = regGet(f, "bodystyle", "kaross", "bodytype");
+  if (body && !/okänd|unknown/i.test(body)) out.bodyStyle = body[0].toUpperCase() + body.slice(1).toLowerCase();
+  const seats = regNumber(regGet(f, "numberofseats", "seats", "passagerare", "antalpassagerare"));
+  if (seats && seats > 0 && seats < 60) out.seats = seats;
+  const first = regDay(regGet(f, "registrationdate", "firstregistration", "firstregistrationdate", "itrafikforstagangen"));
+  if (first) out.firstReg = first;
+  const co2 = regNumber(regGet(f, "co2", "co2emissions", "koldioxid"));
+  if (co2 && co2 > 0 && co2 < 1000) out.co2 = Math.round(co2);
+  // En bil som är yngre än tre år: första besiktningen ska vara gjord inom 36 månader från första registreringen.
+  if (first && !out.besiktning) {
+    const d = parseDate(first), due = new Date(d.getFullYear(), d.getMonth() + 37, 0);
+    if (due >= new Date()) out.besiktning = ymd(due);
+  }
   const tax = regNumber(regGet(f, "annualtax", "tax", "fordonsskatt", "arsskatt", "vehicletax"));
   if (tax && tax > 0 && tax < 100000) out.skattBelopp = Math.round(tax);
   return out;
@@ -2571,8 +2585,8 @@ async function regRefresh(c) {
     const d = regToCar(f);
     // Det man själv har skrivit står kvar. Besiktningen tas från registret.
     const upd = { reg: { f: f.slice(0, 150), at: Date.now() } };
-    if (d.besiktning) upd.besiktning = d.besiktning;
-    for (const k of ["vin", "color", "year", "engine", "gearbox", "towMax", "totalWeight", "trainWeight", "skattBelopp"]) if (d[k] != null && (c[k] == null || c[k] === "")) upd[k] = d[k];
+    if (d.besiktning && !c.besiktning) upd.besiktning = d.besiktning;
+    for (const k of ["vin", "color", "year", "engine", "fuel", "gearbox", "towMax", "totalWeight", "trainWeight", "skattBelopp", "bodyStyle", "seats", "firstReg", "co2"]) if (d[k] != null && (c[k] == null || c[k] === "")) upd[k] = d[k];
     try { await updateDoc(ref("cars", c.id), upd); Object.assign(c, upd); showToast("Uppgifterna är hämtade"); render(); } catch (e) { onWriteError(e); }
   });
 }
@@ -4163,7 +4177,7 @@ function viewCar() {
     <!--card:upp--><div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,more,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
         ${c.vin ? `<div><dt>Chassinummer</dt><dd class="vin-dd"><span data-notr>${esc(c.vin)}</span><button class="link" type="button" data-act="copy-vin">Kopiera</button></dd></div>` : ""}
-        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Växellåda", c.gearbox], ["Tankvolym", c.tankVolume ? `${fmt(c.tankVolume)} liter` : ""], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkringsbolag", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
+        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Kaross", [c.bodyStyle, c.seats ? `${c.seats} säten` : ""].filter(Boolean).join(", ")], ["Växellåda", c.gearbox], ["I trafik sedan", c.firstReg ? fmtDate(c.firstReg) : ""], ["Koldioxid", c.co2 ? `${c.co2} g/km` : ""], ["Tankvolym", c.tankVolume ? `${fmt(c.tankVolume)} liter` : ""], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkringsbolag", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>
@@ -8059,7 +8073,7 @@ async function saveNewCar(form) {
   const reg = regFromForm(form);
   if (reg) {
     const d = regToCar(reg.f);
-    for (const k of ["besiktning", "gearbox", "towMax", "totalWeight", "trainWeight", "skattBelopp"]) if (d[k] != null && data[k] == null) data[k] = d[k];
+    for (const k of ["besiktning", "gearbox", "towMax", "totalWeight", "trainWeight", "skattBelopp", "bodyStyle", "seats", "firstReg", "co2"]) if (d[k] != null && data[k] == null) data[k] = d[k];
     data.reg = reg;
   }
   if (startOdo != null && (startOdo < 0 || startOdo > 200000)) return formError("Mätarställningen ser fel ut. Ange den i mil, till exempel 21 480.") ?? showToast("Mätarställningen ser fel ut. Ange den i mil.");
