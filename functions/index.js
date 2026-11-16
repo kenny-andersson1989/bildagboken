@@ -334,7 +334,8 @@ const CHAT_SYSTEM = [
   "Svara kort: oftast två till fyra meningar, om användaren inte ber om mer. Skriv i hela meningar, utan rubriker, listor, tabeller, fetstil eller tecken som * och #, eftersom svaret ofta läses upp.",
   "Svara på svenska, eller på engelska om användaren skriver på engelska (då som en glad göteborgare som pratar engelska).",
   "Du kan logga en tankning åt användaren med verktyget logga_tankning. Vill användaren logga en tankning: fråga först efter det som saknas, en sak i taget och kort: var hen tankade, vad det kostade totalt och om det var full tank. Mätarställning är frivillig, så fråga inte efter den, men ta med den om användaren säger den. Datum är i dag om användaren inte säger något annat. Anropa verktyget först när du vet station, belopp och full tank, och skriv samtidigt en kort mening om att du har fyllt i det. Användaren sparar själv med en knapp i appen.",
-  "Glenn syns som en liten figur i appen. Är svaret goda nyheter, beröm eller något som ser bra ut, avsluta med taggen [tumme]. Skämtar du eller säger något med glimten i ögat, avsluta med [blink]. Annars ingen tagg. Högst en tagg, och inte i varje svar.",
+  "Du vet var användaren är just nu om appen har fått lov (se Just nu nedan). Med verktyget sok_i_narheten hittar du närmaste mack, laddstolpe, verkstad, däckverkstad, biltvätt eller parkering, och med verktyget vader får du vädret där användaren är eller på en ort. Säg avstånd i kilometer och nämn gärna halka, snö eller hård vind när det spelar roll för bilen. Appen visar knappar med vägbeskrivning till ställena du hittar, så du behöver inte läsa upp hela adresser.",
+    "Glenn syns som en liten figur i appen. Är svaret goda nyheter, beröm eller något som ser bra ut, avsluta med taggen [tumme]. Skämtar du eller säger något med glimten i ögat, avsluta med [blink]. Annars ingen tagg. Högst en tagg, och inte i varje svar.",
 ].join(" ");
 
 exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB", maxInstances: 3 }, async (req) => {
@@ -359,18 +360,46 @@ exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120,
   });
   if (used > CHAT_MONTHLY_LIMIT) throw new HttpsError("resource-exhausted", `Ni har ställt ${CHAT_MONTHLY_LIMIT} frågor den här månaden. Det fylls på nästa månad.`);
 
+  // Var användaren är just nu (om appen fick lov), för vädret och för att hitta något i närheten.
+  const h = req.data?.here;
+  const here = h && Number.isFinite(h.lat) && Number.isFinite(h.lon) && Math.abs(h.lat) <= 90 && Math.abs(h.lon) <= 180
+    ? { lat: h.lat, lon: h.lon, name: String(h.name || "").slice(0, 120) } : null;
+  const now = new Date().toLocaleString("sv-SE", { timeZone: TZ, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const situation = `Just nu: ${now}. ${here ? `Användaren är just nu vid ${here.name || "en okänd adress"} (${here.lat.toFixed(4)}, ${here.lon.toFixed(4)}).` : "Användarens plats är okänd (appen har inte fått lov att använda platsen). Be användaren slå på platsen om det behövs."}`;
+
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
-  let res;
+  const convo = [...msgs];
+  let res, action = null, places = null;
   try {
-    res = await client.messages.create({
-      model: AI_MODEL,
-      max_tokens: 4000,
-      output_config: { effort: "medium" },
-      // Bilens uppgifter sparas tillfälligt hos Anthropic, så att följdfrågor i samma samtal kostar nästan inget.
-      system: [{ type: "text", text: CHAT_SYSTEM }, { type: "text", text: context, cache_control: { type: "ephemeral" } }],
-      tools: [TANK_TOOL],
-      messages: msgs,
-    });
+    // Glenn kan använda verktygen några gånger (till exempel väder och sedan en mack) innan han svarar.
+    for (let round = 0; round < 4; round++) {
+      res = await client.messages.create({
+        model: AI_MODEL,
+        max_tokens: 4000,
+        output_config: { effort: "medium" },
+        // Bilens uppgifter sparas tillfälligt hos Anthropic, så att följdfrågor i samma samtal kostar nästan inget.
+        // Tid och plats ligger efter, eftersom de ändras.
+        system: [{ type: "text", text: CHAT_SYSTEM }, { type: "text", text: context, cache_control: { type: "ephemeral" } }, { type: "text", text: situation }],
+        tools: [TANK_TOOL, NEARBY_TOOL, WEATHER_TOOL],
+        messages: convo,
+      });
+      if (res.stop_reason !== "tool_use") break;
+      const results = [];
+      for (const b of res.content.filter((x) => x.type === "tool_use")) {
+        let out;
+        try {
+          if (b.name === "logga_tankning") { action = tankAction(b.input) || action; out = action ? "Kortet med tankningen visas nu för användaren, som sparar med en knapp." : "Uppgifterna räckte inte. Fråga efter det som saknas."; }
+          else if (b.name === "sok_i_narheten") { const r = await nearby(b.input, here); if (r.places?.length) places = r.places.slice(0, 3); out = JSON.stringify(r); }
+          else if (b.name === "vader") out = JSON.stringify(await weather(b.input, here));
+          else out = "Okänt verktyg.";
+        } catch (e) {
+          logger.warn("Verktyget fungerade inte", { tool: b.name, message: e?.message });
+          out = "Det gick inte att hämta just nu.";
+        }
+        results.push({ type: "tool_result", tool_use_id: b.id, content: String(out).slice(0, 8000) });
+      }
+      convo.push({ role: "assistant", content: res.content }, { role: "user", content: results });
+    }
   } catch (e) {
     logger.error("Claude svarade med fel", { status: e?.status, message: e?.message });
     if (e?.status === 401 || e?.status === 403) throw new HttpsError("failed-precondition", "AI-nyckeln fungerar inte.");
@@ -379,26 +408,106 @@ exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120,
   }
   if (res.stop_reason === "refusal") return { ok: true, answer: "Det kan jag tyvärr inte svara på. Fråga gärna något annat om bilen.", left: CHAT_MONTHLY_LIMIT - used };
   let answer = res.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
-  // Tankningen som Glenn har fyllt i, kontrollerad innan den skickas till appen.
-  let action = null;
-  const use = res.content.find((b) => b.type === "tool_use" && b.name === "logga_tankning");
-  if (use) {
-    const i = use.input || {};
-    const amount = Number(i.belopp_kr);
-    if (i.station && amount > 0 && amount < 100000) {
-      action = {
-        type: "tank", station: String(i.station).slice(0, 80), amount: Math.round(amount * 100) / 100, full: i.full_tank !== false,
-        date: /^\d{4}-\d{2}-\d{2}$/.test(i.datum || "") && i.datum <= todayStr() ? i.datum : todayStr(),
-        odometer: Number(i.matarstallning_mil) > 0 ? Math.round(Number(i.matarstallning_mil)) : null,
-      };
-    }
-    if (!answer) answer = "Gött, jag har fyllt i tankningen. Tryck på Spara så är den loggad!";
-  }
+  if (!answer && action) answer = "Gött, jag har fyllt i tankningen. Tryck på Spara så är den loggad!";
   // Taggen styr Glenns figur i appen (tummen upp eller blinkning) och tas bort ur texten.
   const tag = answer.match(/\[(tumme|blink)\]/i);
   answer = answer.replace(/\s*\[(tumme|blink)\]\s*/gi, " ").trim();
-  return { ok: true, answer: answer || "Jag hittade inget svar. Försök fråga på ett annat sätt.", mood: tag ? (tag[1].toLowerCase() === "tumme" ? "thumb" : "wink") : null, action, left: CHAT_MONTHLY_LIMIT - used };
+  return { ok: true, answer: answer || "Jag hittade inget svar. Försök fråga på ett annat sätt.", mood: tag ? (tag[1].toLowerCase() === "tumme" ? "thumb" : "wink") : null, action, places, left: CHAT_MONTHLY_LIMIT - used };
 });
+
+// Tankningen som Glenn har fyllt i, kontrollerad innan den skickas till appen.
+function tankAction(i = {}) {
+  const amount = Number(i.belopp_kr);
+  if (!i.station || !(amount > 0 && amount < 100000)) return null;
+  return {
+    type: "tank", station: String(i.station).slice(0, 80), amount: Math.round(amount * 100) / 100, full: i.full_tank !== false,
+    date: /^\d{4}-\d{2}-\d{2}$/.test(i.datum || "") && i.datum <= todayStr() ? i.datum : todayStr(),
+    odometer: Number(i.matarstallning_mil) > 0 ? Math.round(Number(i.matarstallning_mil)) : null,
+  };
+}
+
+/* Närmaste mack, laddstolpe, verkstad med mera: OpenStreetMap (Overpass), fritt och utan nyckel.
+   Bara koordinaterna skickas dit, inget om användaren. */
+const NEARBY_KINDS = {
+  bensin: "[amenity=fuel]", laddning: "[amenity=charging_station]", verkstad: "[shop=car_repair]",
+  dack: "[shop=tyres]", biltvatt: "[amenity=car_wash]", parkering: "[amenity=parking]",
+};
+const NEARBY_TOOL = {
+  name: "sok_i_narheten",
+  description: "Söker ställen nära användarens plats just nu: bensinmackar, laddstolpar, bilverkstäder, däckverkstäder, biltvättar eller parkeringar. Ger namn, adress, avstånd och öppettider.",
+  input_schema: {
+    type: "object", additionalProperties: false, required: ["typ"],
+    properties: {
+      typ: { type: "string", enum: Object.keys(NEARBY_KINDS) },
+      radie_km: { type: "number", description: "Hur långt bort att söka, 1 till 25 km. Standard 5." },
+    },
+  },
+};
+const distKm = (a, b) => {
+  const R = 6371, rad = Math.PI / 180, dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+};
+async function nearby(input = {}, here) {
+  if (!here) return { fel: "Användarens plats är okänd. Be hen tillåta platsen i appen." };
+  const kind = NEARBY_KINDS[input.typ] ? input.typ : "bensin";
+  const r = Math.round(Math.min(25, Math.max(1, Number(input.radie_km) || 5)) * 1000);
+  const q = `[out:json][timeout:15];nwr(around:${r},${here.lat},${here.lon})${NEARBY_KINDS[kind]};out center tags 40;`;
+  const resp = await fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Bildagboken/1.0" },
+    body: "data=" + encodeURIComponent(q), signal: AbortSignal.timeout(12000),
+  });
+  if (!resp.ok) throw new Error("overpass " + resp.status);
+  const els = (await resp.json()).elements || [];
+  const list = els.map((e) => {
+    const t = e.tags || {};
+    const lat = e.lat ?? e.center?.lat, lon = e.lon ?? e.center?.lon;
+    if (lat == null || lon == null) return null;
+    const addr = [[t["addr:street"], t["addr:housenumber"]].filter(Boolean).join(" "), t["addr:city"]].filter(Boolean).join(", ");
+    return { namn: t.name || t.brand || t.operator || null, kedja: t.brand || null, adress: addr || null, km: Math.round(distKm(here, { lat, lon }) * 10) / 10, oppet: t.opening_hours || null, lat, lon };
+  }).filter((x) => x && (x.namn || kind === "parkering")).sort((a, b) => a.km - b.km).slice(0, 6);
+  return { typ: kind, radie_km: r / 1000, antal: list.length, places: list.map((x) => ({ ...x, namn: x.namn || "Parkering" })) };
+}
+
+/* Vädret: Open-Meteo, fritt och utan nyckel. Där användaren är, eller på en ort som Glenn får som namn. */
+const WEATHER_TOOL = {
+  name: "vader",
+  description: "Hämtar vädret just nu och de närmaste dagarna (temperatur, nederbörd, snö, vind och risk för halka). Utan plats gäller det där användaren är.",
+  input_schema: {
+    type: "object", additionalProperties: false,
+    properties: {
+      plats: { type: "string", description: "En ort, till exempel Stockholm. Utelämna för användarens plats." },
+      dagar: { type: "integer", description: "Hur många dagar framåt, 1 till 4. Standard 2." },
+    },
+  },
+};
+const WMO = { 0: "klart", 1: "mest klart", 2: "halvklart", 3: "mulet", 45: "dimma", 48: "dimma med rimfrost", 51: "lätt duggregn", 53: "duggregn", 55: "kraftigt duggregn", 56: "underkylt duggregn", 57: "kraftigt underkylt duggregn", 61: "lätt regn", 63: "regn", 65: "kraftigt regn", 66: "underkylt regn", 67: "kraftigt underkylt regn", 71: "lätt snöfall", 73: "snöfall", 75: "kraftigt snöfall", 77: "snökorn", 80: "lätta regnskurar", 81: "regnskurar", 82: "kraftiga regnskurar", 85: "snöbyar", 86: "kraftiga snöbyar", 95: "åska", 96: "åska med hagel", 99: "kraftig åska med hagel" };
+async function weather(input = {}, here) {
+  let place = here, name = here?.name || "användarens plats";
+  if (input.plats) {
+    const g = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(String(input.plats).slice(0, 80))}&count=1&language=sv&format=json`, { signal: AbortSignal.timeout(8000) });
+    const hit = g.ok ? (await g.json()).results?.[0] : null;
+    if (!hit) return { fel: `Hittade ingen ort som heter ${input.plats}.` };
+    place = { lat: hit.latitude, lon: hit.longitude }; name = [hit.name, hit.admin1].filter(Boolean).join(", ");
+  }
+  if (!place) return { fel: "Användarens plats är okänd. Be hen tillåta platsen i appen, eller nämna en ort." };
+  const days = Math.min(4, Math.max(1, Number(input.dagar) || 2));
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_gusts_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,snowfall_sum,wind_speed_10m_max&timezone=Europe%2FStockholm&forecast_days=${days}&wind_speed_unit=ms`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error("open-meteo " + r.status);
+  const w = await r.json();
+  const c = w.current || {}, d = w.daily || {};
+  return {
+    plats: name,
+    nu: { temp: c.temperature_2m, kanns_som: c.apparent_temperature, vader: WMO[c.weather_code] || null, nederbord_mm: c.precipitation, vind_ms: c.wind_speed_10m, byar_ms: c.wind_gusts_10m },
+    dagar: (d.time || []).map((t, k) => ({
+      datum: t, vader: WMO[d.weather_code?.[k]] || null, min: d.temperature_2m_min?.[k], max: d.temperature_2m_max?.[k],
+      nederbord_mm: d.precipitation_sum?.[k], risk_nederbord_procent: d.precipitation_probability_max?.[k], sno_cm: d.snowfall_sum?.[k], vind_max_ms: d.wind_speed_10m_max?.[k],
+      // Halka: minusgrader eller runt noll, samtidigt som det kommer nederbörd.
+      risk_for_halka: (d.temperature_2m_min?.[k] ?? 9) <= 1 && ((d.precipitation_sum?.[k] ?? 0) > 0 || (d.snowfall_sum?.[k] ?? 0) > 0),
+    })),
+  };
+}
 
 // Glenns röst: Googles text-till-tal med en naturlig svensk mansröst. Kräver att Cloud Text-to-Speech API är
 // påslaget i projektet (gcloud services enable texttospeech.googleapis.com). Tak per hushåll och månad i tecken.
