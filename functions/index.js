@@ -334,7 +334,7 @@ const CHAT_SYSTEM = [
   "Svara kort: oftast två till fyra meningar, om användaren inte ber om mer. Skriv i hela meningar, utan rubriker, listor, tabeller, fetstil eller tecken som * och #, eftersom svaret ofta läses upp.",
   "Svara på svenska, eller på engelska om användaren skriver på engelska (då som en glad göteborgare som pratar engelska).",
   "Du kan logga en tankning åt användaren med verktyget logga_tankning. Vill användaren logga en tankning: fråga först efter det som saknas, en sak i taget och kort: var hen tankade, vad det kostade totalt och om det var full tank. Mätarställning är frivillig, så fråga inte efter den, men ta med den om användaren säger den. Datum är i dag om användaren inte säger något annat. Anropa verktyget först när du vet station, belopp och full tank, och skriv samtidigt en kort mening om att du har fyllt i det. Användaren sparar själv med en knapp i appen.",
-  "Du vet var användaren är just nu om appen har fått lov (se Just nu nedan). Med verktyget sok_i_narheten hittar du närmaste mack, laddstolpe, verkstad, däckverkstad, biltvätt eller parkering, och med verktyget vader får du vädret där användaren är eller på en ort. Säg avstånd i kilometer och nämn gärna halka, snö eller hård vind när det spelar roll för bilen. Appen visar knappar med vägbeskrivning till ställena du hittar, så du behöver inte läsa upp hela adresser.",
+  "Du vet var användaren är just nu om appen har fått lov (se Just nu nedan). Med verktyget sok_i_narheten hittar du närmaste mack, laddstolpe, verkstad, däckverkstad, biltvätt eller parkering, och med verktyget vader får du vädret där användaren är eller på en ort. Säg grader och vind i hela tal, avstånd i kilometer med högst en decimal, och nämn gärna halka, snö eller hård vind när det spelar roll för bilen. Appen visar knappar med vägbeskrivning till ställena du hittar, så du behöver inte läsa upp hela adresser.",
     "Glenn syns som en liten figur i appen. Är svaret goda nyheter, beröm eller något som ser bra ut, avsluta med taggen [tumme]. Skämtar du eller säger något med glimten i ögat, avsluta med [blink]. Annars ingen tagg. Högst en tagg, och inte i varje svar.",
 ].join(" ");
 
@@ -497,12 +497,15 @@ async function weather(input = {}, here) {
   if (!r.ok) throw new Error("open-meteo " + r.status);
   const w = await r.json();
   const c = w.current || {}, d = w.daily || {};
+  // Grader och vind i heltal, så att Glenn säger "6 grader" och inte "6,3 grader".
+  const r0 = (x) => (x == null ? null : Math.round(x));
+  const r1 = (x) => (x == null ? null : Math.round(x * 10) / 10);
   return {
     plats: name,
-    nu: { temp: c.temperature_2m, kanns_som: c.apparent_temperature, vader: WMO[c.weather_code] || null, nederbord_mm: c.precipitation, vind_ms: c.wind_speed_10m, byar_ms: c.wind_gusts_10m },
+    nu: { temp: r0(c.temperature_2m), kanns_som: r0(c.apparent_temperature), vader: WMO[c.weather_code] || null, nederbord_mm: r1(c.precipitation), vind_ms: r0(c.wind_speed_10m), byar_ms: r0(c.wind_gusts_10m) },
     dagar: (d.time || []).map((t, k) => ({
-      datum: t, vader: WMO[d.weather_code?.[k]] || null, min: d.temperature_2m_min?.[k], max: d.temperature_2m_max?.[k],
-      nederbord_mm: d.precipitation_sum?.[k], risk_nederbord_procent: d.precipitation_probability_max?.[k], sno_cm: d.snowfall_sum?.[k], vind_max_ms: d.wind_speed_10m_max?.[k],
+      datum: t, vader: WMO[d.weather_code?.[k]] || null, min: r0(d.temperature_2m_min?.[k]), max: r0(d.temperature_2m_max?.[k]),
+      nederbord_mm: r1(d.precipitation_sum?.[k]), risk_nederbord_procent: d.precipitation_probability_max?.[k], sno_cm: r1(d.snowfall_sum?.[k]), vind_max_ms: r0(d.wind_speed_10m_max?.[k]),
       // Halka: minusgrader eller runt noll, samtidigt som det kommer nederbörd.
       risk_for_halka: (d.temperature_2m_min?.[k] ?? 9) <= 1 && ((d.precipitation_sum?.[k] ?? 0) > 0 || (d.snowfall_sum?.[k] ?? 0) > 0),
     })),
@@ -533,11 +536,25 @@ async function pickVoice(token) {
   return ttsVoice;
 }
 
+// Text som ska läsas upp: "21 480" blir ett tal, "6,3" blir "6 komma 3" och "kr" blir kronor.
+function spoken(t) {
+  return t.replace(/[*#_`]/g, "")
+    .replace(/(\d)[\s\u00a0\u202f](?=\d{3}\b)/g, "$1")
+    .replace(/(\d+),00\s?kr\b/g, "$1 kronor")
+    .replace(/(\d+),(\d\d)\s?kr\b/g, "$1 kronor och $2 öre")
+    .replace(/(\d),(\d)/g, "$1 komma $2")
+    .replace(/\bm\/s\b/g, "meter per sekund")
+    .replace(/(\d)\s?kr\b/g, "$1 kronor")
+    .replace(/(\d)\s?km\b/g, "$1 kilometer")
+    .replace(/(-?\d+)\s?°C?/g, "$1 grader")
+    .replace(/\s+/g, " ").trim();
+}
+
 exports.glennPratar = onCall({ timeoutSeconds: 60, memory: "256MiB", maxInstances: 3 }, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
   const { hid } = req.data || {};
-  const text = String(req.data?.text || "").replace(/[*#_`]/g, "").trim().slice(0, 1500);
+  const text = spoken(String(req.data?.text || "")).slice(0, 1500);
   if (typeof hid !== "string" || !text) throw new HttpsError("invalid-argument", "Texten saknas.");
   const house = (await db.doc(`households/${hid}`).get()).data();
   if (!house || !(house.members || []).includes(uid)) throw new HttpsError("permission-denied", "Du hör inte till hushållet.");
