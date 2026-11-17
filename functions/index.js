@@ -664,7 +664,7 @@ exports.adminPlus = onCall({ timeoutSeconds: 20, memory: "256MiB", maxInstances:
 // hamnar på det hushåll som köparen är med i. Anropet måste ha lösenordet som står under Integrations → Webhooks
 // i RevenueCat (Authorization), och som sparas med: firebase functions:secrets:set REVENUECAT_WEBHOOK_AUTH
 const REVENUECAT_WEBHOOK_AUTH = defineSecret("REVENUECAT_WEBHOOK_AUTH");
-const PLUS_ENTITLEMENT = "plus";
+const PLUS_ENTITLEMENTS = ["bildagboken_plus", "plus"];
 exports.revenuecatWebhook = onRequest({ secrets: [REVENUECAT_WEBHOOK_AUTH], invoker: "public", timeoutSeconds: 30, memory: "256MiB", maxInstances: 2 }, async (req, res) => {
   const want = REVENUECAT_WEBHOOK_AUTH.value().trim();
   const got = String(req.get("authorization") || "").trim();
@@ -674,7 +674,7 @@ exports.revenuecatWebhook = onRequest({ secrets: [REVENUECAT_WEBHOOK_AUTH], invo
   try {
     if (type === "TEST") { logger.info("RevenueCat: testanrop"); res.json({ ok: true, test: true }); return; }
     const ents = Array.isArray(ev.entitlement_ids) ? ev.entitlement_ids : ev.entitlement_id ? [ev.entitlement_id] : [];
-    if (ents.length && !ents.includes(PLUS_ENTITLEMENT)) { res.json({ ok: true, skipped: "annan entitlement" }); return; }
+    if (ents.length && !ents.some((x) => PLUS_ENTITLEMENTS.includes(x))) { res.json({ ok: true, skipped: "annan entitlement" }); return; }
     const exp = Number(ev.expiration_at_ms);
     // Köparen: Firebase-id:t. Anonyma id:n i RevenueCat ($RCAnonymousID) hör inte till något hushåll.
     const ids = [ev.app_user_id, ev.original_app_user_id, ...(Array.isArray(ev.aliases) ? ev.aliases : [])].map(String).filter((x) => x && !x.startsWith("$RCAnonymous"));
