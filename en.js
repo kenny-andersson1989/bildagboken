@@ -1050,7 +1050,7 @@ export const EN = {
   "Papper och avtal": "Papers and agreements",
   "Försäkring, garanti, vägassistans och andra papper på ett ställe, med påminnelse innan något går ut.": "Insurance, warranty, roadside assistance and other papers in one place, with a reminder before anything expires.",
   "Smarta påminnelser": "Smart reminders",
-  "Appen räknar ut när service och byten blir aktuella utifrån hur mycket ni kör, och lägger in dem i kalendern.": "The app works out when service and replacements are due based on how much you drive, and adds them to your calendar.",
+  "Appen räknar ut när service och byten blir aktuella utifrån hur mycket ni kör.": "The app works out when service and replacements are due based on how much you drive.",
   "Mer om kostnaderna": "More about the costs",
   "Jämför år mot år och se vad bilen beräknas kosta i år.": "Compare year on year and see what the car is expected to cost this year.",
   "Säljpaket": "Sale pack",

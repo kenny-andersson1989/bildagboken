@@ -492,7 +492,7 @@ const PLUS_FEATURES = {
   members: ["home", "Upp till 6 personer", "Alla i familjen som kör bilarna kan vara med."],
   photos: ["image", "2 000 bilder", "Plats för kvitton, dokument och bilder på bilen."],
   docs: ["doc", "Papper och avtal", "Försäkring, garanti, vägassistans och andra papper på ett ställe, med påminnelse innan något går ut."],
-  forecast: ["calendar", "Smarta påminnelser", "Appen räknar ut när service och byten blir aktuella utifrån hur mycket ni kör, och lägger in dem i kalendern."],
+  forecast: ["calendar", "Smarta påminnelser", "Appen räknar ut när service och byten blir aktuella utifrån hur mycket ni kör."],
   econ: ["coin", "Mer om kostnaderna", "Jämför år mot år och se vad bilen beräknas kosta i år."],
   salepack: ["print", "Säljpaket", "Serviceboken som PDF med kvittona och en sammanställning av kostnaderna, inför en försäljning."],
   letter: ["bell", "Glenns månadsbrev", "En hälsning från Glenn varje månad: vad bilen kostade, hur mycket ni körde och vad som närmar sig."],
@@ -3628,64 +3628,6 @@ function printFallback(data) {
   setTimeout(() => window.print(), 50);
 }
 const pdfName = (d) => `Servicebok ${d.car || ""}${d.plate ? " " + d.plate : ""}`.trim().replace(/[^\wåäöÅÄÖ -]/g, "") + ".pdf";
-// Kalenderfil (Plus): besiktning, beräknade byten, bokade tider och papper som går ut.
-function icsEsc(t) { return String(t || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n"); }
-function calendarEvents(c) {
-  const name = carName(c), ev = [];
-  if (c.besiktning && c.besiktning >= todayStr()) ev.push({ d: parseDate(c.besiktning), t: `Sista dag för besiktning: ${name}`, n: "" });
-  for (const s of allItemStatus(c)) {
-    const f = itemForecast(s, c);
-    if (f && f.d >= today0()) ev.push({ d: f.d, t: `${s.item.name}: ${name}`, n: f.by === "mil" ? `Beräknat utifrån hur mycket ni kör. ${dueText(s)}.` : `${dueText(s)}.` });
-  }
-  for (const b of c.bookings || []) if (b.date >= todayStr()) ev.push({ d: parseDate(b.date), time: b.time || "", t: `${BOOK_KINDS[b.kind] || "Bokad tid"}: ${name}`, n: [b.place, b.note].filter(Boolean).join(". ") });
-  for (const d of c.docs || []) if (d.validTo && d.validTo >= todayStr()) ev.push({ d: parseDate(d.validTo), t: `${d.title} går ut: ${name}`, n: "" });
-  return ev.sort((a, b) => a.d - b.d);
-}
-function icsText(c) {
-  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
-  const day = (d) => ymd(d).replace(/-/g, "");
-  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Bildagboken//SV", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
-  calendarEvents(c).forEach((e, i) => {
-    const next = new Date(e.d.getTime() + 864e5);
-    const timed = /^\d\d:\d\d$/.test(e.time || "");
-    lines.push("BEGIN:VEVENT", `UID:bdb-${c.id}-${i}-${day(e.d)}@bildagboken.com`, `DTSTAMP:${stamp}`,
-      ...(timed ? [`DTSTART:${day(e.d)}T${e.time.replace(":", "")}00`, `DURATION:PT1H`] : [`DTSTART;VALUE=DATE:${day(e.d)}`, `DTEND;VALUE=DATE:${day(next)}`]),
-      `SUMMARY:${icsEsc(e.t)}`, ...(e.n ? [`DESCRIPTION:${icsEsc(e.n)}`] : []),
-      "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${icsEsc(e.t)}`, timed ? "TRIGGER:-PT2H" : "TRIGGER:-P7D", "END:VALARM", "END:VEVENT");
-  });
-  lines.push("END:VCALENDAR");
-  return lines.join("\r\n");
-}
-// I appen och i telefonens webbläsare öppnas filen via en adress, så att telefonen frågar om den ska läggas in i kalendern.
-// På datorn laddas filen ner.
-const CAL_URL = `https://europe-west1-${firebaseConfig.projectId}.cloudfunctions.net/kalender`;
-async function exportCalendar(btn) {
-  const c = car();
-  if (!c) return;
-  const n = calendarEvents(c).length;
-  if (!n) { showToast("Det finns inget kommande att lägga in än."); return; }
-  const ics = icsText(c);
-  const mobile = NATIVE || /iPhone|iPad|iPod|Android/.test(navigator.userAgent);
-  if (!mobile) {
-    const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
-    const a = document.createElement("a"); a.href = url; a.download = `${carName(c).replace(/[^\wåäöÅÄÖ -]/g, "")}.ics`;
-    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
-    showToast(`${n === 1 ? "1 händelse" : `${n} händelser`} i kalenderfilen. Öppna den för att lägga in dem.`, 5000);
-    return;
-  }
-  if (btn) btn.disabled = true;
-  // Fönstret öppnas direkt vid trycket (annars stoppar telefonen det), adressen sätts när filen är sparad.
-  const win = NATIVE ? null : window.open("", "_blank");
-  try {
-    const r = doc(collection(db, "icsfiles"));
-    await setDoc(r, { uid: uid(), ics, at: serverTimestamp() });
-    const url = `${CAL_URL}?id=${r.id}`;
-    if (win) win.location.href = url; else window.open(url, "_blank");
-    showToast(`${n === 1 ? "1 händelse" : `${n} händelser`}. Välj Lägg till alla.`, 5000);
-  } catch (e) { win?.close(); onWriteError(e); }
-  if (btn) btn.disabled = false;
-}
-
 // Säljpaket (Plus): serviceboken med en sammanställning av kostnaderna och bilderna från posterna, som PDF.
 async function salePack(btn) {
   const c = car();
@@ -4808,8 +4750,6 @@ function viewCar() {
         return `${S.partsAll ? `<p class="label" style="margin:14px 0 2px">Annat som har gjorts</p><div class="rows">${rows}</div>` : ""}
           <button class="link" type="button" data-act="toggle-parts" style="margin-top:10px">${S.partsAll ? "Visa färre" : `Visa ${extras.length} till`}</button>`;
       })()}
-      ${plusFeat() ? `<div class="ask" style="margin-top:12px"><button class="btn-soft" type="button" data-act="cal-export">${icon("calendar", 16)} Lägg in i kalendern</button></div>`
-        : plusLock() ? `<div class="ask" style="margin-top:12px"><button class="btn-soft" type="button" data-act="plus" data-f="forecast">${icon("calendar", 16)} Lägg in i kalendern <span class="plus-badge">Plus</span></button></div>` : ""}
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
     <!--card:dack--><div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div>${tireMissing ? `<p class="hint" style="margin-top:8px">Lägg till tillverkningsår och mönsterdjup under Ändra, så ser du hur däcken mår.</p>` : ""}
@@ -8121,7 +8061,6 @@ const ACTIONS = {
   "share-menu"() { shareMenu(); },
   "tire-sheet"(el) { tireSheet(el.dataset.k); },
   "sale-pack"(el) { salePack(el); },
-  "cal-export"(el) { exportCalendar(el); },
   async "copy-vin"() { const v = car()?.vin; if (!v) return; const ok = await copyText(v); showToast(ok ? "Chassinumret är kopierat" : v, ok ? 3000 : 8000); },
   async "copy-shortcut"(el) {
     const ok = await copyText(shortcutUrl(el.dataset.id));
