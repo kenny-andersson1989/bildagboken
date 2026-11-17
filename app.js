@@ -890,9 +890,30 @@ function itemStatus(item, c, ents) {
   return { item, last, lastDate, lastMil, remMil, remDays, dueDate, frac, by, level, label };
 }
 
+// Senaste kontrollen ("ser bra ut") efter senaste bytet, för delar där det räcker.
+function lastCheck(item, c, ents, afterDate) {
+  if (!CHECK_ITEMS.has(item.id)) return null;
+  let best = null;
+  for (const e of ents) {
+    if (!e.date || (afterDate && e.date <= afterDate)) continue;
+    if (!workOf(e, c).some((w) => w.action === "kontrollerat" && workIsItem(w, item))) continue;
+    if (!best || e.date > best.date) best = e;
+  }
+  return best;
+}
+function itemStatusWithCheck(item, c, ents) {
+  const st = itemStatus(item, c, ents);
+  const chk = lastCheck(item, c, ents, st.lastDate);
+  if (!chk) return st;
+  // Som om delen byttes vid kontrollen, men med den korta förlängningen som intervall.
+  const ext = itemStatus({ ...item, ...checkExtension(item), baseDate: chk.date, baseMil: null }, c, ents.filter((e) => !entryCovers(e, item)));
+  const left = (x) => (x.remDays != null ? x.remDays : x.remMil != null ? x.remMil * 3 : -Infinity); // ungefär 3 dagar per mil
+  const use = st.unknown || left(ext) > left(st) ? ext : st;
+  return { ...use, item, check: chk, last: st.last, replacedDate: st.lastDate, replacedMil: st.lastMil };
+}
 function allItemStatus(c = car()) {
   const ents = carEntries();
-  return (c?.items || []).map((i) => itemStatus(i, c, ents));
+  return (c?.items || []).map((i) => itemStatusWithCheck(i, c, ents));
 }
 
 function primaryService(c) {
@@ -6843,8 +6864,8 @@ const ITEM_INFO = {
     en: ["An AC service means the system is checked and the refrigerant is topped up or replaced. A little is lost every year.", "A check or top-up also counts as an AC service here.", "Run the AC for a while every month, even in winter. It keeps the seals lubricated and dries the air so the windows fog up less.", "Signs it needs a service: it cools poorly, there's a musty smell when it starts, or it makes noise when running."],
   },
   batteri: {
-    sv: ["Ett bilbatteri behöver inte bytas så länge det fungerar bra. Intervallet är en påminnelse om att kontrollera det, inte att det måste bytas. En kontroll räknas här lika mycket som ett byte.", "Låt kontrollera spänningen inför vintern, på en verkstad eller med en egen mätare. Fulladdat ligger det på cirka 12,6 volt med motorn avstängd. Under 12,4 volt är det dags att ladda, och under 12,0 volt är det i dåligt skick.", "Kyla tar hårt på batteriet. Ett batteri som är äldre än fem år kan svikta en kall morgon.", "Tecken på ett dåligt batteri: motorn drar runt långsamt vid start, lamporna blir svaga vid start, klockan eller radion nollställs, eller batterilampan lyser. Korta resor laddar dåligt, så kör en längre sträcka ibland."],
-    en: ["A car battery doesn't need replacing as long as it works well. The interval is a reminder to check it, not that it must be replaced. A check counts as much as a replacement here.", "Have the voltage checked before winter, at a workshop or with your own meter. Fully charged it is about 12.6 volts with the engine off. Below 12.4 volts it should be charged, and below 12.0 volts it is in poor condition.", "Cold is hard on the battery. A battery older than five years may fail on a cold morning.", "Signs of a bad battery: the engine cranks slowly when starting, the lights dim when starting, the clock or radio resets, or the battery light is on. Short trips charge poorly, so take a longer drive now and then."],
+    sv: ["Ett bilbatteri behöver inte bytas så länge det fungerar bra. Kontrollera det i stället, gärna varje höst. Trycker du på Kontrollerat – ser bra ut får det ett år till.", "Låt kontrollera spänningen inför vintern, på en verkstad eller med en egen mätare. Fulladdat ligger det på cirka 12,6 volt med motorn avstängd. Under 12,4 volt är det dags att ladda, och under 12,0 volt är det i dåligt skick.", "Kyla tar hårt på batteriet. Ett batteri som är äldre än fem år kan svikta en kall morgon.", "Tecken på ett dåligt batteri: motorn drar runt långsamt vid start, lamporna blir svaga vid start, klockan eller radion nollställs, eller batterilampan lyser. Korta resor laddar dåligt, så kör en längre sträcka ibland."],
+    en: ["A car battery doesn't need replacing as long as it works well. Check it instead, preferably every autumn. If you tap Checked – looks good, it gets another year.", "Have the voltage checked before winter, at a workshop or with your own meter. Fully charged it is about 12.6 volts with the engine off. Below 12.4 volts it should be charged, and below 12.0 volts it is in poor condition.", "Cold is hard on the battery. A battery older than five years may fail on a cold morning.", "Signs of a bad battery: the engine cranks slowly when starting, the lights dim when starting, the clock or radio resets, or the battery light is on. Short trips charge poorly, so take a longer drive now and then."],
   },
   kamrem: {
     sv: ["Kamremmen styr motorns ventiler. Går den av kan motorn få allvarliga skador.", "Följ tillverkarens intervall noga, både mil och år. Gummit åldras även om bilen inte körs så mycket.", "Byt vattenpumpen och sträckarna samtidigt om verkstaden rekommenderar det. Det blir ofta billigare än att göra det i två omgångar.", "Kamremmen ger sällan varning innan den går av. Har du köpt bilen begagnad och vet inte när den byttes, låt byta den för säkerhets skull."],
@@ -6852,14 +6873,18 @@ const ITEM_INFO = {
   },
 };
 // Punkter där en kontroll, påfyllning eller lagning också räknas, inte bara ett byte.
-const ANY_WORK_ITEMS = new Set(["ac", "batteri"]);
-const LAST_LABEL = { ac: "Senaste service", batteri: "Senast kontrollerat eller bytt" };
+const ANY_WORK_ITEMS = new Set(["ac"]);
+const LAST_LABEL = { ac: "Senaste service" };
+// Delar som kan sitta kvar så länge de är bra. En kontroll ("ser bra ut") ger ett år till, eller en fjärdedel av
+// milintervallet, räknat från kontrollen. Ett byte nollställer som vanligt.
+const CHECK_ITEMS = new Set(["batteri", "torkare", "luftfilter", "kupefilter"]);
+const checkExtension = (item) => ({ months: item.months ? 12 : null, mil: item.mil ? Math.max(500, Math.round(item.mil / 4 / 100) * 100) : null });
 // En underhållspunkt: status, alla loggade byten (ikryssade eller skrivna i Annat som byttes) och knappar för att logga eller ändra.
 function itemSheet(id) {
   const c = car();
   const item = (c.items || []).find((i) => i.id === id);
   if (!item) return;
-  const st = itemStatus(item, c, carEntries());
+  const st = itemStatusWithCheck(item, c, carEntries());
   const history = carEntries().filter((e) => entryTouches(e, item)).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const interval = intervalText(item) === "inget intervall" ? "" : intervalText(item);
   const manual = item.baseDate && !history.some((e) => e.date >= item.baseDate);
@@ -6867,13 +6892,14 @@ function itemSheet(id) {
   // Senaste gången punkten berördes, om det var något annat än ett byte (kontrollerat, fyllt på …).
   const touch = history[0];
   const touchAction = touch ? workOf(touch, c).find((w) => workIsItem(w, item))?.action || "bytt" : null;
-  const otherWork = touch && !anyWork && touchAction !== "bytt" && (!st.lastDate || touch.date > st.lastDate);
+  const otherWork = touch && !anyWork && !st.check && touchAction !== "bytt" && (!st.lastDate || touch.date > st.lastDate);
   const info = ITEM_INFO[item.id]?.[EN ? "en" : "sv"];
   openSheet(item.name, `
     <dl class="detail-list">
       <div><dt>Intervall</dt><dd>${esc(interval || "–")}</dd></div>
       ${otherWork ? `<div><dt>Senast gjort</dt><dd>${esc(`${WORK_ACTIONS[touchAction] || "Gjort"} ${fmtDate(touch.date)}`)}<br><span class="hint">Räknas inte som byte</span></dd></div>` : ""}
-      <div><dt>${LAST_LABEL[item.id] || "Senast bytt"}</dt><dd>${esc(st.lastDate ? [fmtDate(st.lastDate), st.lastMil != null ? `vid ${fmt(st.lastMil)} mil` : ""].filter(Boolean).join(", ") : "Okänt")}${manual ? `<br><span class="hint">Ifyllt för hand, inte från loggen</span>` : ""}</dd></div>
+      ${st.check ? `<div><dt>Senast kontrollerat</dt><dd>${esc(fmtDate(st.check.date))}<br><span class="hint">Såg bra ut, fick ${esc(checkExtension(item).months ? "ett år" : `${fmt(checkExtension(item).mil)} mil`)} till</span></dd></div>` : ""}
+      <div><dt>${LAST_LABEL[item.id] || "Senast bytt"}</dt><dd>${esc((st.check ? st.replacedDate : st.lastDate) ? [fmtDate(st.check ? st.replacedDate : st.lastDate), (st.check ? st.replacedMil : st.lastMil) != null ? `vid ${fmt(st.check ? st.replacedMil : st.lastMil)} mil` : ""].filter(Boolean).join(", ") : "Okänt")}${manual ? `<br><span class="hint">Ifyllt för hand, inte från loggen</span>` : ""}</dd></div>
       ${!st.unknown ? `<div><dt>Nästa</dt><dd>${esc(dueText(st) || "–")}</dd></div><div><dt>Kvar</dt><dd>${esc(st.label)}</dd></div>` : ""}
     </dl>
     ${wearBar(st) ? `<div style="margin-top:12px">${wearBar(st)}</div>` : ""}
@@ -6889,6 +6915,8 @@ function itemSheet(id) {
       : manual ? "" : `<p class="muted" style="margin-top:6px">Inga loggade byten än. Kryssa i ${esc(item.name.toLowerCase())} när du loggar en service eller ett eget jobb, så hamnar det här.</p>`}
     <div class="form" style="margin-top:18px">
       <button class="btn primary block" type="button" data-act="log-item" data-id="${esc(id)}">Logga byte</button>
+      ${CHECK_ITEMS.has(id) ? `<button class="btn block" type="button" data-act="item-checked" data-id="${esc(id)}">${icon("check", 18)} Kontrollerat – ser bra ut</button>
+      <p class="hint" style="margin-top:-4px">${esc(`Behöver inte bytas? Då får den ${checkExtension(item).months ? "ett år" : `${fmt(checkExtension(item).mil)} mil`} till från i dag, och kontrollen syns i loggen.`)}</p>` : ""}
       <button class="btn ghost block" type="button" data-act="edit-item-form" data-id="${esc(id)}">Ändra intervall</button>
     </div>`);
 }
@@ -7624,6 +7652,22 @@ const ACTIONS = {
     S.query = "";
     render();
     $("#log-search")?.focus();
+  },
+  // Kontrollerat – ser bra ut: ett eget jobb i loggen, som ger delen en förlängning.
+  async "item-checked"(el) {
+    const c = car(), id = el.dataset.id;
+    const item = (c?.items || []).find((i) => i.id === id);
+    if (!item) return;
+    el.disabled = true;
+    const eid = doc(col("entries")).id;
+    const data = clean({ type: "eget", carId: c.id, date: todayStr(), title: `${item.name} kontrollerat`, note: "Ser bra ut",
+      work: [{ key: `item:${id}`, itemId: id, name: item.name, action: "kontrollerat", sides: [] }], createdBy: uid(), createdAt: serverTimestamp() });
+    try {
+      await setDoc(ref("entries", eid), data);
+      if (!S.entries.some((e) => e.id === eid)) S.entries = sortEntries([{ id: eid, ...data, createdAt: Date.now() }, ...S.entries]);
+      itemSheet(id); render();
+      showToast(`${item.name}: kontrollerat, ${checkExtension(item).months ? "ett år" : `${fmt(checkExtension(item).mil)} mil`} till`, 6000, () => { deleteDoc(ref("entries", eid)).catch(onWriteError); });
+    } catch (e) { onWriteError(e); el.disabled = false; }
   },
   // Ta bort ett senaste byte som fyllts i för hand, så att appen räknar från loggen.
   async "clear-item-base"(el) {
