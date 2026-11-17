@@ -1924,3 +1924,31 @@ body.car-locked .fab { display: none; }
 .tire-law { margin-top: 12px; }
 .tire-law ul { margin: 8px 0 4px; padding-left: 18px; color: var(--ink-2); font-size: 14px; line-height: 1.45; }
 .tire-law li { margin: 4px 0; }
+/* Däckrutan */
+.tire-health { padding: 14px 16px; border-radius: 16px; background: var(--accent-soft); margin-bottom: 12px; }
+.tire-health.ok { background: color-mix(in srgb, #3F8A55 14%, transparent); }
+.tire-health.bad { background: color-mix(in srgb, #C8432B 14%, transparent); }
+.tire-health .th-top { display: flex; align-items: center; gap: 12px; }
+.tire-health .th-top b { font-size: 17px; }
+.tire-health .tire-meter { flex: 1; margin: 0; max-width: none; }
+.tire-health p { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; }
+/* Släpvagn */
+.tow-top { display: flex; gap: 14px; align-items: flex-start; justify-content: space-between; margin-bottom: 8px; }
+.tow-big b { display: block; font-size: 32px; line-height: 1.1; letter-spacing: -.01em; }
+.tow-big b small { font-size: 16px; font-weight: 600; color: var(--ink-2); }
+.tow-sub { display: block; color: var(--ink-2); font-size: 14px; margin-top: 2px; }
+.tow-lic { flex: none; text-align: right; }
+.seg.seg-sm button { padding: 6px 10px; font-size: 13px; }
+.tow-type .tt-pic { flex: none; width: 54px; height: 30px; display: grid; place-items: center; }
+.tow-type .tt-pic svg { width: 54px; height: 30px; }
+.tow-card .pill { white-space: nowrap; }
+.tow-type .tt-pic { color: var(--ink-2); }
+.tow-type .tp-ground { stroke: currentColor; stroke-width: 1.5; opacity: .35; fill: none; }
+.tow-type .tp-line { stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; fill: none; }
+.tow-type .tp-body { fill: var(--accent-soft); stroke: currentColor; stroke-width: 2.5; stroke-linejoin: round; }
+.tow-type .tp-brake { fill: currentColor; }
+.tow-type .tp-wheel { fill: var(--ink); }
+.tow-type .tp-hub { fill: var(--ground, #ccc); }
+.tow-type { grid-template-columns: 62px 1fr auto; column-gap: 12px; }
+.tow-type .tt-pic { width: 62px; }
+.tow-type .tt-pic svg { width: 62px; height: 34px; }

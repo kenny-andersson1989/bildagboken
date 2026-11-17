@@ -2427,6 +2427,50 @@ function tireDepthLevel(kind, v) {
   return d < t.law ? "bad" : d < t.rec ? "warn" : "ok";
 }
 const mmTxt = (n) => (n % 1 ? fmt(n, 1) : String(n));
+const TIRE_LAW_HTML = `<ul>
+          <li>Vinterdäck krävs när det är vinterväglag (snö, is, snömodd eller frost) från 1 december till 31 mars, med minst 3 mm mönster.</li>
+          <li>Dubbfria vinterdäck måste vara märkta med alptopp/snöflinga. Bara M+S räcker inte sedan 1 december 2024.</li>
+          <li>Dubbdäck får användas 1 oktober–15 april, och även utanför den tiden om det är eller befaras bli vinterväglag.</li>
+          <li>Sommardäck ska ha minst 1,6 mm mönster. 3 mm rekommenderas, eftersom greppet i regn blir mycket sämre.</li>
+          <li>Drar du en släpvagn vid vinterväglag ska den också ha vinterdäck, och dubbdäck om bilen har det.</li>
+          <li>Åldersgränserna i appen är rekommendationer, inte lag: gummit hårdnar med åren och greppar sämre.</li>
+        </ul>
+        <p class="hint">Källa: Transportstyrelsen.</p>`;
+// En däcksats: uppgifterna, hälsan och allt som har loggats om den.
+function tireSheet(kind) {
+  const c = car();
+  if (!c || !["sommar", "vinter"].includes(kind)) return;
+  const t = (c.tires || []).find((x) => x.kind === kind) || {};
+  const on = (c.tiresOn || "sommar") === kind;
+  const h = tireHealth(c, kind);
+  const dot = tireDot(t.year);
+  const age = dot ? new Date().getFullYear() - dot.year : null;
+  const mil = tireMil(c, kind);
+  const d = num(t.depth);
+  const rows = [
+    ["Sitter på", on ? "Ja" : "Nej, i förrådet"],
+    ["Märke", t.brand], ["Dimension", t.size],
+    ["Tillverkade", dot ? `${tireDotText(t.year)}${age > 0 ? ` (${age} år)` : ""}` : ""],
+    ["Mönsterdjup", d != null ? `${mmTxt(d)} mm${t.depthAt ? `, mätt ${fmtDateShort(t.depthAt)}` : ""}` : ""],
+    ["Lufttryck", t.pressureFront != null || t.pressureRear != null ? `${t.pressureFront != null ? fmt(t.pressureFront, 1) : "–"} bar fram, ${t.pressureRear != null ? fmt(t.pressureRear, 1) : "–"} bar bak` : ""],
+    kind === "vinter" ? ["Dubbade", t.studded ? "Ja" : "Nej"] : null,
+    kind === "vinter" && !t.studded ? ["Alptopp/snöflinga", t.alpine === true ? "Ja" : t.alpine === false ? "Nej, bara M+S" : "Vet inte"] : null,
+    ["Har rullat", mil != null && mil > 0 ? `cirka ${fmt(mil)} mil` : ""],
+  ].filter((r) => r && r[1]);
+  const other = kind === "vinter" ? "sommar" : "vinter";
+  const hist = carEntries().filter((e) => e.type === "dack" && (e.tireKind === kind || e.tireAction === `till_${kind}` || e.tireAction === `till_${other}`))
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  openSheet(kind === "sommar" ? "Sommardäck" : "Vinterdäck", `
+    ${h ? `<div class="tire-health ${h.lvl}"><div class="th-top"><b>${esc(h.label)}</b><div class="tire-meter ${h.lvl}"><i style="width:${Math.max(4, Math.round(h.frac * 100))}%"></i></div></div><p>${esc(h.why)}</p></div>`
+      : `<p class="muted">Lägg till tillverkningsår och mönsterdjup, så ser du hur däcken mår.</p>`}
+    <dl class="detail-list">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
+    ${hist.length ? `<p class="label" style="margin:16px 0 6px">I loggen</p><div class="rows">${hist.slice(0, 8).map((e) => entryRow(e)).join("")}</div>` : ""}
+    <div class="form" style="margin-top:14px">
+      <button class="btn primary block" type="button" data-act="edit-car" data-section="tires">Ändra uppgifterna</button>
+      <button class="btn block" type="button" data-act="new-entry" data-type="dack">${icon("tire", 18)} Logga däckbyte eller mätning</button>
+    </div>
+    <details class="more tire-law" style="margin-top:12px"><summary>Bra att veta om däck</summary>${TIRE_LAW_HTML}</details>`);
+}
 // Dubbfria vinterdäck räknas sedan 1 december 2024 bara som vinterdäck om de är märkta med alptopp/snöflinga
 // (personbilar och släp till dem, högst 3,5 ton). Bara M+S räcker inte. Dubbdäck berörs inte.
 const ALPINE_OPTS = [["", "Vet inte"], ["ja", "Ja, alptopp/snöflinga"], ["nej", "Nej, bara M+S"]];
@@ -2718,41 +2762,50 @@ const verdictIcon = (ok) => (ok === true ? icon("check", 16) : ok === "warn" ? i
 function trailerCard(c) {
   const t = trailerInfo(c);
   if (!t) return `<div class="card"><h2>Släpvagn</h2>
-    <p class="muted">Fyll i bilens max släpvagnsvikt och totalvikt, så visar appen vad bilen får dra, med förslag på vanliga släp. Vikterna står i registreringsbeviset.</p>
+    <p class="muted">Fyll i bilens max släpvagnsvikt och totalvikt från registreringsbeviset, så visar appen vad bilen får dra.</p>
     <div class="ask"><button class="btn-soft" type="button" data-act="edit-car" data-section="more">Fyll i vikterna</button></div></div>`;
   const lic = licenseOf();
-  const lmax = licenseMax(t, lic), carMax = trailerCarMax(t, true);
+  const lmax = licenseMax(t, lic), carMax = trailerCarMax(t, true), nob = trailerCarMax(t, false);
   const most = lmax == null ? carMax : Math.min(carMax, lmax);
-  const limitText = lmax != null && lmax < carMax
-    ? `Bilen orkar ${fmt(carMax)} kg, men med körkort ${lic} får släpets totalvikt vara högst ${fmt(lmax)} kg.`
-    : lic !== "BE" && lmax != null ? `Det är bilens gräns. Körkort ${lic} räcker för allt bilen får dra.` : "";
-  return `<div class="card"><h2>Släpvagn <button class="link" type="button" data-act="edit-car" data-section="more">Ändra</button></h2>
-    <p class="label" style="margin:0 0 8px">Ditt körkort</p>
-    <div class="seg" role="group" aria-label="Ditt körkort">${Object.keys(LICENSES).map((k) => `<button type="button" data-act="license" data-v="${k}" aria-pressed="${k === lic}">${k}</button>`).join("")}</div>
-    ${trailerTiles(t, lic)}
-    <div class="tow-answer">
-      <p><b>${esc(`Släpet och lasten får tillsammans väga högst ${fmt(most)} kg`)}</b></p>
-      <p class="muted"><span>${esc(`Ett släp utan egna bromsar högst ${fmt(trailerCarMax(t, false))} kg.`)}</span> ${limitText ? `<span>${esc(limitText)}</span>` : ""}</p>
-      <p class="muted">Så räknar du: i släpets registreringsbevis står totalvikt (släpet med last) och tjänstevikt (släpet tomt). Skillnaden är hur mycket du får lasta.</p>
-      ${t.total ? "" : `<p class="hint">Fyll i bilens totalvikt under Ändra, så räknar appen också ut vilket körkort som behövs.</p>`}
-      ${t.train ? "" : `<p class="hint">Har du tågvikten (står i registreringsbeviset)? Fyll i den, så blir svaret säkrare.</p>`}
+  const byLicense = lmax != null && lmax < carMax;
+  // De tre vanliga släpen som rader: hur mycket man får lasta, eller vad som stoppar.
+  const rows = TRAILER_TYPES.map(([pic, name, braked, typTotal, typCurb]) => {
+    let pill, cls, sub;
+    if (lmax != null && typTotal > lmax) {
+      const need = lic === "B" && t.b96 != null && typTotal <= t.b96 ? "B96" : "BE";
+      pill = `Kräver ${need}`; cls = "urgent"; sub = `Brukar väga ${fmt(typTotal)} kg med last`;
+    } else {
+      const max = trailerCarMax(t, braked), total = Math.min(typTotal, max), load = total - typCurb;
+      if (load < 50) { pill = "För tungt"; cls = "urgent"; sub = `Bilen får dra ${fmt(max)} kg`; }
+      else { pill = `${fmt(load)} kg last`; cls = total < typTotal ? "soon" : "ok"; sub = total < typTotal ? `Fyll inte helt · släpet ca ${fmt(typCurb)} kg` : `Släpet ca ${fmt(typCurb)} kg + last = ${fmt(total)} kg`; }
+    }
+    return `<div class="dl tow-type"><span class="tt-pic">${TRAILER_PICS[pic]}</span><span><span class="dl-t">${esc(name)}</span><span class="dl-s">${esc(`${braked ? "Med bromsar" : "Utan bromsar"} · ${sub}`)}</span></span><span class="pill ${cls}">${esc(pill)}</span></div>`;
+  }).join("");
+  return `<div class="card tow-card"><h2>Släpvagn <button class="link" type="button" data-act="edit-car" data-section="more">Ändra</button></h2>
+    <div class="tow-top">
+      <div class="tow-big"><span class="label">Släp + last, högst</span><b>${fmt(most)} <small>kg</small></b>
+        <span class="tow-sub">${esc(byLicense ? `Gränsen för körkort ${lic}. Bilen orkar ${fmt(carMax)} kg.` : `Utan egna bromsar högst ${fmt(nob)} kg.`)}</span></div>
+      <div class="tow-lic"><span class="label">Körkort</span><div class="seg seg-sm" role="group" aria-label="Ditt körkort">${Object.keys(LICENSES).map((k) => `<button type="button" data-act="license" data-v="${k}" aria-pressed="${k === lic}">${k}</button>`).join("")}</div></div>
     </div>
-    <details class="more" style="margin-top:12px"><summary>${esc(`Visa fler släp (${TRAILERS.length})`)}</summary>
-    <div class="rows tow-list">${TRAILERS.map(([name, total, curb, braked]) => {
-      const [ok, head, text] = trailerVerdict(t, lic, total, curb, braked);
-      return `<div class="dl tow-row ${ok === true ? "ok" : ok === "warn" ? "warn" : "bad"}"><span class="dl-ic">${verdictIcon(ok)}</span>
-        <span><span class="dl-t">${esc(name)}</span><span class="tow-head">${esc(head)}</span><span class="dl-s">${esc(text)}</span></span></div>`;
-    }).join("")}</div>
-    <p class="hint" style="margin-top:6px">Vikterna för släpen är ungefärliga. Kolla alltid släpets registreringsbevis.</p></details>
-    <details class="more" style="margin-top:12px"><summary>Har du ett visst släp?</summary>
+    ${byLicense ? `<p class="hint" style="margin:-4px 0 8px">${esc(`Utan egna bromsar högst ${fmt(nob)} kg.`)}</p>` : ""}
+    <p class="label" style="margin:12px 0 2px">Så mycket får du lasta</p>
+    <div class="rows">${rows}</div>
+    <details class="more" style="margin-top:10px"><summary>Räkna på ditt släp</summary>
       <div class="form trailer-calc" style="margin-top:8px">
         <div class="row2">
-          <label class="field"><span>Totalvikt, släp + last (kg)</span><input id="tc-total" inputmode="numeric"></label>
-          <label class="field"><span>Tjänstevikt, tomt släp (kg)</span><input id="tc-curb" inputmode="numeric"></label>
+          <label class="field"><span>Totalvikt (kg)</span><input id="tc-total" inputmode="numeric" placeholder="Släp + last"></label>
+          <label class="field"><span>Tjänstevikt (kg)</span><input id="tc-curb" inputmode="numeric" placeholder="Tomt släp"></label>
         </div>
-        <div id="tc-out" aria-live="polite"><p class="hint">Vikterna står i släpets registreringsbevis.</p></div>
+        <div id="tc-out" aria-live="polite"><p class="hint">Båda står i släpets registreringsbevis. Skillnaden är hur mycket du får lasta.</p></div>
       </div>
+      <p class="label" style="margin:14px 0 2px">Fler exempel</p>
+      <div class="rows tow-list">${TRAILERS.map(([name, total, curb, braked]) => {
+        const [ok, head] = trailerVerdict(t, lic, total, curb, braked);
+        return `<div class="dl"><span><span class="dl-t">${esc(name)}</span><span class="dl-s">${esc(`ca ${fmt(curb)} kg tomt, ${fmt(total)} kg med last`)}</span></span><span class="pill ${ok === true ? "ok" : ok === "warn" ? "soon" : "urgent"}">${esc(head.replace(/^Du får lasta /, "").replace(/^Kräver körkort /, "Kräver ").replace(/^Går bra fullastat$/, "Fullastat"))}</span></div>`;
+      }).join("")}</div>
+      <p class="hint" style="margin-top:6px">Vikterna är ungefärliga. Kolla alltid släpets registreringsbevis.</p>
     </details>
+    ${!t.total || !t.train ? `<p class="hint" style="margin-top:8px">${esc(!t.total ? "Fyll i bilens totalvikt under Ändra, så räknas körkortet in." : "Fyll i tågvikten under Ändra, så blir svaret säkrare.")}</p>` : ""}
   </div>`;
 }
 // Ett visst släp. Upp till 750 kg räknas det som ett släp utan egna bromsar, som de flesta sådana släp är.
@@ -3285,15 +3338,27 @@ async function loadPhotoGrid() {
   render();
 }
 
-// Bilder och dokument i samma kort: sparade dokument överst, bilderna från loggen under.
+// Servicebok och dokument i ett kort: serviceboken (PDF, dela med en köpare, säljpaket), sparade dokument
+// och bilderna från loggen.
 function docsCard(c) {
   const docs = [...(c.docs || [])].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const photos = photosCard(c);
-  return `<div class="card">
-    <h2>Bilder och dokument</h2>
+  const n = carEntries().filter((e) => ["service", "eget", "dack"].includes(e.type) || (e.type === "kostnad" && e.category === "Besiktning")).length;
+  const row = (act, ic, t, sub, extra = "") => `<button class="dl as-btn" type="button" ${act}><span class="dl-ic">${icon(ic, 20)}</span><span><span class="dl-t">${t}</span><span class="dl-s">${esc(sub)}</span></span>${extra || '<span class="dl-v">›</span>'}</button>`;
+  return `<div class="card book-card">
+    <h2>Servicebok och dokument</h2>
+    <div class="rows">
+      ${row('data-act="print-book"', "print", "Servicebok", `${n === 1 ? "1 post" : `${n} poster`} · dela eller spara som PDF`)}
+      ${c.shareToken
+        ? row('data-act="share-menu"', "next", "Delad med en köpare", "Länken är aktiv · tryck för att kopiera, uppdatera eller sluta dela", '<span class="pill ok">Delad</span>')
+        : row('data-act="share-book"', "next", "Dela med en köpare", "En länk där köparen kan läsa serviceboken")}
+      ${plusFeat() ? row('data-act="sale-pack"', "receipt", "Säljpaket", "Serviceboken med kvitton och kostnader, som PDF")
+        : plusLock() ? row('data-act="plus" data-f="salepack"', "receipt", "Säljpaket", "Serviceboken med kvitton och kostnader, som PDF", '<span class="plus-badge">Plus</span>') : ""}
+    </div>
+    <p class="label" style="margin:16px 0 4px">Dokument</p>
     ${docs.length ? `<div class="rows">${docs.map((d) => `<button class="dl as-btn" type="button" data-act="open-doc" data-id="${esc(d.id)}"><span class="dl-ic">${icon("doc", 20)}</span>
       <span><span class="dl-t">${esc(d.title)}</span><span class="dl-s">${esc(d.validTo ? `Gäller till ${fmtDateShort(d.validTo)}` : `Sparat ${fmtDateShort(d.date)} av ${whoName(d.by).replace(/^Du$/, "dig")}`)}</span></span>${docPill(d)}</button>`).join("")}</div>`
-      : `<p class="muted">Fota försäkringsbrev, registreringsbevis, garantier och kvitton ni vill spara. Ni ser samma dokument.</p>`}
+      : `<p class="muted" style="margin:0">Försäkringsbrev, registreringsbevis, garantier och kvitton ni vill spara. Med ett utgångsdatum får ni en påminnelse.</p>`}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-doc">${icon("plus", 16)} Lägg till dokument</button></div>
     ${photos}
   </div>`;
@@ -3432,6 +3497,17 @@ async function shareServiceBook() {
   return token;
 }
 const shareUrl = (token) => `${location.origin}${location.pathname}?visa=${token}`;
+function shareMenu() {
+  const c = car();
+  if (!c?.shareToken) return;
+  openSheet("Delad med en köpare", `<p class="muted">Den som har länken kan läsa serviceboken, men inte se resten av appen eller ändra något. Tryck Uppdatera efter nya poster.</p>
+    <p class="share-url" style="margin:12px 0">${esc(shareUrl(c.shareToken).replace(/^https?:\/\//, ""))}</p>
+    <div class="form">
+      <button class="btn primary block" type="button" data-act="share-copy">Kopiera länken</button>
+      <button class="btn block" type="button" data-act="share-book">Uppdatera serviceboken</button>
+      <button class="btn block solid-danger" type="button" data-act="share-stop">Sluta dela</button>
+    </div>`);
+}
 function shareCardHtml(c) {
   if (!c.shareToken) return `<button class="btn-soft" type="button" data-act="share-book">${icon("next", 16)} Dela med en köpare</button>`;
   return `</div><div class="share-box">
@@ -3974,7 +4050,7 @@ const CARD_NAMES = { koll: "På gång", todo: "Att göra", recent: "Senaste akti
 // Korten som går att flytta, per vy. Översikt sparas under "cards" (som förut) och Bilen under "cards.bilen".
 const CARD_VIEWS = {
   oversikt: { names: CARD_NAMES, pref: "cards", title: "Översikten" },
-  bilen: { get names() { return { upp: "Uppgifter", maint: "Underhåll", dack: "Däck", media: "Bilder och dokument", book: "Servicebok", reg: "Från registret", slap: "Släpvagn" }; }, pref: "cards.bilen", title: "Bilen" },
+  bilen: { get names() { return { upp: "Uppgifter", maint: "Underhåll", dack: "Däck", media: "Servicebok och dokument", slap: "Släpvagn" }; }, pref: "cards.bilen", title: "Bilen" },
   ekonomi: { names: { month: "Kostnad per månad", year: "Hela året", compare: "Prognos och jämförelse", rec: "Återkommande kostnader", tank: "Tankningar", facts: "Bilåret i siffror" }, pref: "cards.ekonomi", title: "Ekonomi" },
 };
 function cardPrefs(view = "oversikt") {
@@ -4709,7 +4785,7 @@ function viewCar() {
     const pill = h ? `<span class="pill ${h.lvl === "bad" ? "urgent" : h.lvl === "warn" ? "soon" : "ok"}">${esc(h.label)}</span>`
       : `<span class="pill ${lvl === "bad" ? "urgent" : lvl === "warn" ? "soon" : on ? "ok" : "none"}">${lvl === "bad" ? "Under lagkrav" : lvl === "warn" ? "Slitna" : on ? "På" : "Förråd"}</span>`;
     const meter = h ? `<div class="tire-meter ${h.lvl}" role="img" aria-label="${esc(`Däckens hälsa: ${h.label}`)}"><i style="width:${Math.max(4, Math.round(h.frac * 100))}%"></i></div><div class="tire-why">${esc(h.why)}${h.oldDepth ? ". Mönsterdjupet mättes för över ett år sedan" : ""}</div>` : "";
-    return `<div class="dl"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div>${meter}</div>${pill}</div>`;
+    return `<button class="dl as-btn" type="button" data-act="tire-sheet" data-k="${k}"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div>${meter}</div>${pill}</button>`;
   }).join("");
   const tireMissing = ["sommar", "vinter"].some((k) => { const t = (c.tires || []).find((x) => x.kind === k) || {}; return !tireDot(t.year) && num(t.depth) == null; });
   return arrangeCards(`${subHeader([c.year, c.fuel].filter(Boolean).join(" · "), carName(c), false, "Bilen")}
@@ -4721,7 +4797,6 @@ function viewCar() {
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>
-    <!--card:reg-->${regCard(c)}
     <!--card:slap-->${trailerCard(c)}
     <!--card:maint--><div class="card" id="underhall" style="scroll-margin-top:16px">
       <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
@@ -4738,27 +4813,8 @@ function viewCar() {
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
     <!--card:dack--><div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div>${tireMissing ? `<p class="hint" style="margin-top:8px">Lägg till tillverkningsår och mönsterdjup under Ändra, så ser du hur däcken mår.</p>` : ""}
-      <details class="more tire-law"><summary>Bra att veta om däck</summary>
-        <ul>
-          <li>Vinterdäck krävs när det är vinterväglag (snö, is, snömodd eller frost) från 1 december till 31 mars, med minst 3 mm mönster.</li>
-          <li>Dubbfria vinterdäck måste vara märkta med alptopp/snöflinga. Bara M+S räcker inte sedan 1 december 2024.</li>
-          <li>Dubbdäck får användas 1 oktober–15 april, och även utanför den tiden om det är eller befaras bli vinterväglag.</li>
-          <li>Sommardäck ska ha minst 1,6 mm mönster. 3 mm rekommenderas, eftersom greppet i regn blir mycket sämre.</li>
-          <li>Drar du en släpvagn vid vinterväglag ska den också ha vinterdäck, och dubbdäck om bilen har det.</li>
-          <li>Åldersgränserna i appen är rekommendationer, inte lag: gummit hårdnar med åren och greppar sämre.</li>
-        </ul>
-        <p class="hint">Källa: Transportstyrelsen.</p>
-      </details></div>
+      <p class="hint" style="margin-top:8px">Tryck på däcken för mer om dem och vad som gäller enligt lag.</p></div>
     <!--card:media-->${docsCard(c)}
-    <!--card:book--><div class="card">
-      <h2>Servicebok</h2>
-      <p class="muted">All service, egna jobb, däckbyten och besiktningar med datum, mätarställning och kostnad. Bra att visa en köpare eller verkstad.</p>
-      <div class="ask"><button class="btn-soft" type="button" data-act="print-book">${icon("print", 16)} Dela eller spara som PDF</button>
-      ${shareCardHtml(c)}</div>
-      ${plusFeat() || plusLock() ? `<div class="salepack">
-        <div><b>Säljpaket${plusFeat() ? "" : ' <span class="plus-badge">Plus</span>'}</b><span>Serviceboken med kvittona och en sammanställning av kostnaderna, som PDF. Det som bevisar historiken när bilen ska säljas.</span></div>
-        <button class="btn-soft" type="button" ${plusFeat() ? 'data-act="sale-pack"' : 'data-act="plus" data-f="salepack"'}>${icon("print", 16)} Gör säljpaket</button></div>` : ""}
-    </div>
     <!--card:end--><div class="car-danger">${isOwner()
       ? `<button class="link danger" type="button" data-act="delete-car" data-id="${esc(c.id)}">${icon("close", 14)} ${esc(`Ta bort ${carName(c)}`)}</button>
         <p class="hint">${esc(`Bilen flyttas till papperskorgen under Inställningar och kan återställas i ${TRASH_DAYS} dagar.`)}</p>`
@@ -6000,7 +6056,16 @@ function exportTrips() {
 /* ---------------------------------------------------------- säkerhetskopia */
 
 // Hela loggen som en CSV-fil som Excel, Numbers och Google Kalkylark öppnar direkt (semikolon och decimalkomma).
-function downloadFile(name, text, type) {
+async function downloadFile(name, text, type) {
+  // I iPhone-appen och på telefoner går det inte att ladda ner som på datorn. Där delas filen i stället,
+  // så att man kan spara den i Filer, skicka den eller öppna den i Numbers eller Excel.
+  const file = new File([text], name, { type });
+  if ((NATIVE || /iPhone|iPad|iPod|Android/.test(navigator.userAgent)) && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name }); return; }
+    catch (e) { if (e.name === "AbortError") return; }
+  }
+  if (NATIVE) { showToast("Filen gick inte att dela här. Logga in på bildagboken.com på datorn och ladda ner den där.", 6000); return; }
+  showToast(`${name} laddas ner`);
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = document.createElement("a");
   a.href = url;
@@ -8053,6 +8118,8 @@ const ACTIONS = {
     });
   },
   "print-book"() { printServiceBook(); },
+  "share-menu"() { shareMenu(); },
+  "tire-sheet"(el) { tireSheet(el.dataset.k); },
   "sale-pack"(el) { salePack(el); },
   "cal-export"(el) { exportCalendar(el); },
   async "copy-vin"() { const v = car()?.vin; if (!v) return; const ok = await copyText(v); showToast(ok ? "Chassinumret är kopierat" : v, ok ? 3000 : 8000); },
