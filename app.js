@@ -675,7 +675,7 @@ async function rcPlugin() {
   return P;
 }
 const rcCancelled = (e) => !!(e?.userCancelled || e?.data?.userCancelled) || String(e?.code ?? e?.data?.code ?? "") === "1";
-const rcHasPlus = (info) => !!(info?.customerInfo || info)?.entitlements?.active?.plus;
+const rcHasPlus = (info) => { const a = (info?.customerInfo || info)?.entitlements?.active || {}; return !!(a.bildagboken_plus || a.plus); };
 const PERIOD_UNIT = { DAY: ["dag", "dagar"], WEEK: ["vecka", "veckor"], MONTH: ["månad", "månader"], YEAR: ["år", "år"] };
 function introText(p) {
   const i = p?.introPrice;
