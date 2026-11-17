@@ -1887,3 +1887,31 @@ body.car-locked .fab { display: none; }
 .plus-pkg.busy { opacity: 1; }
 .plus-pkg.busy .plus-price::after { content: " …"; }
 #sheet .hint a, .plus-t + .hint a { color: var(--accent-text); }
+/* Ingår i Plus: rutan när man trycker på något låst */
+.upsell-hero { display: flex; gap: 14px; align-items: flex-start; padding: 16px; border-radius: 18px; background: var(--accent-soft); margin-bottom: 12px; }
+.upsell-hero .dl-ic { flex: none; width: 48px; height: 48px; }
+.upsell-hero b { display: block; font-size: 18px; margin-bottom: 4px; }
+.upsell-hero span:not(.dl-ic) { color: var(--ink-2); font-size: 15px; }
+/* Glenns Garage utan Plus: syns men är låst */
+.gp-head .plus-badge { margin-left: auto; align-self: center; }
+.gp-mini.locked { position: relative; }
+.gp-mini.locked .gm-screen { filter: saturate(.55) brightness(.92); }
+/* Tipskortet om Plus */
+.tip-perks { display: grid; gap: 10px; margin: 6px 0 10px; }
+.tip-perks > div { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; color: var(--ink-2); }
+.tip-perks svg { flex: none; color: var(--accent-text); margin-top: 2px; }
+.tip-perks b { color: var(--ink); font-weight: 600; }
+/* Säljpaket i Servicebok-kortet */
+.salepack { display: grid; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.salepack b { display: block; margin-bottom: 2px; }
+.salepack span:not(.plus-badge) { color: var(--ink-2); font-size: 14px; }
+.salepack .btn-soft { justify-self: start; }
+/* Prognos och jämförelse */
+.cmp-years { display: grid; gap: 8px; }
+.cmp-row { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; font-size: 14px; }
+.cmp-y { color: var(--ink-2); font-weight: 600; }
+.cmp-bar { position: relative; height: 12px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.cmp-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: var(--accent); }
+.cmp-bar i.fc { background: var(--accent-soft); outline: 1px dashed var(--accent); outline-offset: -1px; }
+.cmp-v { text-align: right; font-weight: 600; white-space: nowrap; }
+.cmp-v small { display: block; font-weight: 400; color: var(--ink-3); font-size: 12px; }

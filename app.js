@@ -478,6 +478,38 @@ function limited(h = S.house) {
 }
 // Plus visas för alla först när det går att köpa. Administratören ser det i testläget.
 const plusOnSale = () => PLUS_ON_SALE || !!testMode();
+// Funktioner som bara finns i Plus. Administratören har dem (utom i testläget).
+const plusFeat = () => hasPlus() || (isAdmin() && !testMode());
+// Låst, men går att köpa: då visas funktionen med en hänvisning till Plus. Innan Plus säljs är den dold.
+const plusLock = () => !plusFeat() && plusOnSale();
+// Rutan som visas när man trycker på något som ingår i Plus.
+const PLUS_FEATURES = {
+  garage: ["wrench", "Glenns Garage", "Tre teman i pixelstil, med Glenns skylt på Översikt och saker från verkstaden på korten."],
+  glenn: ["spark", "Fråga Glenn", "Glenn är appens AI. Skriv eller prata med honom om allt ni har loggat: kostnader, service, däck och förbrukning."],
+  ai: ["camera", "Läsning med AI", "Fota kvittot, servicefakturan eller besiktningsprotokollet, så fylls allt i åt dig."],
+  trips: ["route", "Körjournal", "Logga tjänsteresor och privata resor. Milersättningen räknas ut, och iPhone-appen kan logga resorna själv."],
+  cars: ["car", "Upp till 6 bilar", "Hela familjens bilar i samma app, och alla fungerar samtidigt."],
+  members: ["home", "Upp till 6 personer", "Alla i familjen som kör bilarna kan vara med."],
+  photos: ["image", "2 000 bilder", "Plats för kvitton, dokument och bilder på bilen."],
+  docs: ["doc", "Papper och avtal", "Försäkring, garanti, vägassistans och andra papper på ett ställe, med påminnelse innan något går ut."],
+  forecast: ["calendar", "Smarta påminnelser", "Appen räknar ut när service och byten blir aktuella utifrån hur mycket ni kör, och lägger in dem i kalendern."],
+  econ: ["coin", "Mer om kostnaderna", "Jämför år mot år och se vad bilen beräknas kosta i år."],
+  salepack: ["print", "Säljpaket", "Serviceboken som PDF med kvittona och en sammanställning av kostnaderna, inför en försäljning."],
+  letter: ["bell", "Glenns månadsbrev", "En hälsning från Glenn varje månad: vad bilen kostade, hur mycket ni körde och vad som närmar sig."],
+};
+function plusUpsell(key) {
+  const f = PLUS_FEATURES[key];
+  if (!f || !plusOnSale()) return plusSheet();
+  const others = PLUS_PERKS.filter(([, t]) => t !== f[1]).slice(0, 4).map(([, t]) => (/^Fråga/.test(t) ? t : t[0].toLowerCase() + t.slice(1)));
+  openSheet("Ingår i Plus", `
+    <div class="upsell-hero"><span class="dl-ic">${icon(f[0], 26)}</span><div><b>${esc(f[1])}</b><span>${esc(f[2])}</span></div></div>
+    <p class="muted">${esc(`Med Plus får ni också ${others.join(", ")} och mer. Ett köp gäller alla i hushållet.`)}</p>
+    <div class="form" style="margin-top:14px">
+      ${canBuyHere() ? `<button class="btn primary block" type="button" data-act="plus-buy">Prova gratis i 14 dagar</button>` : ""}
+      <button class="btn ${canBuyHere() ? "ghost" : "primary"} block" type="button" data-act="plus">Läs mer om Plus</button>
+    </div>
+    ${canBuyHere() ? "" : `<p class="hint">Plus köps i iPhone-appen och gäller sedan för alla i hushållet, också här.</p>`}`);
+}
 // "Ni har Plus till 3 mars 2027", eller utan datum (testläget).
 const plusUntilText = () => { const u = tsMs(S.house?.plus?.until); return u > Date.now() ? `Ni har Plus till ${fmtDate(ymd(new Date(u)))}` : "Ni har Plus"; };
 // Fördelarna med Plus, i den ordning de visas överallt.
@@ -617,7 +649,7 @@ function viewLocked() {
     <h2>${esc(`${carName(c)} är låst`)}</h2>
     <p class="muted">${esc(`Utan Plus fungerar en bil i taget, och just nu är det ${carName(a)}. Allt som är loggat på ${carName(c)} finns kvar och syns igen när ni har Plus.`)}</p>
     <div class="form" style="margin-top:14px">
-      <button class="btn primary block" type="button" data-act="plus">${icon("spark", 18)} Skaffa Plus, så fungerar alla bilar</button>
+      <button class="btn primary block" type="button" data-act="plus" data-f="cars">${icon("spark", 18)} Skaffa Plus, så fungerar alla bilar</button>
       <button class="btn block" type="button" data-act="pick-car" data-id="${esc(a.id)}">${esc(`Gå till ${carName(a)}`)}</button>
       ${isOwner()
         ? next ? `<p class="hint">${esc(`Du kan byta vilken bil som fungerar igen ${fmtDate(ymd(new Date(next)))}.`)}</p>`
@@ -634,7 +666,13 @@ function plusTipCard() {
   if (S.entries.length < 20 && !month) return "";
   return `<article class="card plus-tip">
     <h2>Gillar ni Bildagboken?</h2>
-    <p class="muted">Med Bildagboken Plus kan ni ha fler bilar, vara fler i hushållet och spara upp till 2 000 bilder.</p>
+    <div class="tip-perks">
+      <div>${icon("spark", 18)}<span><b>Fråga Glenn</b> om allt ni har loggat, med text eller röst</span></div>
+      <div>${icon("route", 18)}<span><b>Körjournal</b> som räknar ut milersättningen</span></div>
+      <div>${icon("camera", 18)}<span><b>Fota kvittot</b>, så fyller AI i resten</span></div>
+      <div>${icon("car", 18)}<span><b>Hela familjen</b>: upp till 6 bilar och 6 personer</span></div>
+    </div>
+    <p class="muted">${esc(canBuyHere() ? "Prova gratis i 14 dagar. Ett köp gäller alla i hushållet." : "Ett köp gäller alla i hushållet.")}</p>
     <div class="ask"><button class="btn-soft" type="button" data-act="plus-tip" data-id="read">${icon("spark", 16)} Läs om Plus</button><button class="hh-ghost" type="button" data-act="plus-tip">Inte nu</button></div>
   </article>`;
 }
@@ -1669,7 +1707,7 @@ const speakerSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" 
 // Rutan som i ChatGPT: samtalet, och längst ner en rad med fältet, mikrofonen (prata in text) och
 // röstläget (prata med Glenn). När det står något i fältet blir röstknappen en skicka-knapp.
 function chatSheet() {
-  if (!chatOn()) return plusOnSale() ? plusSheet() : null;
+  if (!chatOn()) return plusOnSale() ? plusUpsell("glenn") : null;
   const st = chatState();
   GLENN_FRAMES.forEach((f) => { new Image().src = glennSrc(f); new Image().src = glennSrc(f, true); });
   openSheet(`Fråga ${AI_NAME}`, `<div class="chat">
@@ -1929,8 +1967,8 @@ function pixelCar(root) {
 function garagePicker() {
   const list = Object.entries(COLORS).filter(([, t]) => t.garage);
   return `<div class="gp-pick">
-    <div class="gp-head">${glennFig(`<img src="${glennSrc("base")}" alt="" width="56" height="56">`, false, "gp-fig")}<div><b>GLENNS GARAGE</b><span>Tre teman i pixelstil</span></div></div>
-    <div class="gp-minis" role="group" aria-label="Glenns Garage">${list.map(([k, t]) => `<button class="gp-mini ${t.garage}" type="button" data-act="theme-color" data-v="${k}" aria-pressed="${themePrefs().color === k}" aria-label="${esc(t.name.replace(/\u00ad/g, ""))}">
+    <div class="gp-head">${glennFig(`<img src="${glennSrc("base")}" alt="" width="56" height="56">`, false, "gp-fig")}<div><b>GLENNS GARAGE</b><span>${plusLock() ? "Tre teman i pixelstil · ingår i Plus" : "Tre teman i pixelstil"}</span></div>${plusLock() ? `<span class="plus-badge">Plus</span>` : ""}</div>
+    <div class="gp-minis" role="group" aria-label="Glenns Garage">${list.map(([k, t]) => `<button class="gp-mini ${t.garage}${plusLock() ? " locked" : ""}" type="button" ${plusLock() ? `data-act="plus" data-f="garage"` : `data-act="theme-color" data-v="${k}"`} aria-pressed="${themePrefs().color === k}" aria-label="${esc(t.name.replace(/\u00ad/g, ""))}">
       <span class="gm-screen" aria-hidden="true"><span class="gm-sign"><img src="${glennSrc("base")}" alt="">GLENNS GARAGE</span><span class="gm-card"><i></i><i></i></span><span class="gm-card"><i></i></span><span class="gm-nav"><i></i></span></span>
       <span class="gm-name">${t.name}</span></button>`).join("")}</div>
   </div>`;
@@ -2421,7 +2459,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       <label for="cf-plate">Registreringsnummer</label>
       <span class="geo-row"><input name="plate" id="cf-plate" value="${esc(c.plate || "")}" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="8">
         <button class="btn-soft" type="button" data-act="reg-lookup">${icon("search", 16)} Hämta</button></span>
-      <div id="cf-reg-status" class="reg-status" aria-live="polite"${isNew ? "" : ` data-plate="${esc(plateKey(c.plate))}"`}><small>${isNew ? "Skriv registreringsnumret och tryck på Hämta, så fylls bilens uppgifter i." : "Tryck på Hämta för att fylla i uppgifterna från registret igen."}</small></div>
+      <div id="cf-reg-status" class="reg-status" aria-live="polite"${isNew ? "" : ` data-plate="${esc(plateKey(c.plate))}"`}${!isNew && regFetchedPlate(c) ? ` data-fetched="${esc(regFetchedPlate(c))}"` : ""}><small>${isNew ? "Skriv registreringsnumret och tryck på Hämta, så fylls bilens uppgifter i." : regFetchedPlate(c) ? "Uppgifterna är redan hämtade. Har du skrivit fel registreringsnummer, rätta det och tryck på Hämta." : "Tryck på Hämta för att fylla i uppgifterna från registret."}</small></div>
       <input type="hidden" name="regJson" id="cf-regJson">
     </div>
     <div class="row2">
@@ -2787,6 +2825,8 @@ function regFormLookup(force = false) {
     return;
   }
   if (!force && box.dataset.plate === key) return;
+  // En hämtning per bil. Har man skrivit fel registreringsnummer går det att hämta igen med det rätta.
+  if (box.dataset.fetched && box.dataset.fetched === key) { box.innerHTML = `<div class="reg-fail"><p>${esc(`Uppgifterna för ${fmtPlate(key)} är redan hämtade.`)}</p></div>`; return; }
   regLookup(box, key, regFillForm);
 }
 // Sökningen görs bara när man trycker på Hämta (eller Enter i fältet), aldrig av sig själv.
@@ -2816,8 +2856,11 @@ function regFillForm(f) {
 }
 // Uppgifterna från det dolda fältet, för att spara på bilen.
 function regFromForm(form) {
-  try { const f = JSON.parse(form.elements.namedItem("regJson")?.value || "null"); return Array.isArray(f) && f.length ? { f: f.slice(0, 150), at: Date.now() } : null; } catch { return null; }
+  try { const f = JSON.parse(form.elements.namedItem("regJson")?.value || "null"); return Array.isArray(f) && f.length ? { f: f.slice(0, 150), at: Date.now(), plate: plateKey(form.elements.namedItem("plate")?.value || "") } : null; } catch { return null; }
 }
+// Registreringsnumret som uppgifterna hämtades för (äldre bilar: det nuvarande).
+const regFetchedPlate = (c) => (c?.reg?.f?.length ? c.reg.plate || plateKey(c.plate || "") : "");
+const regCanFetch = (c) => plateOk(c.plate) && regFetchedPlate(c) !== plateKey(c.plate);
 // Bilen: uppgifterna från registret, och hämta dem (igen) för en bil som redan finns.
 function regCard(c) {
   if (!c.reg?.f?.length) {
@@ -2827,7 +2870,7 @@ function regCard(c) {
       <div id="reg-box-${esc(c.id)}"></div>
       <div class="ask"><button class="btn-soft" type="button" data-act="reg-refresh">${icon("search", 16)} Hämta uppgifterna</button></div></div>`;
   }
-  return `<div class="card"><h2>Från registret <button class="link" type="button" data-act="reg-refresh">Hämta igen</button></h2>
+  return `<div class="card"><h2>Från registret${regCanFetch(c) ? ` <button class="link" type="button" data-act="reg-refresh">Hämta igen</button>` : ""}</h2>
     <div id="reg-box-${esc(c.id)}"></div>
     <details class="more"><summary>${esc(`Visa alla uppgifter (${c.reg.f.length})`)}</summary>
       <dl class="detail-list">${c.reg.f.map((x) => `<div><dt data-notr>${esc(x.k)}</dt><dd data-notr>${esc(x.v)}</dd></div>`).join("")}</dl></details>
@@ -2836,10 +2879,11 @@ function regCard(c) {
 async function regRefresh(c) {
   const box = $(`#reg-box-${c.id}`);
   if (!box) return;
+  if (!regCanFetch(c)) { box.innerHTML = `<div class="reg-fail"><p>Uppgifterna är redan hämtade för den här bilen.</p></div>`; return; }
   await regLookup(box, c.plate, async (f) => {
     const d = regToCar(f);
     // Det man själv har skrivit står kvar. Besiktningen tas från registret.
-    const upd = { reg: { f: f.slice(0, 150), at: Date.now() } };
+    const upd = { reg: { f: f.slice(0, 150), at: Date.now(), plate: plateKey(c.plate) } };
     if (d.besiktning && !c.besiktning) upd.besiktning = d.besiktning;
     for (const k of ["vin", "color", "year", "engine", "fuel", "gearbox", "towMax", "totalWeight", "trainWeight", "skattBelopp", "bodyStyle", "seats", "firstReg", "co2"]) if (d[k] != null && (c[k] == null || c[k] === "")) upd[k] = d[k];
     try { await updateDoc(ref("cars", c.id), upd); Object.assign(c, upd); showToast("Uppgifterna är hämtade"); render(); } catch (e) { onWriteError(e); }
@@ -3364,7 +3408,7 @@ function loadPdfLibs() {
   return pdfLibsPromise;
 }
 const pdfReady = () => !!window.jspdf?.jsPDF?.API?.autoTable;
-function serviceBookPdf(d0) {
+function serviceBookPdf(d0, extra = null) {
   const d = serviceBookFromStore(d0);
   const t = (x) => tr(String(x ?? "")).replace(/[–—]/g, "-").replace(/›/g, ">");
   const pdf = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
@@ -3389,6 +3433,24 @@ function serviceBookPdf(d0) {
       footStyles: { fillColor: [255, 255, 255], textColor: 20, fontStyle: "bold" }, columnStyles: { 4: { halign: "right" } } });
   } else {
     pdf.setFont("helvetica", "normal"); pdf.setFontSize(10); pdf.text(t("Inga service, egna jobb, däckbyten eller besiktningar är loggade än."), 14, y + 7);
+  }
+  if (extra?.costs?.length) {
+    pdf.addPage();
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(16); pdf.text(t("Kostnader"), 14, 20);
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(110); pdf.text(t(`Allt som är loggat sedan ${fmtDate(extra.costFrom)}, per kategori.`), 14, 26); pdf.setTextColor(0);
+    pdf.autoTable({ ...base, startY: 30, head: [["Kategori", "Senaste 12 månaderna", "Totalt"].map(t)], body: extra.costs.map((r) => r.map(t)), columnStyles: { 1: { halign: "right" }, 2: { halign: "right" } } });
+  }
+  if (extra?.receipts?.length) {
+    const H = pdf.internal.pageSize.getHeight();
+    const boxW = W - 28, boxH = (H - 50) / 2 - 10;
+    extra.receipts.forEach((r, i) => {
+      if (i % 2 === 0) { pdf.addPage(); pdf.setFont("helvetica", "bold"); pdf.setFontSize(16); pdf.text(t(i === 0 ? "Kvitton och bilder" : "Kvitton och bilder (forts.)"), 14, 20); }
+      const top = 28 + (i % 2) * (boxH + 14);
+      const [w, h] = r.wh, k = Math.min(boxW / w, boxH / h);
+      const iw = w * k, ih = h * k;
+      try { pdf.addImage(r.src, /^data:image\/png/.test(r.src) ? "PNG" : "JPEG", 14 + (boxW - iw) / 2, top, iw, ih, undefined, "FAST"); } catch {}
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(80); pdf.text(t(r.caption), 14, top + ih + 5); pdf.setTextColor(0);
+    });
   }
   return pdf.output("blob");
 }
@@ -3423,6 +3485,95 @@ function printFallback(data) {
   setTimeout(() => window.print(), 50);
 }
 const pdfName = (d) => `Servicebok ${d.car || ""}${d.plate ? " " + d.plate : ""}`.trim().replace(/[^\wåäöÅÄÖ -]/g, "") + ".pdf";
+// Kalenderfil (Plus): besiktning, beräknade byten, bokade tider och papper som går ut.
+function icsEsc(t) { return String(t || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n"); }
+function calendarEvents(c) {
+  const name = carName(c), ev = [];
+  if (c.besiktning && c.besiktning >= todayStr()) ev.push({ d: parseDate(c.besiktning), t: `Sista dag för besiktning: ${name}`, n: "" });
+  for (const s of allItemStatus(c)) {
+    const f = itemForecast(s, c);
+    if (f && f.d >= today0()) ev.push({ d: f.d, t: `${s.item.name}: ${name}`, n: f.by === "mil" ? `Beräknat utifrån hur mycket ni kör. ${dueText(s)}.` : `${dueText(s)}.` });
+  }
+  for (const b of c.bookings || []) if (b.date >= todayStr()) ev.push({ d: parseDate(b.date), time: b.time || "", t: `${BOOK_KINDS[b.kind] || "Bokad tid"}: ${name}`, n: [b.place, b.note].filter(Boolean).join(". ") });
+  for (const d of c.docs || []) if (d.validTo && d.validTo >= todayStr()) ev.push({ d: parseDate(d.validTo), t: `${d.title} går ut: ${name}`, n: "" });
+  return ev.sort((a, b) => a.d - b.d);
+}
+function icsText(c) {
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  const day = (d) => ymd(d).replace(/-/g, "");
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Bildagboken//SV", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
+  calendarEvents(c).forEach((e, i) => {
+    const next = new Date(e.d.getTime() + 864e5);
+    const timed = /^\d\d:\d\d$/.test(e.time || "");
+    lines.push("BEGIN:VEVENT", `UID:bdb-${c.id}-${i}-${day(e.d)}@bildagboken.com`, `DTSTAMP:${stamp}`,
+      ...(timed ? [`DTSTART:${day(e.d)}T${e.time.replace(":", "")}00`, `DURATION:PT1H`] : [`DTSTART;VALUE=DATE:${day(e.d)}`, `DTEND;VALUE=DATE:${day(next)}`]),
+      `SUMMARY:${icsEsc(e.t)}`, ...(e.n ? [`DESCRIPTION:${icsEsc(e.n)}`] : []),
+      "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${icsEsc(e.t)}`, timed ? "TRIGGER:-PT2H" : "TRIGGER:-P7D", "END:VALARM", "END:VEVENT");
+  });
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
+// I appen och i telefonens webbläsare öppnas filen via en adress, så att telefonen frågar om den ska läggas in i kalendern.
+// På datorn laddas filen ner.
+const CAL_URL = `https://europe-west1-${firebaseConfig.projectId}.cloudfunctions.net/kalender`;
+async function exportCalendar(btn) {
+  const c = car();
+  if (!c) return;
+  const n = calendarEvents(c).length;
+  if (!n) { showToast("Det finns inget kommande att lägga in än."); return; }
+  const ics = icsText(c);
+  const mobile = NATIVE || /iPhone|iPad|iPod|Android/.test(navigator.userAgent);
+  if (!mobile) {
+    const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
+    const a = document.createElement("a"); a.href = url; a.download = `${carName(c).replace(/[^\wåäöÅÄÖ -]/g, "")}.ics`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+    showToast(`${n === 1 ? "1 händelse" : `${n} händelser`} i kalenderfilen. Öppna den för att lägga in dem.`, 5000);
+    return;
+  }
+  if (btn) btn.disabled = true;
+  // Fönstret öppnas direkt vid trycket (annars stoppar telefonen det), adressen sätts när filen är sparad.
+  const win = NATIVE ? null : window.open("", "_blank");
+  try {
+    const r = doc(collection(db, "icsfiles"));
+    await setDoc(r, { uid: uid(), ics, at: serverTimestamp() });
+    const url = `${CAL_URL}?id=${r.id}`;
+    if (win) win.location.href = url; else window.open(url, "_blank");
+    showToast(`${n === 1 ? "1 händelse" : `${n} händelser`}. Välj Lägg till alla.`, 5000);
+  } catch (e) { win?.close(); onWriteError(e); }
+  if (btn) btn.disabled = false;
+}
+
+// Säljpaket (Plus): serviceboken med en sammanställning av kostnaderna och bilderna från posterna, som PDF.
+async function salePack(btn) {
+  const c = car();
+  if (!c) return;
+  if (btn) btn.disabled = true;
+  showToast("Gör i ordning säljpaketet …", 8000);
+  try {
+    await loadPdfLibs();
+    const d = serviceBookData(c);
+    const ents = carEntries().filter((e) => ["service", "eget", "dack"].includes(e.type) || (e.type === "kostnad" && e.category === "Besiktning"))
+      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    const pics = [];
+    for (const e of ents) for (const pid of photosOf(e)) if (pics.length < 60) pics.push({ e, pid });
+    await Promise.all(pics.map(async (x) => { try { const sn = await getDoc(ref("photos", x.pid)); x.src = sn.exists() ? sn.data().data : null; } catch { x.src = null; } }));
+    const size = (src) => new Promise((res) => { const im = new Image(); im.onload = () => res([im.naturalWidth, im.naturalHeight]); im.onerror = () => res(null); im.src = src; });
+    for (const x of pics) if (x.src) x.wh = await size(x.src);
+    // Kostnaderna per kategori: hela tiden och de senaste tolv månaderna.
+    const paid = carEntries().filter((e) => e.amount > 0 && e.date);
+    const since = ymd(addMonths(today0(), -12));
+    const byCat = {};
+    for (const e of paid) { const k = catOf(e); byCat[k] = byCat[k] || [0, 0]; byCat[k][0] += e.amount; if (e.date >= since) byCat[k][1] += e.amount; }
+    const costs = Object.entries(byCat).sort((a, b) => b[1][0] - a[1][0]).map(([k, [all, y]]) => [k, `${fmtKr(y)} kr`, `${fmtKr(all)} kr`]);
+    const first = paid.reduce((m, e) => (e.date < m ? e.date : m), todayStr());
+    const blob = serviceBookPdf(d, { costs, costFrom: first, receipts: pics.filter((x) => x.src && x.wh).map((x) => ({ src: x.src, wh: x.wh, caption: `${fmtDate(x.e.date)} · ${entryTitle(x.e)}${x.e.amount ? ` · ${fmtKr(x.e.amount)} kr` : ""}` })) });
+    pendingPdf = { blob, name: pdfName(d).replace(/\.pdf$/, " - säljpaket.pdf") };
+    openSheet("Säljpaketet är klart", `<p class="muted">${esc(`Serviceboken, kostnaderna och ${pics.filter((x) => x.src).length === 1 ? "1 bild" : `${pics.filter((x) => x.src).length} bilder`} från posterna. Välj Spara i Filer, Skriv ut eller skicka den direkt.`)}</p>
+      <button class="btn primary block" type="button" data-act="pdf-share" style="margin-top:14px">${icon("print", 18)} Dela eller spara PDF</button>`);
+  } catch (e) { reportError(e, "sale-pack"); showToast("Säljpaketet gick inte att göra just nu."); }
+  if (btn) btn.disabled = false;
+}
+
 function printServiceBook() {
   const c = car();
   if (!c) return;
@@ -3499,7 +3650,7 @@ const RECEIPT_TYPES = ["tank", "service", "eget", "dack", "tvatt", "parkering", 
 const aiOn = () => hasPlus() || (isAdmin() && !testMode());
 function receiptButton() {
   return `<label class="btn ghost block receipt-btn" id="receipt-btn">${icon(aiOn() ? "spark" : "camera", 18)} <span id="receipt-label">${aiOn() ? "Läs av med AI" : "Läs av ett kvitto"}</span>
-    <input type="file" id="ef-scan" accept="image/*" class="vh"></label>${!aiOn() && plusOnSale() ? `<p class="hint plus-hint" style="margin-top:6px">Med Plus fyller AI i allt från kvittot. <button class="link" type="button" data-act="plus">Läs mer</button></p>` : ""}`;
+    <input type="file" id="ef-scan" accept="image/*" class="vh"></label>${!aiOn() && plusOnSale() ? `<p class="hint plus-hint" style="margin-top:6px">Med Plus fyller AI i allt från kvittot. <button class="link" type="button" data-act="plus" data-f="ai">Läs mer</button></p>` : ""}`;
 }
 async function scanReceipt(file) {
   const label = $("#receipt-label"), btn = $("#receipt-btn");
@@ -3757,7 +3908,7 @@ const CARD_NAMES = { koll: "På gång", todo: "Att göra", recent: "Senaste akti
 const CARD_VIEWS = {
   oversikt: { names: CARD_NAMES, pref: "cards", title: "Översikten" },
   bilen: { get names() { return { upp: "Uppgifter", maint: "Underhåll", dack: "Däck", media: "Bilder och dokument", book: "Servicebok", reg: "Från registret", slap: "Släpvagn" }; }, pref: "cards.bilen", title: "Bilen" },
-  ekonomi: { names: { month: "Kostnad per månad", year: "Hela året", rec: "Återkommande kostnader", tank: "Tankningar", facts: "Bilåret i siffror" }, pref: "cards.ekonomi", title: "Ekonomi" },
+  ekonomi: { names: { month: "Kostnad per månad", year: "Hela året", compare: "Prognos och jämförelse", rec: "Återkommande kostnader", tank: "Tankningar", facts: "Bilåret i siffror" }, pref: "cards.ekonomi", title: "Ekonomi" },
 };
 function cardPrefs(view = "oversikt") {
   const v = CARD_VIEWS[view];
@@ -4256,6 +4407,52 @@ function yearAverage(paid, year) {
   return { total, avg: total / Math.max(1, endM - startM + 1) };
 }
 
+// Prognos för året och år mot år (Plus).
+function compareCard(paid) {
+  if (!plusFeat()) {
+    if (!plusLock()) return "";
+    return `<div class="card"><h2>Prognos och jämförelse <span class="plus-badge">Plus</span></h2>
+      <p class="muted">Se vad bilen beräknas kosta i år, och jämför år mot år och kategori för kategori.</p>
+      <div class="ask"><button class="btn-soft" type="button" data-act="plus" data-f="econ">${icon("spark", 16)} Ingår i Plus</button></div></div>`;
+  }
+  if (!paid.length) return "";
+  const now = new Date(), y = now.getFullYear(), today = todayStr();
+  const sumY = (yy, until = `${yy}-12-31`) => paid.filter((e) => e.date.startsWith(`${yy}-`) && e.date <= until).reduce((a, e) => a + e.amount, 0);
+  const firstYear = Number(paid.reduce((m, e) => (e.date < m ? e.date : m), today).slice(0, 4));
+  const years = [y - 3, y - 2, y - 1, y].filter((yy) => yy >= firstYear);
+  const soFar = sumY(y);
+  // Snittet per månad de senaste tolv månaderna (eller kortare om loggen är yngre), gånger det som är kvar av året.
+  const since = addMonths(today0(), -12);
+  const last12 = paid.filter((e) => parseDate(e.date) >= since);
+  const firstD = paid.reduce((m, e) => (e.date < m ? e.date : m), today);
+  const span = Math.max(1, Math.min(12, (now - parseDate(firstD)) / (30.44 * 864e5)));
+  const avg = last12.reduce((a, e) => a + e.amount, 0) / span;
+  const left = (new Date(y, 11, 31) - today0()) / (30.44 * 864e5);
+  const forecast = span >= 2 ? Math.round((soFar + avg * left) / 100) * 100 : null;
+  const max = Math.max(1, ...years.map((yy) => (yy === y && forecast ? Math.max(forecast, soFar) : sumY(yy))));
+  // Kategorier: i år mot samma tid förra året.
+  const cut = `${y - 1}-${today.slice(5)}`;
+  const cats = {};
+  for (const e of paid) {
+    const k = catOf(e);
+    if (e.date.startsWith(`${y}-`)) (cats[k] = cats[k] || [0, 0])[0] += e.amount;
+    else if (e.date.startsWith(`${y - 1}-`) && e.date <= cut) (cats[k] = cats[k] || [0, 0])[1] += e.amount;
+  }
+  const catRows = Object.entries(cats).sort((a, b) => b[1][0] + b[1][1] - (a[1][0] + a[1][1])).slice(0, 6);
+  return `<div class="card cmp">
+    <h2>Prognos och jämförelse</h2>
+    ${forecast ? `<div class="eco"><div class="stat"><div class="label">Hittills ${y}</div><div class="n">${fmtKr(soFar)} <small>kr</small></div></div>
+      <div class="stat"><div class="label">Beräknat för hela ${y}</div><div class="n">${fmtKr(forecast)} <small>kr</small></div></div></div>
+      <p class="hint" style="margin:6px 0 12px">${esc(`Räknat på ett snitt på ${fmtKr(Math.round(avg))} kr i månaden det senaste året.`)}</p>` : `<p class="muted">Prognosen visas när ni har loggat kostnader i minst två månader.</p>`}
+    <div class="cmp-years">${years.map((yy) => {
+      const v = sumY(yy);
+      const f = yy === y && forecast ? forecast : null;
+      return `<div class="cmp-row"><span class="cmp-y">${yy}</span><span class="cmp-bar">${f ? `<i class="fc" style="width:${Math.round((f / max) * 100)}%"></i>` : ""}<i style="width:${Math.round((v / max) * 100)}%"></i></span><span class="cmp-v">${fmtKr(v)} kr${f ? `<small>${esc(`ca ${fmtKr(f)}`)}</small>` : ""}</span></div>`;
+    }).join("")}</div>
+    ${catRows.length && years.includes(y - 1) ? `<p class="label" style="margin:16px 0 6px">${esc(`I år mot samma tid ${y - 1}`)}</p>
+      <div class="rows">${catRows.map(([k, [a, b]]) => `<div class="dl"><div class="dl-ic">${icon("coin", 18)}</div><div><div class="dl-t">${esc(k)}</div><div class="dl-s">${esc(`${fmtKr(a)} kr i år · ${fmtKr(b)} kr ${y - 1}`)}</div></div><span class="pill ${!b ? "none" : a > b ? "soon" : "ok"}">${esc(b ? `${a >= b ? "+" : "−"}${Math.abs(Math.round(((a - b) / b) * 100))} %` : "Ny")}</span></div>`).join("")}</div>` : ""}
+  </div>`;
+}
 function viewEconomy() {
   const paid = carEntries().filter((e) => e.amount > 0 && e.date);
   const sel = ecoSelected();
@@ -4363,6 +4560,7 @@ function viewEconomy() {
         ${fav ? `<div><dt>Oftast hos</dt><dd>${esc(fav[0])} (${fav[1]} gånger)</dd></div>` : ""}
       </dl></div>`;
     })()}
+    <!--card:compare-->${compareCard(paid)}
     <!--card:facts-->${yearTotal || yearFacts.length ? `<div class="card">
       <h2>Bilåret ${year} i siffror</h2>
       <dl class="detail-list">
@@ -4383,6 +4581,20 @@ function daysToDue(s, c) {
   const ds = [s.remDays, s.remMil != null ? s.remMil / rate : null].filter((x) => x != null);
   return ds.length ? Math.min(...ds) : 1e6;
 }
+
+// När en underhållspunkt beräknas bli aktuell (Plus): efter tid, eller efter mil räknat på hur mycket bilen körs.
+// Bygger på mätarställningarna det senaste året (milPerDay). Utan sådana blir det ingen prognos för milen.
+function itemForecast(s, c) {
+  if (!s || s.unknown) return null;
+  const rate = milPerDay(c);
+  const list = [];
+  if (s.dueDate) list.push({ d: s.dueDate, by: "time" });
+  if (s.remMil != null && rate) list.push({ d: new Date(today0().getTime() + Math.max(0, s.remMil / rate) * 864e5), by: "mil" });
+  if (!list.length) return null;
+  list.sort((a, b) => a.d - b.d);
+  return { ...list[0], rate };
+}
+const forecastText = (f) => (f.d <= today0() ? "Redan nu" : `Runt ${MONTHS[f.d.getMonth()]} ${f.d.getFullYear()}`);
 
 // Intervallet i text: "var 2 000 mil eller 1 år". Hela år skrivs i år, annars i månader.
 function monthsText(m) { return m % 12 === 0 ? `${m / 12} år` : `${m} mån`; }
@@ -4449,6 +4661,8 @@ function viewCar() {
         return `${S.partsAll ? `<p class="label" style="margin:14px 0 2px">Annat som har gjorts</p><div class="rows">${rows}</div>` : ""}
           <button class="link" type="button" data-act="toggle-parts" style="margin-top:10px">${S.partsAll ? "Visa färre" : `Visa ${extras.length} till`}</button>`;
       })()}
+      ${plusFeat() ? `<div class="ask" style="margin-top:12px"><button class="btn-soft" type="button" data-act="cal-export">${icon("calendar", 16)} Lägg in i kalendern</button></div>`
+        : plusLock() ? `<div class="ask" style="margin-top:12px"><button class="btn-soft" type="button" data-act="plus" data-f="forecast">${icon("calendar", 16)} Lägg in i kalendern <span class="plus-badge">Plus</span></button></div>` : ""}
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
     <!--card:dack--><div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
@@ -4458,6 +4672,9 @@ function viewCar() {
       <p class="muted">All service, egna jobb, däckbyten och besiktningar med datum, mätarställning och kostnad. Bra att visa en köpare eller verkstad.</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="print-book">${icon("print", 16)} Dela eller spara som PDF</button>
       ${shareCardHtml(c)}</div>
+      ${plusFeat() || plusLock() ? `<div class="salepack">
+        <div><b>Säljpaket${plusFeat() ? "" : ' <span class="plus-badge">Plus</span>'}</b><span>Serviceboken med kvittona och en sammanställning av kostnaderna, som PDF. Det som bevisar historiken när bilen ska säljas.</span></div>
+        <button class="btn-soft" type="button" ${plusFeat() ? 'data-act="sale-pack"' : 'data-act="plus" data-f="salepack"'}>${icon("print", 16)} Gör säljpaket</button></div>` : ""}
     </div>
     <!--card:end--><div class="car-danger">${isOwner()
       ? `<button class="link danger" type="button" data-act="delete-car" data-id="${esc(c.id)}">${icon("close", 14)} ${esc(`Ta bort ${carName(c)}`)}</button>
@@ -4510,7 +4727,7 @@ function viewSettings() {
           ? `<button class="link danger" type="button" data-act="leave-house">Lämna</button>`
           : isOwner() ? `<button class="link danger" type="button" data-act="remove-member" data-id="${esc(m)}" aria-label="Ta bort ${esc(memberName(m))}">Ta bort</button>` : "") : ""}</span></div>`).join("")}</div>
       ${members.length > 1 ? `<p class="hint" style="margin-top:6px">${esc(isOwner() ? "Du är hushållets ägare och den enda som kan ta bort bilar och andra personer. Lämnar du hushållet väljer du vem som tar över." : `${memberName(ownerUid())} är hushållets ägare och den enda som kan ta bort bilar och andra personer.`)}</p>` : ""}
-      ${membersFull() ? `<div class="hh-invite"><div class="hh-grow"><span class="label">Hushållet är fullt</span><span class="dl-s">${esc(caps() === PLUS ? `Bildagboken Plus har plats för ${PLUS.members} personer.` : `Gratisversionen har plats för ${FREE.members} personer. Med Plus kan ni vara upp till ${PLUS.members}.`)}</span></div>${caps() === PLUS ? "" : `<button class="btn-soft" type="button" data-act="plus">Läs om Plus</button>`}</div>` : `      <div class="hh-invite">
+      ${membersFull() ? `<div class="hh-invite"><div class="hh-grow"><span class="label">Hushållet är fullt</span><span class="dl-s">${esc(caps() === PLUS ? `Bildagboken Plus har plats för ${PLUS.members} personer.` : `Gratisversionen har plats för ${FREE.members} personer. Med Plus kan ni vara upp till ${PLUS.members}.`)}</span></div>${caps() === PLUS ? "" : `<button class="btn-soft" type="button" data-act="plus" data-f="members">Läs om Plus</button>`}</div>` : `      <div class="hh-invite">
         <div class="hh-grow"><span class="label">Inbjudningskod</span><span class="hh-code" data-notr>${esc(S.house?.inviteCode || "")}</span></div>
         <button class="btn-soft" type="button" data-act="copy-invite">Kopiera länk</button>
         <button class="hh-ghost" type="button" data-act="new-invite-code">Byt kod</button>
@@ -4523,7 +4740,7 @@ function viewSettings() {
       <h2>Notiser</h2>
       ${pushOn()
         ? `<p class="muted">Påslagna på den här enheten. Välj vad du vill få notiser om:</p>
-          <div class="push-kinds">${PUSH_KINDS.map(([k, l, d]) => `<label class="ios-switch-row push-kind"><span><b>${esc(l)}</b><small>${esc(d)}</small></span><input type="checkbox" class="ios-switch" data-push-kind="${k}"${pushPrefs()[k] ? " checked" : ""}></label>`).join("")}</div>
+          <div class="push-kinds">${PUSH_KINDS.filter(([k]) => k !== "letter" || plusFeat()).map(([k, l, d]) => `<label class="ios-switch-row push-kind"><span><b>${esc(l)}</b><small>${esc(d)}</small></span><input type="checkbox" class="ios-switch" data-push-kind="${k}"${pushPrefs()[k] ? " checked" : ""}></label>`).join("")}</div>
           <div class="ask"><button class="link" type="button" data-act="push-off">Stäng av alla notiser på den här enheten</button></div>`
         : `<p class="muted">${perm === "denied" ? "Notiserna är avstängda i telefonens inställningar för den här appen." : "Få påminnelser om bokade tider, besiktning, försäkring och däckbyte, och en notis när någon av de andra loggar något. Även när appen är stängd."}</p>
           ${perm !== "denied" ? `<div class="ask"><button class="btn-soft" type="button" data-act="push-on">${icon("bell", 16)} Slå på notiser</button></div>` : ""}
@@ -4595,6 +4812,7 @@ const PUSH_KINDS = [
   ["bookings", "Bokade tider", "Dagen innan och samma dag"],
   ["dates", "Datum att hålla koll på", "Besiktning, försäkring, skatt, dokument och däckbyte"],
   ["activity", "När någon annan loggar", "Till exempel en tankning eller service"],
+  ["letter", "Glenns månadsbrev", "Den första i månaden: vad bilen kostade och hur mycket ni körde"],
 ];
 function pushPrefs() {
   let p = {};
@@ -4964,7 +5182,7 @@ function typePicker() {
   openSheet("Vad vill du logga?", LOG_GROUPS.map(([name, keys]) => `<p class="types-head">${name}</p><div class="types">
     ${keys.map((k) => `<button type="button" data-act="new-entry" data-type="${k === "besiktning" ? "kostnad" : k}"${k === "besiktning" ? ' data-cat="Besiktning"' : ""}>${icon(typeIcon(k), 26)}${typeLabel(k)}</button>`).join("")}
   </div>`).join("") + `
-  ${!tripsOn() && plusOnSale() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="plus" class="plus-teaser">${icon("car", 26)}Resa<span class="plus-badge">Plus</span></button></div>` : ""}
+  ${!tripsOn() && plusOnSale() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="plus" data-f="trips" class="plus-teaser">${icon("car", 26)}Resa<span class="plus-badge">Plus</span></button></div>` : ""}
   ${tripsOn() && !tripsVisible() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="trips-on">${icon("route", 26)}Slå på körjournalen</button></div>` : ""}
   ${tripsVisible() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="trip-menu">${icon("car", 26)}${openTrip() ? "Avsluta resa" : "Resa"}</button></div>` : ""}
   <p class="types-head">Boka</p><button class="btn primary block" type="button" data-act="new-booking">${icon("calendar", 18)} Lägg in bokad tid</button>
@@ -6982,6 +7200,7 @@ function itemSheet(id) {
   const item = (c.items || []).find((i) => i.id === id);
   if (!item) return;
   const st = itemStatusWithCheck(item, c, carEntries());
+  const fc = item.mil && plusFeat() ? itemForecast(st, c) : null;
   const history = carEntries().filter((e) => entryTouches(e, item)).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const interval = intervalText(item) === "inget intervall" ? "" : intervalText(item);
   const manual = item.baseDate && !history.some((e) => e.date >= item.baseDate);
@@ -6998,6 +7217,9 @@ function itemSheet(id) {
       ${st.check ? `<div><dt>Senast kontrollerat</dt><dd>${esc(fmtDate(st.check.date))}<br><span class="hint">Såg bra ut, fick ${esc(checkExtension(item).months ? "ett år" : `${fmt(checkExtension(item).mil)} mil`)} till</span></dd></div>` : ""}
       <div><dt>${LAST_LABEL[item.id] || "Senast bytt"}</dt><dd>${esc((st.check ? st.replacedDate : st.lastDate) ? [fmtDate(st.check ? st.replacedDate : st.lastDate), (st.check ? st.replacedMil : st.lastMil) != null ? `vid ${fmt(st.check ? st.replacedMil : st.lastMil)} mil` : ""].filter(Boolean).join(", ") : "Okänt")}${manual ? `<br><span class="hint">Ifyllt för hand, inte från loggen</span>` : ""}</dd></div>
       ${!st.unknown ? `<div><dt>Nästa</dt><dd>${esc(dueText(st) || "–")}</dd></div><div><dt>Kvar</dt><dd>${esc(st.label)}</dd></div>` : ""}
+      ${!st.unknown && item.mil ? (plusFeat()
+        ? `<div><dt>Beräknat</dt><dd>${fc && fc.rate ? `${esc(forecastText(fc))}<br><span class="hint">${esc(`Ni kör ungefär ${fmt(Math.round(fc.rate * 30.44))} mil i månaden`)}</span>` : `<span class="hint">Logga mätarställningen några gånger, så räknas det ut.</span>`}</dd></div>`
+        : plusLock() ? `<div><dt>Beräknat</dt><dd><button class="link" type="button" data-act="plus" data-f="forecast">Se när <span class="plus-badge">Plus</span></button></dd></div>` : "") : ""}
     </dl>
     ${wearBar(st) ? `<div style="margin-top:12px">${wearBar(st)}</div>` : ""}
     ${info ? `<details class="more item-info" style="margin-top:16px"${st.unknown ? " open" : ""}><summary>Bra att veta</summary><ul data-notr>${info.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></details>` : ""}
@@ -7188,7 +7410,9 @@ const darkMq = matchMedia("(prefers-color-scheme: dark)");
 function themePrefs() {
   const old = { auto: ["orange", "auto"], light: ["orange", "light"], dark: ["orange", "dark"], gron: ["gron", "light"], hav: ["hav", "light"], natt: ["lila", "dark"] }[pref.get("theme") || "auto"] || ["orange", "auto"];
   const c = pref.get("themeColor") || old[0], m = pref.get("themeMode") || old[1];
-  return { color: COLORS[c] ? c : "orange", mode: MODES[m] ? m : "auto" };
+  // Glenns Garage ingår i Plus. Utan Plus blir det vanliga färger igen.
+  const ok = COLORS[c] && !(COLORS[c].garage && S.house && plusLock());
+  return { color: ok ? c : "orange", mode: MODES[m] ? m : "auto" };
 }
 const isDarkNow = () => { const { mode } = themePrefs(); return mode === "dark" || (mode === "auto" && darkMq.matches); };
 function applyTheme() {
@@ -7726,6 +7950,8 @@ const ACTIONS = {
     });
   },
   "print-book"() { printServiceBook(); },
+  "sale-pack"(el) { salePack(el); },
+  "cal-export"(el) { exportCalendar(el); },
   async "copy-vin"() { const v = car()?.vin; if (!v) return; const ok = await copyText(v); showToast(ok ? "Chassinumret är kopierat" : v, ok ? 3000 : 8000); },
   async "copy-shortcut"(el) {
     const ok = await copyText(shortcutUrl(el.dataset.id));
@@ -7794,7 +8020,7 @@ const ACTIONS = {
     const sections = (el.dataset.section || "basic,photo,dates").split(",").filter((k) => CAR_SECTIONS[k]);
     carSheet(true, sections.length ? sections : ["basic"]);
   },
-  plus() { plusSheet(); },
+  plus(el) { if (el?.dataset?.f) plusUpsell(el.dataset.f); else plusSheet(); },
   "test-mode"(el) {
     pref.set("testMode", el.value);
     pref.set("plusTip." + S.hid, "");
@@ -8917,6 +9143,7 @@ function subscribe(hid) {
   S.unsubs.push(onSnapshot(doc(db, "households", hid), (s) => {
     S.house = s.data({ serverTimestamps: "estimate" });
     S.loaded.house = true;
+    applyTheme(); // Glenns Garage kräver Plus
     if (S.justJoined) {
       showToast(typeof S.justJoined === "string" ? `Välkommen till ${S.justJoined}!` : "Välkommen! Nu delar ni bilen.", 4500);
       S.justJoined = null;
