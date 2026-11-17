@@ -1952,3 +1952,12 @@ body.car-locked .fab { display: none; }
 .tow-type { grid-template-columns: 62px 1fr auto; column-gap: 12px; }
 .tow-type .tt-pic { width: 62px; }
 .tow-type .tt-pic svg { width: 62px; height: 34px; }
+/* Inställningar för körjournalen */
+.trip-settings .auto-row { padding: 4px 0 12px; }
+.trip-settings .auto-row b { display: block; }
+.trip-settings .auto-row small { display: block; color: var(--ink-2); font-size: 14px; margin-top: 2px; }
+.auto-fix { padding: 14px 16px; border-radius: 16px; background: var(--accent-soft); margin: 4px 0 12px; }
+.auto-fix b { display: block; font-size: 16px; }
+.auto-fix p { margin: 4px 0 12px; color: var(--ink-2); font-size: 14px; }
+.auto-fix .btn { width: 100%; }
+.auto-ok { display: flex; gap: 8px; align-items: center; color: var(--sage); font-weight: 600; font-size: 14px; margin: 0 0 12px; }

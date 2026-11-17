@@ -5536,9 +5536,9 @@ function viewTrips() {
       <p class="muted" style="margin-top:0">Resor som börjar eller slutar vid en sparad plats får platsens namn, och appen föreslår tjänst eller privat.</p>
       ${S.places.length ? `<div class="rows">${S.places.map((p) => `<button class="dl as-btn" type="button" data-act="edit-place" data-id="${esc(p.id)}"><div class="dl-ic">${icon("pin", 20)}</div><div><div class="dl-t">${esc(p.name)}</div><div class="dl-s">${esc([p.addr, p.kind ? PLACE_KINDS[p.kind] : ""].filter(Boolean).join(" · "))}</div></div></button>`).join("")}</div>` : ""}
       <div class="ask"><button class="btn-soft" type="button" data-act="new-place">${icon("plus", 16)} Lägg till plats</button></div></article>
-    <article class="card"><h2>Inställningar för körjournalen</h2>
+    <article class="card trip-settings"><h2>Inställningar för körjournalen</h2>
       ${autoTripsHtml()}
-      <div class="ask"><button class="link" type="button" data-act="trips-off">Dölj fliken Resor</button></div></article>`;
+      <button class="dl as-btn" type="button" data-act="trips-off"><span class="dl-ic">${icon("close", 18)}</span><span><span class="dl-t">Dölj fliken Resor</span><span class="dl-s">Resorna finns kvar. Slå på den igen under Inställningar → Bildagboken Plus.</span></span><span class="dl-v">›</span></button></article>`;
 }
 
 /* Automatisk körjournal (iPhone-appen från 1.2): telefonen känner av när bilen körs och mäter vägen med GPS.
@@ -5593,14 +5593,25 @@ const gapText = (g) => {
 };
 function autoTripsHtml() {
   if (!tripsOn()) return "";
-  if (!NATIVE || ANDROID) return `<p class="hint" style="margin-top:12px">Automatisk körjournal, som känner av resorna själv, finns i iPhone-appen.</p>`;
+  if (!NATIVE || ANDROID) return `<div class="dl"><span class="dl-ic">${icon("phone", 18)}</span><span><span class="dl-t">Automatisk körjournal</span><span class="dl-s">Finns i iPhone-appen. Den känner av när bilen körs och mäter vägen själv.</span></span><span></span></div>`;
   const st = S.autoStatus;
   if (!st) return "";
-  if (!st.enabled) return `<div class="auto-box"><b>Automatisk körjournal</b><p class="muted">Appen känner av när bilen körs och mäter vägen, även när den är stängd. Du väljer bara tjänsteresa eller privat efteråt.</p><button class="btn-soft" type="button" data-act="auto-on">${icon("spark", 16)} Slå på</button></div>`;
-  const live = st.driving ? `Kör nu${st.meters ? ` · ${fmt(st.meters / 1000, 1)} km` : ""}` : "På. Resorna mäts i bakgrunden.";
-  return `<div class="auto-box"><b>Automatisk körjournal</b><p class="muted">${esc(live)}</p>
-    ${st.auth !== "always" ? `<p class="hint warn-t">${st.auth === "denied" ? "Appen får inte använda platsen. Tillåt det i telefonens Inställningar → Bildagboken → Plats → Alltid." : "Välj Alltid för platsen i telefonens Inställningar → Bildagboken → Plats, annars mäts bara resor när appen är öppen."}</p>` : ""}
-    <button class="link" type="button" data-act="auto-off">Stäng av</button></div>`;
+  const on = !!st.enabled;
+  const sw = `<label class="ios-switch-row auto-row"><span><b>Automatisk körjournal</b><small>${esc(on
+    ? st.driving ? `Kör nu${st.meters ? ` · ${fmt(st.meters / 1000, 1)} km` : ""}` : "Känner av när bilen körs och mäter vägen, även när appen är stängd."
+    : "Känner av när bilen körs och mäter vägen, även när appen är stängd. Du väljer tjänst eller privat efteråt.")}</small></span>
+    <input type="checkbox" class="ios-switch" data-act="auto-toggle"${on ? " checked" : ""} aria-label="Automatisk körjournal"></label>`;
+  if (!on) return sw;
+  // Det som saknas för att resorna ska mätas i bakgrunden, med en knapp som rättar det.
+  let fix = "";
+  if (st.auth === "denied") fix = autoFix("Appen får inte använda platsen", "Utan platsen kan resorna inte mätas. Tryck nedan och välj Plats → Alltid.", "Öppna inställningar", "settings");
+  else if (st.auth !== "always") fix = autoFix("Platsen behöver vara på Alltid", "Nu mäts resor bara när appen är öppen. Med Alltid mäts de även när telefonen ligger i fickan.", "Tillåt Alltid", "always");
+  else if (st.precise === false) fix = autoFix("Exakt plats är avstängd", "Då blir sträckorna fel. Tryck nedan och slå på Exakt plats under Plats.", "Öppna inställningar", "settings");
+  const ok = !fix ? `<div class="auto-ok">${icon("check", 16)} Resorna mäts i bakgrunden</div>` : "";
+  return `${sw}${fix}${ok}`;
+}
+function autoFix(title, text, btn, mode) {
+  return `<div class="auto-fix"><b>${esc(title)}</b><p>${esc(text)}</p><button class="btn primary" type="button" data-act="auto-allow" data-mode="${mode}">${esc(btn)}</button></div>`;
 }
 async function refreshAutoStatus() {
   if (!autoAvailable()) return;
@@ -5664,7 +5675,16 @@ async function importAutoTrips() {
     render();
   } catch { /* försöker igen nästa gång appen öppnas */ } finally { importAutoTrips.busy = false; }
 }
-document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshAutoStatus().then(() => S.view === "bilen" && render()); });
+// Tillbaka i appen, till exempel från Inställningar: kolla om platsen nu är på Alltid.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  const before = S.autoStatus;
+  refreshAutoStatus().then(() => {
+    const now = S.autoStatus;
+    if (before?.enabled && now?.enabled && (before.auth !== "always" || before.precise === false) && now.auth === "always" && now.precise !== false) showToast("Klart! Resorna mäts nu i bakgrunden.", 5000);
+    if (S.view === "bilen" || S.view === "resor") render();
+  });
+});
 
 // Gå igenom automatiska resor: tjänst eller privat med ett tryck, eller öppna resan för att fylla i mer.
 function reviewSheet() {
@@ -8149,6 +8169,18 @@ const ACTIONS = {
   },
   "trip-start-now"() { tripForm({}, "start"); },
   "trips-on"() { setTripsVisible(true); closeSheet(); setView("resor"); showToast("Körjournalen är påslagen. Den finns under Resor i menyn."); },
+  async "auto-toggle"(el) { const want = el.checked; await ACTIONS[want ? "auto-on" : "auto-off"](el); render(); },
+  async "auto-allow"(el) {
+    const t = tracker();
+    try {
+      const r = el.dataset.mode === "settings" ? (await t.openSettings(), { result: "settings" }) : await t.askAlways();
+      if (r?.result === "settings") showToast("Välj Plats → Alltid, och kontrollera att Exakt plats är på. Gå sedan tillbaka till appen.", 8000);
+      else setTimeout(() => refreshAutoStatus().then(render), 1500);
+    } catch {
+      // Äldre version av appen, utan knappen: beskriv vägen.
+      showToast("Öppna telefonens Inställningar → Bildagboken → Plats och välj Alltid. Uppdatera appen för att få en knapp för det.", 9000);
+    }
+  },
   async "trips-off"() {
     const ok = await confirmDialog({ title: "Dölja fliken Resor?", lines: ["Resorna finns kvar. Du kan slå på körjournalen igen med plusknappen i menyn."], okLabel: "Dölj", warn: "" });
     if (!ok) return;
