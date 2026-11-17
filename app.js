@@ -669,7 +669,7 @@ let rcUser = null;
 async function rcPlugin() {
   if (!canBuyHere() || !S.user || !window.Capacitor?.isPluginAvailable?.("Purchases")) return null;
   const P = nativePlugin("Purchases");
-  if (rcUser === null) await P.configure({ apiKey: RC_KEY, appUserID: S.user.uid });
+  if (rcUser === null) await P.configure({ apiKey: RC_KEY, appUserID: S.user.uid }).catch((e) => { if (!/already/i.test(e?.message || "")) throw e; });
   else if (rcUser !== S.user.uid) await P.logIn({ appUserID: S.user.uid });
   rcUser = S.user.uid;
   return P;
@@ -687,21 +687,33 @@ function introText(p) {
 let rcPkgs = [];
 async function plusBuySheet() {
   openSheet("Skaffa Plus", `<p class="muted">Hämtar priserna …</p>`);
-  let P = null;
+  let P = null, err = "";
+  const hasPlugin = canBuyHere() && !!window.Capacitor?.isPluginAvailable?.("Purchases");
   try {
     P = await rcPlugin();
     if (P) {
       const o = await P.getOfferings();
       const order = { MONTHLY: 1, ANNUAL: 2 };
       rcPkgs = (o?.current?.availablePackages || []).slice().sort((a, b) => (order[a.packageType] || 9) - (order[b.packageType] || 9));
+      if (!rcPkgs.length) err = o?.current ? "Erbjudandet har inga paket" : `Inget aktuellt erbjudande (${Object.keys(o?.all || {}).join(", ") || "inga alls"})`;
     }
-  } catch (e) { reportError(e, "plus-offerings"); rcPkgs = []; }
+  } catch (e) {
+    reportError(e, "plus-offerings"); rcPkgs = [];
+    err = [e?.code != null ? `kod ${e.code}` : "", e?.readableErrorCode || e?.data?.readableErrorCode || "", e?.message || String(e), e?.underlyingErrorMessage || e?.data?.underlyingErrorMessage || ""].filter(Boolean).join(" · ");
+  }
+  // Administratören ser felet, så att det går att se vad som är fel i App Store Connect eller RevenueCat.
+  const errHtml = err && isAdmin() ? `<p class="hint" style="word-break:break-word">Fel: ${esc(err)}</p>` : "";
+  if (!P && hasPlugin) {
+    openSheet("Skaffa Plus", `<p>Köpet gick inte att starta just nu. Försök igen om en stund.</p>${errHtml}
+      <div class="form"><button class="btn block" type="button" data-act="plus-buy">Försök igen</button></div>`);
+    return;
+  }
   if (!P) {
     openSheet("Skaffa Plus", `<p>Den här versionen av appen kan inte köpa Plus än. Uppdatera Bildagboken i App Store (eller TestFlight) och försök igen.</p>`);
     return;
   }
   if (!rcPkgs.length) {
-    openSheet("Skaffa Plus", `<p>Priserna gick inte att hämta just nu. Kontrollera att du är uppkopplad och försök igen om en stund.</p>
+    openSheet("Skaffa Plus", `<p>Priserna gick inte att hämta just nu. Kontrollera att du är uppkopplad och försök igen om en stund.</p>${errHtml}
       <div class="form"><button class="btn block" type="button" data-act="plus-buy">Försök igen</button></div>`);
     return;
   }

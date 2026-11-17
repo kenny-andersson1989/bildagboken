@@ -994,6 +994,7 @@ export const EN = {
   "Integritet": "Privacy",
   "Återställ tidigare köp": "Restore purchases",
   "Tack!": "Thank you!",
+  "Köpet gick inte att starta just nu. Försök igen om en stund.": "Couldn’t start the purchase right now. Try again in a moment.",
   "Plus slås nu på för hela hushållet. Det tar oftast bara några sekunder.": "Plus is now being turned on for the whole household. It usually only takes a few seconds.",
   "Köpet gick igenom, men Plus syns inte än. Tryck på Återställ tidigare köp om en stund.": "The purchase went through, but Plus isn’t showing yet. Tap Restore purchases in a moment.",
   "Hittade inget köp av Plus på det här Apple-kontot.": "No Plus purchase found on this Apple account.",
@@ -1477,6 +1478,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Fel: (.+)$/, "Error: $1"],
   [/^(\d+) dagar gratis$/, "$1 days free"],
   [/^(.+) i månaden · (\d+) dagar gratis$/, "$1 per month · $2 days free"],
   [/^(.+) i månaden$/, "$1 per month"],
