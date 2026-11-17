@@ -331,13 +331,23 @@ function profileFor(c) {
   return PROFILES.find((p) => p.test(c)) || null;
 }
 
-// Bilar som skapades innan AC-service och bilbatteri fanns får dem en gång.
+// Uppgraderar bilarnas underhållspunkter en gång, och ändrar inget som man själv har ställt in:
+// version 2: AC-service och bilbatteri läggs till om de saknas.
+// version 3: punkter som fortfarande har de gamla standardintervallen får de nya.
 function addNewItems(cars) {
   for (const c of cars) {
-    if (!Array.isArray(c.items) || c.itemsV >= 2 || c.metadata?.hasPendingWrites) continue;
-    const add = [{ id: "ac", name: "AC-service", mil: null, months: 24 }, { id: "batteri", name: "Bilbatteri", mil: null, months: 60 }].filter((x) => !c.items.some((i) => i.id === x.id));
-    c.itemsV = 2;
-    updateDoc(doc(db, "households", S.hid, "cars", c.id), { items: [...c.items, ...add], itemsV: 2 }).catch(() => {});
+    if (!Array.isArray(c.items) || (c.itemsV || 0) >= 3 || c.metadata?.hasPendingWrites || !S.hid) continue;
+    let items = c.items;
+    if ((c.itemsV || 0) < 2) items = [...items, ...[{ id: "ac", name: "AC-service", mil: null, months: 24 }, { id: "batteri", name: "Bilbatteri", mil: null, months: 60 }].filter((x) => !items.some((i) => i.id === x.id))];
+    const same = (i, mil, months) => (i.mil ?? null) === mil && (i.months ?? null) === months;
+    items = items.map((i) => {
+      if (i.id === "luftfilter" && same(i, 4000, 48)) return { ...i, mil: 6000, months: null };
+      if (i.id === "kupefilter" && same(i, 2000, 24)) return { ...i, mil: 3000 };
+      if (i.id === "tandstift" && (same(i, 3000, 72) || same(i, 6000, 72))) return { ...i, mil: 10000, months: null };
+      return i;
+    });
+    c.items = items; c.itemsV = 3;
+    updateDoc(doc(db, "households", S.hid, "cars", c.id), { items, itemsV: 3 }).catch(() => {});
   }
 }
 
@@ -346,9 +356,9 @@ function defaultItems(c) {
   const p = profileFor(c);
   const items = [];
   if (!el) items.push({ id: "olja", name: "Motorolja och oljefilter", mil: 2000, months: 12 });
-  if (!el) items.push({ id: "luftfilter", name: "Luftfilter", mil: 4000, months: 48 });
-  items.push({ id: "kupefilter", name: "Kupéfilter", mil: 2000, months: 24 });
-  if (!el && !diesel) items.push({ id: "tandstift", name: "Tändstift", mil: flex ? 3000 : 6000, months: 72 });
+  if (!el) items.push({ id: "luftfilter", name: "Luftfilter", mil: 6000, months: null });
+  items.push({ id: "kupefilter", name: "Kupéfilter", mil: 3000, months: 24 });
+  if (!el && !diesel) items.push({ id: "tandstift", name: "Tändstift", mil: 10000, months: null });
   items.push({ id: "bromsvatska", name: "Bromsvätska", mil: null, months: 24 });
   items.push({ id: "torkare", name: "Torkarblad", mil: null, months: 12 });
   items.push({ id: "ac", name: "AC-service", mil: null, months: 24 });
@@ -753,7 +763,7 @@ const workIsItem = (w, item) => w.itemId === item.id || (!w.itemId && nameMatche
 
 // Räknas posten som ett byte av punkten? Bara åtgärden Bytt nollställer intervallet.
 function entryCovers(e, item) {
-  if (Array.isArray(e.work)) return e.work.some((w) => w.action === "bytt" && workIsItem(w, item));
+  if (Array.isArray(e.work)) return e.work.some((w) => (w.action === "bytt" || ANY_WORK_ITEMS.has(item.id)) && workIsItem(w, item));
   if ((e.items || []).includes(item.id)) return true;
   return (e.parts || []).some((p) => nameMatchesItem(p, item));
 }
@@ -6757,6 +6767,48 @@ function openEntry(id, { fromCat = null } = {}) {
   }
 }
 
+// Bra att veta för varje underhållspunkt: vad den gör, hur man vet att det är dags och vanliga tecken på fel.
+const ITEM_INFO = {
+  olja: {
+    sv: ["Oljan smörjer och kyler motorn. Gammal olja skyddar sämre och kan ge slitage.", "Kolla nivån med oljestickan ungefär en gång i månaden, på plan mark och med kall motor. Nivån ska vara mellan min och max.", "Använd den olja som står i instruktionsboken (till exempel 5W-30). Skriv in den under Anteckningar på Bilen, så har du den till hands i butiken.", "Tecken på problem: oljelampan lyser, oljan är svart och tjock, motorn låter mer än vanligt eller det droppar under bilen."],
+    en: ["The oil lubricates and cools the engine. Old oil protects less and can cause wear.", "Check the level with the dipstick about once a month, on level ground with a cold engine. It should be between min and max.", "Use the oil in the owner's manual (for example 5W-30). Add it under Notes on the Car page so you have it at hand in the shop.", "Signs of trouble: the oil light is on, the oil is black and thick, the engine sounds louder than usual or it drips under the car."],
+  },
+  luftfilter: {
+    sv: ["Luftfiltret håller damm och smuts borta från motorn.", "Kör du mycket på grusvägar eller i dammiga miljöer kan det behöva bytas oftare.", "Det är oftast lätt att byta själv: filterlådan sitter under motorhuven och öppnas med några clips.", "Tecken på ett igensatt filter: sämre kraft, högre bränsleförbrukning eller att motorn tvekar när du gasar."],
+    en: ["The air filter keeps dust and dirt out of the engine.", "If you drive a lot on gravel roads or in dusty conditions it may need changing more often.", "It is usually easy to change yourself: the filter box is under the bonnet and opens with a few clips.", "Signs of a clogged filter: less power, higher fuel consumption or the engine hesitating when you accelerate."],
+  },
+  kupefilter: {
+    sv: ["Kupéfiltret renar luften som kommer in i bilen från pollen, damm och avgaser.", "Byt gärna inför våren om någon i familjen är pollenallergisk. Ett kolfilter tar också bort lukt.", "Det sitter oftast bakom handskfacket och går ofta att byta själv på några minuter.", "Tecken på att det är dags: dålig lukt när fläkten går, sämre luftflöde eller att rutorna immar igen lätt."],
+    en: ["The cabin filter cleans the air that comes into the car of pollen, dust and exhaust fumes.", "Change it before spring if someone in the family has a pollen allergy. A carbon filter also removes smells.", "It is usually behind the glove box and can often be changed yourself in a few minutes.", "Signs it's time: a bad smell when the fan runs, weaker airflow or windows fogging up easily."],
+  },
+  tandstift: {
+    sv: ["Tändstiften tänder bränslet i motorn. Slitna tändstift ger sämre tändning.", "Bilar som kör mycket på E85 sliter ofta tändstiften fortare.", "Byt alla på en gång, och använd den sort som står i instruktionsboken.", "Tecken på slitna tändstift: motorn går ojämnt, startar sämre, hackar när du gasar eller drar mer bränsle."],
+    en: ["The spark plugs ignite the fuel in the engine. Worn plugs give weaker ignition.", "Cars that run a lot on E85 often wear their plugs faster.", "Change all of them at once, and use the type in the owner's manual.", "Signs of worn plugs: the engine runs unevenly, starts poorly, stutters when you accelerate or uses more fuel."],
+  },
+  bromsvatska: {
+    sv: ["Bromsvätskan drar till sig fukt med tiden. Då kan den börja koka vid hårda inbromsningar och bromsarna blir sämre.", "Därför byts den efter tid, inte efter hur långt bilen har gått. Det görs oftast på verkstad i samband med service.", "Kolla nivån i behållaren under motorhuven ibland. Sjunker den kan bromsklossarna vara slitna eller något läcka.", "Tecken på problem: bromspedalen känns mjuk eller går långt ner, eller bromsvarningslampan lyser. Kör då försiktigt till en verkstad."],
+    en: ["Brake fluid absorbs moisture over time. It can then boil during hard braking and the brakes get worse.", "That's why it is changed by time, not by distance. It is usually done at a workshop during a service.", "Check the level in the reservoir under the bonnet now and then. If it drops, the brake pads may be worn or something may be leaking.", "Signs of trouble: the brake pedal feels soft or goes far down, or the brake warning light is on. Drive carefully to a workshop."],
+  },
+  torkare: {
+    sv: ["Torkarbladen slits av sol, frost och smuts, även om de inte används så mycket.", "Byt gärna inför hösten, när det regnar mer och blir mörkare.", "Torka av bladen med en fuktig trasa ibland, och lyft upp dem från rutan när det är minusgrader.", "Tecken på att det är dags: ränder på rutan, att bladet hoppar eller gnisslar, eller att gummit har sprickor."],
+    en: ["Wiper blades are worn by sun, frost and dirt, even if they aren't used much.", "Change them before autumn, when there's more rain and it gets darker.", "Wipe the blades with a damp cloth now and then, and lift them off the windscreen in freezing weather.", "Signs it's time: streaks on the windscreen, the blade jumping or squeaking, or cracks in the rubber."],
+  },
+  ac: {
+    sv: ["AC-service betyder att anläggningen kontrolleras och att köldmediet fylls på eller byts. Det försvinner lite varje år.", "En kontroll eller påfyllning räknas också som AC-service här.", "Kör gärna AC:n en stund varje månad, även på vintern. Det håller tätningarna smorda och torkar ur luften så att rutorna immar mindre.", "Tecken på att den behöver service: den kyler dåligt, det luktar unket när den startar, eller det låter när den går."],
+    en: ["An AC service means the system is checked and the refrigerant is topped up or replaced. A little is lost every year.", "A check or top-up also counts as an AC service here.", "Run the AC for a while every month, even in winter. It keeps the seals lubricated and dries the air so the windows fog up less.", "Signs it needs a service: it cools poorly, there's a musty smell when it starts, or it makes noise when running."],
+  },
+  batteri: {
+    sv: ["Ett bilbatteri behöver inte bytas så länge det fungerar bra. Intervallet är en påminnelse om att kontrollera det, inte att det måste bytas. En kontroll räknas här lika mycket som ett byte.", "Låt kontrollera spänningen inför vintern, på en verkstad eller med en egen mätare. Fulladdat ligger det på cirka 12,6 volt med motorn avstängd. Under 12,4 volt är det dags att ladda, och under 12,0 volt är det i dåligt skick.", "Kyla tar hårt på batteriet. Ett batteri som är äldre än fem år kan svikta en kall morgon.", "Tecken på ett dåligt batteri: motorn drar runt långsamt vid start, lamporna blir svaga vid start, klockan eller radion nollställs, eller batterilampan lyser. Korta resor laddar dåligt, så kör en längre sträcka ibland."],
+    en: ["A car battery doesn't need replacing as long as it works well. The interval is a reminder to check it, not that it must be replaced. A check counts as much as a replacement here.", "Have the voltage checked before winter, at a workshop or with your own meter. Fully charged it is about 12.6 volts with the engine off. Below 12.4 volts it should be charged, and below 12.0 volts it is in poor condition.", "Cold is hard on the battery. A battery older than five years may fail on a cold morning.", "Signs of a bad battery: the engine cranks slowly when starting, the lights dim when starting, the clock or radio resets, or the battery light is on. Short trips charge poorly, so take a longer drive now and then."],
+  },
+  kamrem: {
+    sv: ["Kamremmen styr motorns ventiler. Går den av kan motorn få allvarliga skador.", "Följ tillverkarens intervall noga, både mil och år. Gummit åldras även om bilen inte körs så mycket.", "Byt vattenpumpen och sträckarna samtidigt om verkstaden rekommenderar det. Det blir ofta billigare än att göra det i två omgångar.", "Kamremmen ger sällan varning innan den går av. Har du köpt bilen begagnad och vet inte när den byttes, låt byta den för säkerhets skull."],
+    en: ["The timing belt controls the engine's valves. If it breaks, the engine can be seriously damaged.", "Follow the manufacturer's interval closely, both distance and years. The rubber ages even if the car isn't driven much.", "Change the water pump and tensioners at the same time if the workshop recommends it. It is often cheaper than doing it twice.", "A timing belt rarely gives a warning before it breaks. If you bought the car used and don't know when it was changed, have it changed to be safe."],
+  },
+};
+// Punkter där en kontroll, påfyllning eller lagning också räknas, inte bara ett byte.
+const ANY_WORK_ITEMS = new Set(["ac", "batteri"]);
+const LAST_LABEL = { ac: "Senaste service", batteri: "Senast kontrollerat eller bytt" };
 // En underhållspunkt: status, alla loggade byten (ikryssade eller skrivna i Annat som byttes) och knappar för att logga eller ändra.
 function itemSheet(id) {
   const c = car();
@@ -6766,13 +6818,21 @@ function itemSheet(id) {
   const history = carEntries().filter((e) => entryTouches(e, item)).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const interval = intervalText(item) === "inget intervall" ? "" : intervalText(item);
   const manual = item.baseDate && !history.some((e) => e.date >= item.baseDate);
+  const anyWork = ANY_WORK_ITEMS.has(item.id);
+  // Senaste gången punkten berördes, om det var något annat än ett byte (kontrollerat, fyllt på …).
+  const touch = history[0];
+  const touchAction = touch ? workOf(touch, c).find((w) => workIsItem(w, item))?.action || "bytt" : null;
+  const otherWork = touch && !anyWork && touchAction !== "bytt" && (!st.lastDate || touch.date > st.lastDate);
+  const info = ITEM_INFO[item.id]?.[EN ? "en" : "sv"];
   openSheet(item.name, `
     <dl class="detail-list">
       <div><dt>Intervall</dt><dd>${esc(interval || "–")}</dd></div>
-      <div><dt>Senast bytt</dt><dd>${esc(st.lastDate ? [fmtDate(st.lastDate), st.lastMil != null ? `vid ${fmt(st.lastMil)} mil` : ""].filter(Boolean).join(", ") : "Okänt")}${manual ? `<br><span class="hint">Ifyllt för hand, inte från loggen</span>` : ""}</dd></div>
+      ${otherWork ? `<div><dt>Senast gjort</dt><dd>${esc(`${WORK_ACTIONS[touchAction] || "Gjort"} ${fmtDate(touch.date)}`)}<br><span class="hint">Räknas inte som byte</span></dd></div>` : ""}
+      <div><dt>${LAST_LABEL[item.id] || "Senast bytt"}</dt><dd>${esc(st.lastDate ? [fmtDate(st.lastDate), st.lastMil != null ? `vid ${fmt(st.lastMil)} mil` : ""].filter(Boolean).join(", ") : "Okänt")}${manual ? `<br><span class="hint">Ifyllt för hand, inte från loggen</span>` : ""}</dd></div>
       ${!st.unknown ? `<div><dt>Nästa</dt><dd>${esc(dueText(st) || "–")}</dd></div><div><dt>Kvar</dt><dd>${esc(st.label)}</dd></div>` : ""}
     </dl>
     ${wearBar(st) ? `<div style="margin-top:12px">${wearBar(st)}</div>` : ""}
+    ${info ? `<details class="more item-info" style="margin-top:16px"${st.unknown ? " open" : ""}><summary>Bra att veta</summary><ul data-notr>${info.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></details>` : ""}
     <h3 class="section-t" style="margin-top:20px">I loggen</h3>
     ${manual ? `<div class="manual-base">
       <p><b>${esc(`Ifyllt för hand: ${fmtDate(item.baseDate)}${item.baseMil != null ? ` vid ${fmt(item.baseMil)} mil` : ""}`)}</b></p>
@@ -8277,7 +8337,7 @@ async function saveNewCar(form) {
   const full = {
     ...clean(data),
     items: defaultItems(data),
-    itemsV: 2,
+    itemsV: 3,
     specsText: SPEC_TEMPLATE,
     tiresOn: new Date().getMonth() >= 11 || new Date().getMonth() <= 2 ? "vinter" : "sommar",
     tires: [],

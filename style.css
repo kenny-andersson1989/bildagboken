@@ -1846,3 +1846,5 @@ body.car-locked .fab { display: none; }
 .manual-base { margin-top: 8px; padding: 12px 14px; border-radius: 14px; background: var(--accent-soft); }
 .manual-base p { margin: 0 0 4px; }
 .manual-base .ask { margin-top: 8px; align-items: center; }
+.item-info ul { margin: 8px 0 0; padding-left: 18px; }
+.item-info li { margin: 6px 0; color: var(--ink-2); line-height: 1.45; }
