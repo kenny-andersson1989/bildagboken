@@ -6746,15 +6746,19 @@ function itemSheet(id) {
   openSheet(item.name, `
     <dl class="detail-list">
       <div><dt>Intervall</dt><dd>${esc(interval || "–")}</dd></div>
-      <div><dt>Senast bytt</dt><dd>${esc(st.lastDate ? [fmtDate(st.lastDate), st.lastMil != null ? `vid ${fmt(st.lastMil)} mil` : ""].filter(Boolean).join(", ") : "Okänt")}</dd></div>
+      <div><dt>Senast bytt</dt><dd>${esc(st.lastDate ? [fmtDate(st.lastDate), st.lastMil != null ? `vid ${fmt(st.lastMil)} mil` : ""].filter(Boolean).join(", ") : "Okänt")}${manual ? `<br><span class="hint">Ifyllt för hand, inte från loggen</span>` : ""}</dd></div>
       ${!st.unknown ? `<div><dt>Nästa</dt><dd>${esc(dueText(st) || "–")}</dd></div><div><dt>Kvar</dt><dd>${esc(st.label)}</dd></div>` : ""}
     </dl>
     ${wearBar(st) ? `<div style="margin-top:12px">${wearBar(st)}</div>` : ""}
     <h3 class="section-t" style="margin-top:20px">I loggen</h3>
+    ${manual ? `<div class="manual-base">
+      <p><b>${esc(`Ifyllt för hand: ${fmtDate(item.baseDate)}${item.baseMil != null ? ` vid ${fmt(item.baseMil)} mil` : ""}`)}</b></p>
+      <p class="hint">${esc(history.length ? `Datumet är nyare än det som står i loggen, så det räknas som senaste byte. Stämmer det inte, ta bort det så räknar appen från loggen (${fmtDate(history[0].date)}).` : "Det finns inget i loggen, så datumet räknas som senaste byte.")}</p>
+      <div class="ask"><button class="btn-soft" type="button" data-act="edit-item-form" data-id="${esc(id)}">Ändra</button>${history.length ? `<button class="link danger" type="button" data-act="clear-item-base" data-id="${esc(id)}">Ta bort datumet</button>` : ""}</div>
+    </div>` : ""}
     ${history.length
       ? `<div class="rows" style="margin-top:6px">${history.map((e) => entryRow(e, `item:${id}`)).join("")}</div>`
-      : `<p class="muted" style="margin-top:6px">Inga loggade byten än. Kryssa i ${esc(item.name.toLowerCase())} när du loggar en service eller ett eget jobb, så hamnar det här.</p>`}
-    ${manual ? `<p class="hint" style="margin-top:8px">Senaste byte är ifyllt för hand under Underhåll: ${esc(fmtDate(item.baseDate))}${item.baseMil != null ? ` vid ${fmt(item.baseMil)} mil` : ""}.</p>` : ""}
+      : manual ? "" : `<p class="muted" style="margin-top:6px">Inga loggade byten än. Kryssa i ${esc(item.name.toLowerCase())} när du loggar en service eller ett eget jobb, så hamnar det här.</p>`}
     <div class="form" style="margin-top:18px">
       <button class="btn primary block" type="button" data-act="log-item" data-id="${esc(id)}">Logga byte</button>
       <button class="btn ghost block" type="button" data-act="edit-item-form" data-id="${esc(id)}">Ändra intervall eller senaste byte</button>
@@ -7495,6 +7499,20 @@ const ACTIONS = {
     S.query = "";
     render();
     $("#log-search")?.focus();
+  },
+  // Ta bort ett senaste byte som fyllts i för hand, så att appen räknar från loggen.
+  async "clear-item-base"(el) {
+    const c = car(), id = el.dataset.id;
+    const item = (c?.items || []).find((i) => i.id === id);
+    if (!item) return;
+    const items = c.items.map((i) => (i.id === id ? clean({ ...i, baseDate: null, baseMil: null }) : i));
+    try {
+      await updateDoc(ref("cars", c.id), { items });
+      c.items = items;
+      showToast(`${item.name}: räknas nu från loggen`);
+      itemSheet(id);
+      render();
+    } catch (e) { onWriteError(e); }
   },
   "edit-car"(el) {
     const sections = (el.dataset.section || "basic,photo,dates").split(",").filter((k) => CAR_SECTIONS[k]);

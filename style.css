@@ -1843,3 +1843,6 @@ body.car-locked .fab { display: none; }
 .voice-row.sel { background: var(--accent-soft); border-radius: 14px; padding-left: 10px; padding-right: 10px; }
 .voice-row.sel .dl-ic { color: var(--accent-text); }
 .voice-row .btn-soft.on { background: var(--accent); color: #fff; }
+.manual-base { margin-top: 8px; padding: 12px 14px; border-radius: 14px; background: var(--accent-soft); }
+.manual-base p { margin: 0 0 4px; }
+.manual-base .ask { margin-top: 8px; align-items: center; }
