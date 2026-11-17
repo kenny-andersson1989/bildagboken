@@ -38,6 +38,21 @@ const shortDate = (s, lang) => { const [, m, d] = String(s).split("-").map(Numbe
 const carName = (c) => [c.make, c.model].filter(Boolean).join(" ") || "Bilen";
 
 // Alla påminnelser för en bil i dag, på svenska och engelska.
+// Däck som bör bytas, för påminnelserna inför säsongen: för gamla (DOT) eller under lagkravet på mönsterdjup.
+function tireHealthServer(c, kind) {
+  const t = (c.tires || []).find((x) => x.kind === kind);
+  if (!t) return null;
+  const sv = kind === "vinter" ? "Vinterdäcken" : "Sommardäcken", en = kind === "vinter" ? "The winter tyres" : "The summer tyres";
+  const d = String(t.year ?? "").replace(/\D/g, "");
+  const year = d.length === 4 && /^(19|20)\d\d$/.test(d) ? +d : d.length === 4 ? 2000 + +d.slice(2) : null;
+  const age = year ? new Date().getFullYear() - year : null;
+  if (age != null && (age >= 10 || age >= (kind === "vinter" ? 6 : 8))) return { sv: `${sv} är ${age} år och bör bytas.`, en: `${en} are ${age} years old and should be replaced.` };
+  const depth = Number(String(t.depth ?? "").replace(",", "."));
+  const law = kind === "vinter" ? 3 : 1.6;
+  if (t.depth != null && t.depth !== "" && Number.isFinite(depth) && depth < law) return { sv: `${sv} har ${String(depth).replace(".", ",")} mm mönster, under lagkravet på ${String(law).replace(".", ",")} mm.`, en: `${en} have ${depth} mm tread, below the legal ${law} mm.` };
+  return null;
+}
+
 function reminders(c, today) {
   const out = [];
   const add = (tag, sv, en) => out.push({ tag, sv, en });
@@ -95,16 +110,32 @@ function reminders(c, today) {
     }
   }
   const on = c.tiresOn || "sommar";
+  // Däckbyte: först en påminnelse om att boka (om ingen tid är bokad), sedan en sista påminnelse.
+  const tireBooked = (c.bookings || []).some((b) => b.kind === "dack" && b.date >= today);
+  const depthTip = { sv: " Mät mönsterdjupet på båda uppsättningarna när ni byter.", en: " Check the tread depth on both sets when you change." };
+  const health = (kind) => tireHealthServer(c, kind);
+  if (on === "sommar" && month === 11 && day === 1 && !tireBooked) {
+    const h = health("vinter");
+    add("dack-vinter-boka",
+      { title: "Dags att boka däckbyte", body: `Vinterdäcken ska vara på senast 1 december.${h ? ` ${h.sv}` : ""}${depthTip.sv}` },
+      { title: "Time to book a tyre change", body: `Winter tyres must be on by 1 December.${h ? ` ${h.en}` : ""}${depthTip.en}` });
+  }
   if (on === "sommar" && month === 11 && day === 24) {
     add("dack-vinter",
-      { title: "Dags för vinterdäck", body: `Vinterdäcken ska vara på senast 1 december.` },
-      { title: "Time for winter tyres", body: `Winter tyres must be on by 1 December.` });
+      { title: "Dags för vinterdäck", body: `Vinterdäcken ska vara på senast 1 december.${depthTip.sv}` },
+      { title: "Time for winter tyres", body: `Winter tyres must be on by 1 December.${depthTip.en}` });
+  }
+  if (on === "vinter" && month === 3 && day === 15 && !tireBooked) {
+    const h = health("sommar");
+    add("dack-sommar-boka",
+      { title: "Boka byte till sommardäck", body: `Byt när vårvädret är stabilt${(c.tires || []).some((t) => t.kind === "vinter" && t.studded) ? ", och dubbdäcken ska av senast 15 april" : ""}.${h ? ` ${h.sv}` : ""}${depthTip.sv}` },
+      { title: "Book the change to summer tyres", body: `Change when the spring weather is stable${(c.tires || []).some((t) => t.kind === "vinter" && t.studded) ? ", and studded tyres must be off by 15 April" : ""}.${h ? ` ${h.en}` : ""}${depthTip.en}` });
   }
   const studded = (c.tires || []).some((t) => t.kind === "vinter" && t.studded);
   if (on === "vinter" && studded && month === 4 && day === 8) {
     add("dack-dubb",
-      { title: "Dubbdäcken ska av", body: `Senast 15 april.` },
-      { title: "Studded tyres off", body: `By 15 April.` });
+      { title: "Dubbdäcken ska av", body: `Senast 15 april.${depthTip.sv}` },
+      { title: "Studded tyres off", body: `By 15 April.${depthTip.en}` });
   }
   return out.map((r) => ({ ...r, car: name }));
 }

@@ -1155,6 +1155,10 @@ function tireDeadline(c) {
 
 function deadlines(c) {
   const out = [tireDeadline(c)].filter(Boolean);
+  for (const k of ["vinter", "sommar"]) {
+    const h = tireHealth(c, k);
+    if (h?.lvl === "bad") out.push({ icon: "tire", title: k === "vinter" ? "Vinterdäcken bör bytas" : "Sommardäcken bör bytas", sub: h.why, days: -1, label: "Byt", level: "urgent" });
+  }
   // Sista dagen för besiktning. Är en tid redan bokad (före sista dagen) syns den i bokningen i stället.
   const booked = (c.bookings || []).some((b) => b.kind === "besiktning" && b.date >= todayStr() && (!c.besiktning || b.date <= c.besiktning));
   if (c.besiktning && !booked) {
@@ -2423,6 +2427,61 @@ function tireDepthLevel(kind, v) {
   return d < t.law ? "bad" : d < t.rec ? "warn" : "ok";
 }
 const mmTxt = (n) => (n % 1 ? fmt(n, 1) : String(n));
+// Däckens hälsa: ålder (DOT), mönsterdjup och hur långt de har rullat. Det sämsta avgör.
+// Vinterdäck tappar greppet med åldern fortare än sommardäck. Inga däck bör sitta på efter tio år.
+const TIRE_AGE = { vinter: { warn: 5, bad: 6 }, sommar: { warn: 5, bad: 8 } };
+const TIRE_NEW_MM = { vinter: 9, sommar: 8 };
+const TIRE_MIL_WARN = 4000;
+// Mätarställningen en viss dag: den som loggades närmast före (eller samma dag), annars närmast efter.
+function odoAt(c, date) {
+  const odos = S.entries.filter((e) => e.carId === c.id && e.odometer != null && e.date);
+  const before = odos.filter((e) => e.date <= date).sort((a, b) => b.date.localeCompare(a.date))[0];
+  const after = odos.filter((e) => e.date > date).sort((a, b) => a.date.localeCompare(b.date))[0];
+  return (before || after)?.odometer ?? null;
+}
+// Hur många mil en däcksats har rullat, räknat från däckbytena i loggen (sedan de köptes, om det är loggat).
+function tireMil(c, kind) {
+  const other = kind === "vinter" ? "sommar" : "vinter";
+  const ents = S.entries.filter((e) => e.carId === c.id && e.type === "dack" && e.date).sort((a, b) => a.date.localeCompare(b.date) || tsMs(a.createdAt) - tsMs(b.createdAt));
+  let on = null, total = 0, known = false;
+  for (const e of ents) {
+    const o = e.odometer ?? odoAt(c, e.date);
+    if (e.tireAction === "nya" && e.tireKind === kind) { total = 0; known = true; if (on != null) on = o; }
+    else if (e.tireAction === `till_${kind}`) { on = o; known = true; }
+    else if (e.tireAction === `till_${other}` && on != null) { if (o != null && o > on) total += o - on; on = null; }
+  }
+  const now = odoOf(c);
+  if (on != null && (c.tiresOn || "sommar") === kind && now != null && now > on) total += now - on;
+  return known ? Math.round(total) : null;
+}
+function tireHealth(c, kind) {
+  const t = (c.tires || []).find((x) => x.kind === kind) || {};
+  const set = kind === "vinter" ? "Vinterdäcken" : "Sommardäcken";
+  const parts = [];
+  const dot = tireDot(t.year);
+  if (dot) {
+    const made = new Date(dot.year, dot.week ? Math.min(11, Math.floor((dot.week - 1) / 4.35)) : 6, 1);
+    const age = Math.max(0, (Date.now() - made) / (365.25 * 864e5));
+    const lim = TIRE_AGE[kind], yrs = Math.floor(age);
+    const lvl = age >= 10 || age >= lim.bad ? "bad" : age >= lim.warn ? "warn" : "ok";
+    parts.push({ lvl, f: 1 - age / lim.bad, why: lvl === "bad" ? `${set} är ${yrs} år. Gummit blir hårt och greppar sämre, även om mönstret ser bra ut.` : lvl === "warn" ? `${set} är ${yrs} år. Håll koll på greppet, de börjar bli gamla.` : `${yrs < 1 ? "Under 1 år" : `${yrs} år`} gamla` });
+  }
+  const d = num(t.depth);
+  if (d != null && TREAD[kind]) {
+    const tt = TREAD[kind], lvl = tireDepthLevel(kind, d);
+    parts.push({ lvl, f: (d - tt.law) / (TIRE_NEW_MM[kind] - tt.law), why: lvl === "bad" ? `Mönsterdjupet ${mmTxt(d)} mm är under lagkravet på ${mmTxt(tt.law)} mm.` : lvl === "warn" ? `Mönsterdjupet ${mmTxt(d)} mm är under rekommenderade ${mmTxt(tt.rec)} mm.` : `${mmTxt(d)} mm mönster` });
+  }
+  const mil = tireMil(c, kind);
+  if (mil != null && mil > 0) {
+    const lvl = mil >= TIRE_MIL_WARN ? "warn" : "ok";
+    parts.push({ lvl, f: 1 - mil / 5000, why: lvl === "warn" ? `${set} har rullat omkring ${fmt(mil)} mil. Mät mönsterdjupet.` : `cirka ${fmt(mil)} mil` });
+  }
+  if (!parts.length) return null;
+  const rank = { ok: 0, warn: 1, bad: 2 };
+  const worst = parts.reduce((m, x) => (rank[x.lvl] > rank[m.lvl] ? x : m), parts[0]);
+  const frac = Math.max(0, Math.min(1, Math.min(...parts.map((x) => x.f))));
+  return { lvl: worst.lvl, frac, label: { ok: "Bra", warn: "Snart dags", bad: "Byt" }[worst.lvl], why: worst.lvl === "ok" ? parts.map((x) => x.why).join(" · ") : worst.why, oldDepth: d != null && t.depthAt && t.depthAt < ymd(addMonths(today0(), -13)) };
+}
 function tireDepthHint(kind, v) {
   const t = TREAD[kind], lvl = tireDepthLevel(kind, v);
   const base = kind === "vinter" ? `Lagkrav minst ${mmTxt(t.law)} mm (1 december–31 mars), rekommenderat minst ${mmTxt(t.rec)} mm.` : `Lagkrav minst ${mmTxt(t.law)} mm, rekommenderat minst ${mmTxt(t.rec)} mm.`;
@@ -4638,8 +4697,13 @@ function viewCar() {
       : "";
     const sub = [t.brand, t.size, t.year ? `tillverkade ${tireDotText(t.year)}` : "", t.depth != null && t.depth !== "" ? `${fmt(num(t.depth), 1)} mm` : "", pressure, k === "vinter" && t.studded ? "dubbade" : ""].filter(Boolean).join(" · ");
     const lvl = tireDepthLevel(k, t.depth);
-    return `<div class="dl"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div></div><span class="pill ${lvl === "bad" ? "urgent" : lvl === "warn" ? "soon" : on ? "ok" : "none"}">${lvl === "bad" ? "Under lagkrav" : lvl === "warn" ? "Slitna" : on ? "På" : "Förråd"}</span></div>`;
+    const h = tireHealth(c, k);
+    const pill = h ? `<span class="pill ${h.lvl === "bad" ? "urgent" : h.lvl === "warn" ? "soon" : "ok"}">${esc(h.label)}</span>`
+      : `<span class="pill ${lvl === "bad" ? "urgent" : lvl === "warn" ? "soon" : on ? "ok" : "none"}">${lvl === "bad" ? "Under lagkrav" : lvl === "warn" ? "Slitna" : on ? "På" : "Förråd"}</span>`;
+    const meter = h ? `<div class="tire-meter ${h.lvl}" role="img" aria-label="${esc(`Däckens hälsa: ${h.label}`)}"><i style="width:${Math.max(4, Math.round(h.frac * 100))}%"></i></div><div class="tire-why">${esc(h.why)}${h.oldDepth ? ". Mönsterdjupet mättes för över ett år sedan" : ""}</div>` : "";
+    return `<div class="dl"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div>${meter}</div>${pill}</div>`;
   }).join("");
+  const tireMissing = ["sommar", "vinter"].some((k) => { const t = (c.tires || []).find((x) => x.kind === k) || {}; return !tireDot(t.year) && num(t.depth) == null; });
   return arrangeCards(`${subHeader([c.year, c.fuel].filter(Boolean).join(" · "), carName(c), false, "Bilen")}
     ${carChips(c)}
     <!--card:upp--><div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,more,photo,dates">Ändra</button></h2>
@@ -4665,7 +4729,7 @@ function viewCar() {
         : plusLock() ? `<div class="ask" style="margin-top:12px"><button class="btn-soft" type="button" data-act="plus" data-f="forecast">${icon("calendar", 16)} Lägg in i kalendern <span class="plus-badge">Plus</span></button></div>` : ""}
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
-    <!--card:dack--><div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div></div>
+    <!--card:dack--><div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div>${tireMissing ? `<p class="hint" style="margin-top:8px">Lägg till tillverkningsår och mönsterdjup under Ändra, så ser du hur däcken mår.</p>` : ""}</div>
     <!--card:media-->${docsCard(c)}
     <!--card:book--><div class="card">
       <h2>Servicebok</h2>
@@ -6161,8 +6225,10 @@ function entryForm(type, e = {}, opts = {}) {
       body = `${field("Vad gjordes?", `<select name="tireAction" id="ef-tireAction">${Object.entries(TIRE_ACTIONS).map(([k, l]) => `<option value="${k}"${actDefault === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
         <div class="row2" id="ef-tire-row">
           <div id="ef-tirekind-box"${isSwap(actDefault) ? " hidden" : ""}>${field("Vilka däck?", `<select name="tireKind" id="ef-tireKind" required><option value="">Välj</option><option value="sommar"${e.tireKind === "sommar" ? " selected" : ""}>Sommardäck</option><option value="vinter"${e.tireKind === "vinter" ? " selected" : ""}>Vinterdäck</option></select>`)}</div>
-          ${field("Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}" placeholder="Valfritt">`)}
+          ${field(isSwap(actDefault) ? "Mönsterdjup, däcken som sätts på (mm)" : "Mönsterdjup (mm)", `<input name="depth" id="ef-depth" inputmode="decimal" value="${e.depth ?? ""}" placeholder="Till exempel 6,5">`)}
+          <div id="ef-depthoff-box"${isSwap(actDefault) ? "" : " hidden"}>${field("Mönsterdjup, däcken som tas av (mm)", `<input name="depthOff" id="ef-depthOff" inputmode="decimal" value="${e.depthOff ?? ""}" placeholder="Till exempel 4">`)}</div>
         </div>
+        <p class="hint" id="ef-depth-hint"${isSwap(actDefault) ? "" : " hidden"}>${icon("tire", 14)} Mät mönsterdjupet på båda uppsättningarna när ni byter. Då vet ni i god tid om det behövs nya däck till nästa säsong.</p>
         <div id="ef-newtire-box"${actDefault === "nya" ? "" : " hidden"}>
           <div class="row2">
             ${field("Märke", `<input name="tireBrand" id="ef-tireBrand" value="${v("tireBrand")}" autocomplete="off">`)}
@@ -6873,6 +6939,7 @@ async function saveEntry(form) {
     case "dack":
       data.tireAction = str("tireAction");
       data.depth = num(fd.get("depth"));
+      data.depthOff = isSwap(str("tireAction")) ? num(fd.get("depthOff")) : null;
       data.tireKind = data.tireAction === "till_vinter" ? "vinter" : data.tireAction === "till_sommar" ? "sommar" : str("tireKind") || null;
       data.place = str("place") || null;
       // Köpte nya däck: däckens uppgifter sparas på posten och på bilen.
@@ -6994,13 +7061,19 @@ async function saveEntry(form) {
     const fresh = clean({ kind: data.tireKind, brand: data.tireBrand, size: data.tireSize || old.size || null, year: data.tireYear, depth: data.depth, studded: data.tireKind === "vinter" ? !!data.studded : null, pressureFront: old.pressureFront ?? null, pressureRear: old.pressureRear ?? null });
     if (i >= 0) tires[i] = fresh; else tires.push(fresh);
     carUpdate.tires = tires;
-  } else if (type === "dack" && data.depth != null && data.tireKind) {
+  } else if (type === "dack" && data.tireKind && (data.depth != null || data.depthOff != null)) {
+    // Mönsterdjupet vid bytet: på däcken som sätts på och de som tas av.
     const tires = [...(carTarget.tires || [])];
-    const i = tires.findIndex((t) => t.kind === data.tireKind);
-    if (i >= 0) tires[i] = { ...tires[i], depth: data.depth };
-    else tires.push({ kind: data.tireKind, depth: data.depth });
+    const setDepth = (kind, depth) => {
+      if (depth == null) return;
+      const i = tires.findIndex((t) => t.kind === kind);
+      if (i >= 0) tires[i] = { ...tires[i], depth, depthAt: data.date }; else tires.push({ kind, depth, depthAt: data.date });
+    };
+    setDepth(data.tireKind, data.depth);
+    setDepth(data.tireKind === "vinter" ? "sommar" : "vinter", data.depthOff);
     carUpdate.tires = tires;
   }
+  if (type === "dack" && !existing && isSwap(data.tireAction) && data.depth == null && data.depthOff == null) extraNote = "Glöm inte att mäta mönsterdjupet, det kan du lägga till under Bilen → Däck.";
   // Fulltankning sätter bränslemätaren till Full.
   if (type === "tank" && data.full && !existing) {
     carUpdate.fuelLevel = { level: 8, pct: 100, by: uid(), at: serverTimestamp(), via: "tank" };
@@ -7463,11 +7536,14 @@ function readCarForm(form) {
     });
   }
   if (has("tiresOn")) {
+    // När mönsterdjupet mättes: i dag om det har ändrats, annars som förut.
+    const prevTires = (S.cars.find((x) => x.id === form.dataset.id) || (form.dataset.form === "car-new" ? null : car()))?.tires || [];
+    const depthAtOf = (kind, depth) => { const o = prevTires.find((t) => t.kind === kind) || {}; return depth == null ? null : num(o.depth) === depth ? o.depthAt || null : todayStr(); };
     Object.assign(data, {
       tiresOn: str("tiresOn") || "sommar",
       tires: [
-        clean({ kind: "sommar", brand: str("s_brand") || null, size: str("s_size") || null, year: str("s_year") || null, depth: num(fd.get("s_depth")), pressureFront: num(fd.get("s_pf")), pressureRear: num(fd.get("s_pr")) }),
-        clean({ kind: "vinter", brand: str("w_brand") || null, size: str("w_size") || null, year: str("w_year") || null, depth: num(fd.get("w_depth")), pressureFront: num(fd.get("w_pf")), pressureRear: num(fd.get("w_pr")), studded: fd.get("w_studded") === "on" }),
+        clean({ kind: "sommar", brand: str("s_brand") || null, size: str("s_size") || null, year: str("s_year") || null, depth: num(fd.get("s_depth")), depthAt: depthAtOf("sommar", num(fd.get("s_depth"))), pressureFront: num(fd.get("s_pf")), pressureRear: num(fd.get("s_pr")) }),
+        clean({ kind: "vinter", brand: str("w_brand") || null, size: str("w_size") || null, year: str("w_year") || null, depth: num(fd.get("w_depth")), depthAt: depthAtOf("vinter", num(fd.get("w_depth"))), pressureFront: num(fd.get("w_pf")), pressureRear: num(fd.get("w_pr")), studded: fd.get("w_studded") === "on" }),
       ],
     });
   }
@@ -8977,6 +9053,10 @@ function onChange(ev) {
   if (ev.target.id === "ef-tireAction") {
     const box = $("#ef-tirekind-box"); if (box) box.hidden = isSwap(ev.target.value);
     const nb = $("#ef-newtire-box"); if (nb) nb.hidden = ev.target.value !== "nya";
+    const swap = isSwap(ev.target.value);
+    const ob = $("#ef-depthoff-box"); if (ob) ob.hidden = !swap;
+    const dh = $("#ef-depth-hint"); if (dh) dh.hidden = !swap;
+    const dl = $("#ef-depth")?.closest("label, .field")?.querySelector("span, .label"); if (dl) dl.textContent = swap ? "Mönsterdjup, däcken som sätts på (mm)" : "Mönsterdjup (mm)";
   }
   if (ev.target.name === "result" && $("#ef-defects-box")) {
     const r = ev.target.value;
