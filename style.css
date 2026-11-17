@@ -1873,3 +1873,5 @@ body.car-locked .fab { display: none; }
   .nav-glenn:not([hidden]) { flex-direction: row; padding: 10px 14px; gap: 12px; }
   .nav-glenn .nav-glenn-fig { width: 56px; height: 60px; border-radius: 12px; }
 }
+/* Kontrollerat i dag: knappen är tryckt och går inte att trycka igen. */
+.btn.check-done, .btn.check-done:disabled { opacity: 1; background: var(--sage-soft); color: var(--sage); border-color: transparent; cursor: default; }

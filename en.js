@@ -981,6 +981,8 @@ export const EN = {
   "Senast kontrollerat": "Last checked",
   "Logga byte": "Log replacement",
   "Kontrollerat – ser bra ut": "Checked – looks good",
+  "Kontrollerat i dag": "Checked today",
+  "Kontrollen är sparad i loggen. Blev det fel kan du ta bort den där.": "The check is saved in the log. If it was a mistake, you can delete it there.",
   "Ser bra ut": "Looks good",
   "Stötdämpare": "Shock absorbers",
   "Tanka snart": "Fill up soon",

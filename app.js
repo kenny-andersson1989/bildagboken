@@ -6933,8 +6933,8 @@ function itemSheet(id) {
       : manual ? "" : `<p class="muted" style="margin-top:6px">Inga loggade byten än. Kryssa i ${esc(item.name.toLowerCase())} när du loggar en service eller ett eget jobb, så hamnar det här.</p>`}
     <div class="form" style="margin-top:18px">
       <button class="btn primary block" type="button" data-act="log-item" data-id="${esc(id)}">Logga byte</button>
-      ${CHECK_ITEMS.has(id) ? `<button class="btn block" type="button" data-act="item-checked" data-id="${esc(id)}">${icon("check", 18)} Kontrollerat – ser bra ut</button>
-      <p class="hint" style="margin-top:-4px">${esc(`Behöver inte bytas? Då får den ${checkExtension(item).months ? "ett år" : `${fmt(checkExtension(item).mil)} mil`} till från i dag, och kontrollen syns i loggen.`)}</p>` : ""}
+      ${CHECK_ITEMS.has(id) ? `${st.check?.date === todayStr() ? `<button class="btn block check-done" type="button" disabled>${icon("check", 18)} Kontrollerat i dag</button>` : `<button class="btn block" type="button" data-act="item-checked" data-id="${esc(id)}">${icon("check", 18)} Kontrollerat – ser bra ut</button>`}
+      <p class="hint" style="margin-top:-4px">${st.check?.date === todayStr() ? "Kontrollen är sparad i loggen. Blev det fel kan du ta bort den där." : esc(`Behöver inte bytas? Då får den ${checkExtension(item).months ? "ett år" : `${fmt(checkExtension(item).mil)} mil`} till från i dag, och kontrollen syns i loggen.`)}</p>` : ""}
       <button class="btn ghost block" type="button" data-act="edit-item-form" data-id="${esc(id)}">Ändra intervall</button>
     </div>`);
 }
@@ -7685,7 +7685,12 @@ const ACTIONS = {
       await setDoc(ref("entries", eid), data);
       if (!S.entries.some((e) => e.id === eid)) S.entries = sortEntries([{ id: eid, ...data, createdAt: Date.now() }, ...S.entries]);
       itemSheet(id); render();
-      showToast(`${item.name}: kontrollerat, ${checkExtension(item).months ? "ett år" : `${fmt(checkExtension(item).mil)} mil`} till`, 6000, () => { deleteDoc(ref("entries", eid)).catch(onWriteError); });
+      showToast(`${item.name}: kontrollerat, ${checkExtension(item).months ? "ett år" : `${fmt(checkExtension(item).mil)} mil`} till`, 6000, () => {
+        deleteDoc(ref("entries", eid)).catch(onWriteError);
+        S.entries = S.entries.filter((e) => e.id !== eid);
+        if (!sheet.hidden && $("#sheet .check-done")) itemSheet(id);
+        render();
+      });
     } catch (e) { onWriteError(e); el.disabled = false; }
   },
   // Ta bort ett senaste byte som fyllts i för hand, så att appen räknar från loggen.
