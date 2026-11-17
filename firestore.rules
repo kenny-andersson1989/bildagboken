@@ -38,13 +38,6 @@ service cloud.firestore {
     }
 
     // Felrapporter från appen: alla inloggade kan skicka en kort rapport, bara ägaren kan läsa dem.
-    // Kalenderfiler (Plus): sparas av appen och lämnas ut av funktionen kalender. Gallras efter två dagar.
-    match /icsfiles/{id} {
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['uid', 'ics', 'at'])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.ics is string && request.resource.data.ics.size() <= 60000;
-    }
     match /errors/{id} {
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid

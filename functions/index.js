@@ -871,19 +871,6 @@ exports.manadsbrev = onSchedule({ schedule: "0 10 1 * *", timeZone: TZ, timeoutS
   logger.info(`Månadsbrev skickade: ${sent}`);
 });
 
-// Kalenderfilen som appen har sparat (icsfiles/{id}), som text/calendar. Telefonen frågar då om händelserna
-// ska läggas in i kalendern. Id:t är slumpat och svårt att gissa, och filen gallras efter två dagar.
-exports.kalender = onRequest({ invoker: "public", timeoutSeconds: 10, memory: "256MiB", maxInstances: 2 }, async (req, res) => {
-  const id = String(req.query.id || "").replace(/\.ics$/, "");
-  if (!/^[A-Za-z0-9]{20}$/.test(id)) { res.status(404).send("Hittades inte"); return; }
-  const snap = await db.doc(`icsfiles/${id}`).get();
-  if (!snap.exists || typeof snap.data().ics !== "string") { res.status(404).send("Kalenderfilen finns inte längre. Gör en ny i Bildagboken."); return; }
-  res.set("Content-Type", "text/calendar; charset=utf-8");
-  res.set("Content-Disposition", 'inline; filename="bildagboken.ics"');
-  res.set("Cache-Control", "no-store");
-  res.send(snap.data().ics);
-});
-
 // Papperskorgen: bilar och poster som har legat borttagna i 30 dagar raderas för gott, med logg, resor och bilder.
 // Tre dagar innan en bil raderas får hushållets ägare en påminnelse.
 const photoIdsOf = (d) => (Array.isArray(d.photoIds) && d.photoIds.length ? d.photoIds : d.photoId ? [d.photoId] : []);
@@ -944,6 +931,7 @@ exports.rensaPapperskorg = onSchedule({ schedule: "every day 03:30", timeZone: T
   const oldErrors = await db.collection("errors").where("at", "<", errCut).limit(2000).get();
   const oldRegs = await db.collection("regcache").where("at", "<", Date.now() - 30 * day).limit(2000).get();
   const oldUsers = await db.collection("regusers").where("lastAt", "<", Date.now() - 30 * day).limit(2000).get();
+  // Kalenderfilerna togs bort i november 2026. Det som finns kvar gallras här.
   const oldIcs = await db.collection("icsfiles").where("at", "<", admin.firestore.Timestamp.fromMillis(Date.now() - 2 * day)).limit(2000).get();
   const n = await deleteRefs([...oldErrors.docs, ...oldRegs.docs, ...oldUsers.docs, ...oldIcs.docs].map((d) => d.ref));
   if (n) logger.info("Gamla felrapporter och sökningar gallrade", { docs: n });
