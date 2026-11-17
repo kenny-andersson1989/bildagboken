@@ -713,6 +713,14 @@ exports.rensaPapperskorg = onSchedule({ schedule: "every day 03:30", timeZone: T
       logger.info("Poster raderade ur papperskorgen", { hid: h.id, docs: await deleteRefs(refs) });
     }
   }
+  // Gallring enligt integritetssidan: felrapporter sparas i 90 dagar, svar från regnummertjänsten i 30 dagar
+  // och räknarna för sökningar per person i 30 dagar.
+  const errCut = admin.firestore.Timestamp.fromMillis(Date.now() - 90 * day);
+  const oldErrors = await db.collection("errors").where("at", "<", errCut).limit(2000).get();
+  const oldRegs = await db.collection("regcache").where("at", "<", Date.now() - 30 * day).limit(2000).get();
+  const oldUsers = await db.collection("regusers").where("lastAt", "<", Date.now() - 30 * day).limit(2000).get();
+  const n = await deleteRefs([...oldErrors.docs, ...oldRegs.docs, ...oldUsers.docs].map((d) => d.ref));
+  if (n) logger.info("Gamla felrapporter och sökningar gallrade", { docs: n });
 });
 
 // Spola tillbaka (bara administratören): läser ett hushåll som det såg ut vid en viss minut de senaste 7 dagarna
