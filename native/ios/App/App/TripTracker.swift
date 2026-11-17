@@ -13,11 +13,12 @@ import UserNotifications
 import CoreLocation
 import Capacitor
 import ActivityKit
+import UIKit
 
 final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotificationCenterDelegate, NotificationHandlerProtocol {
     static let shared = TripTracker()
 
-    private let manager = CLLocationManager()
+    let manager = CLLocationManager()
     private let defaults = UserDefaults.standard
     private let enabledKey = "autoTrips.enabled"
     private let tripsKey = "autoTrips.list"
@@ -310,7 +311,8 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         case .denied, .restricted: auth = "denied"
         default: auth = "notDetermined"
         }
-        var r: [String: Any] = ["enabled": enabled, "auth": auth, "driving": driving, "pending": savedTrips().count]
+        var r: [String: Any] = ["enabled": enabled, "auth": auth, "driving": driving, "pending": savedTrips().count,
+                                "precise": manager.accuracyAuthorization == .fullAccuracy, "canAskAlways": true]
         if driving, let s = startTime {
             r["since"] = s.timeIntervalSince1970 * 1000
             r["meters"] = meters.rounded()
@@ -331,7 +333,43 @@ public class TripTrackerPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "trips", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setPlaces", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "askAlways", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
     ]
+
+    // Appens egen sida i telefonens Inställningar (Plats, Notiser och så vidare).
+    static func openAppSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+    }
+
+    // "Tillåt Alltid": iOS visar rutan "Ändra till Alltid tillåt?" bara en gång. Visas den inte (appen blir inte
+    // inaktiv inom en sekund) öppnas appens sida i Inställningar i stället, där man väljer Plats → Alltid.
+    @objc func askAlways(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let m = TripTracker.shared.manager
+            switch m.authorizationStatus {
+            case .notDetermined:
+                m.requestWhenInUseAuthorization()
+                call.resolve(["result": "prompted"])
+            case .authorizedWhenInUse:
+                var shown = false
+                let obs = NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { _ in shown = true }
+                m.requestAlwaysAuthorization()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    NotificationCenter.default.removeObserver(obs)
+                    if shown { call.resolve(["result": "prompted"]) }
+                    else { TripTrackerPlugin.openAppSettings(); call.resolve(["result": "settings"]) }
+                }
+            default:
+                TripTrackerPlugin.openAppSettings()
+                call.resolve(["result": "settings"])
+            }
+        }
+    }
+
+    @objc func openSettings(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { TripTrackerPlugin.openAppSettings(); call.resolve() }
+    }
 
     @objc func status(_ call: CAPPluginCall) {
         DispatchQueue.main.async { call.resolve(TripTracker.shared.status()) }
