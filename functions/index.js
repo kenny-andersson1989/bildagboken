@@ -173,7 +173,7 @@ const LOGGED = {
 
 exports.nyLogg = onDocumentCreated("households/{hid}/entries/{eid}", async (event) => {
   const e = event.data?.data();
-  if (!e || !e.createdBy) return;
+  if (!e || !e.createdBy || e.fromBase) return; // datum som flyttats in i loggen automatiskt: ingen notis
   // Gamla poster som läggs in i efterhand skickar ingen notis.
   if (e.date && daysBetween(e.date, todayStr()) > 2) return;
   const hid = event.params.hid;
