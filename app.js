@@ -1135,7 +1135,7 @@ function tireDeadline(c) {
   const studded = !!winter?.studded;
   if (on === "sommar") {
     const oct1 = new Date(y, 9, 1), dec1 = new Date(y, 11, 1), apr1 = new Date(y, 3, 1);
-    if (t >= oct1 && t < dec1) return { key: "dack", date: dec1, calTitle: "Vinterdäck ska vara på", icon: "tire", title: "Vinterdäck på", sub: "Senast 1 december · sommardäck sitter på", days: daysUntil(dec1) };
+    if (t >= oct1 && t < dec1) return { key: "dack", date: dec1, calTitle: "Vinterdäck ska vara på", icon: "tire", title: "Vinterdäck på", sub: "Krävs vid vinterväglag från 1 december · sommardäck sitter på", days: daysUntil(dec1) };
     if (t >= dec1 || t < apr1) return { icon: "tire", title: "Vinterdäck på", sub: "Krävs vid vinterväglag 1 december–31 mars", days: -1, label: "Nu", level: "urgent" };
     // Sommardäcken sitter på och det är inte dags att byta: ingen rad (vilka däck som sitter på syns under Bilen → Däck).
     return null;
@@ -1143,11 +1143,11 @@ function tireDeadline(c) {
   const mar15 = new Date(y, 2, 15), apr15 = new Date(y, 3, 15), oct1 = new Date(y, 9, 1);
   if (t > apr15 && t < oct1) {
     return studded
-      ? { icon: "tire", title: "Dubbdäck av", sub: "Skulle av senast 15 april", days: -1, label: "Nu", level: "urgent" }
+      ? { icon: "tire", title: "Dubbdäck av", sub: "Skulle av senast 15 april, om det inte är vinterväglag", days: -1, label: "Nu", level: "urgent" }
       : { icon: "tire", title: "Sommardäck på", sub: "Vinterdäcken sitter fortfarande på", days: 0, label: "Dags", level: "soon" };
   }
   if (t >= mar15 && t <= apr15) {
-    return { key: "dack", date: apr15, calTitle: studded ? "Dubbdäcken ska vara av" : "Dags för sommardäck", icon: "tire", title: "Sommardäck på", sub: studded ? "Dubbdäck av senast 15 april" : "Byt när vårvädret är stabilt", days: daysUntil(apr15) };
+    return { key: "dack", date: apr15, calTitle: studded ? "Dubbdäcken ska vara av" : "Dags för sommardäck", icon: "tire", title: "Sommardäck på", sub: studded ? "Dubbdäck av senast 15 april, om det inte är vinterväglag" : "Byt när vårvädret är stabilt", days: daysUntil(apr15) };
   }
   // Vinterdäcken sitter på och det är inte dags att byta: ingen rad.
   return null;
@@ -2427,6 +2427,11 @@ function tireDepthLevel(kind, v) {
   return d < t.law ? "bad" : d < t.rec ? "warn" : "ok";
 }
 const mmTxt = (n) => (n % 1 ? fmt(n, 1) : String(n));
+// Dubbfria vinterdäck räknas sedan 1 december 2024 bara som vinterdäck om de är märkta med alptopp/snöflinga
+// (personbilar och släp till dem, högst 3,5 ton). Bara M+S räcker inte. Dubbdäck berörs inte.
+const ALPINE_OPTS = [["", "Vet inte"], ["ja", "Ja, alptopp/snöflinga"], ["nej", "Nej, bara M+S"]];
+const alpineVal = (t) => (t?.alpine === true ? "ja" : t?.alpine === false ? "nej" : "");
+const alpineFrom = (v) => (v === "ja" ? true : v === "nej" ? false : null);
 // Däckens hälsa: ålder (DOT), mönsterdjup och hur långt de har rullat. Det sämsta avgör.
 // Vinterdäck tappar greppet med åldern fortare än sommardäck. Inga däck bör sitta på efter tio år.
 const TIRE_AGE = { vinter: { warn: 5, bad: 6 }, sommar: { warn: 5, bad: 8 } };
@@ -2471,6 +2476,7 @@ function tireHealth(c, kind) {
     const tt = TREAD[kind], lvl = tireDepthLevel(kind, d);
     parts.push({ lvl, f: (d - tt.law) / (TIRE_NEW_MM[kind] - tt.law), why: lvl === "bad" ? `Mönsterdjupet ${mmTxt(d)} mm är under lagkravet på ${mmTxt(tt.law)} mm.` : lvl === "warn" ? `Mönsterdjupet ${mmTxt(d)} mm är under rekommenderade ${mmTxt(tt.rec)} mm.` : `${mmTxt(d)} mm mönster` });
   }
+  if (kind === "vinter" && !t.studded && t.alpine === false) parts.push({ lvl: "bad", f: 0, why: "Vinterdäcken är bara märkta M+S och räknas inte som vinterdäck enligt lag. Dubbfria vinterdäck måste ha alptopp/snöflinga." });
   const mil = tireMil(c, kind);
   if (mil != null && mil > 0) {
     const lvl = mil >= TIRE_MIL_WARN ? "warn" : "ok";
@@ -2478,6 +2484,7 @@ function tireHealth(c, kind) {
   }
   if (!parts.length) return null;
   const rank = { ok: 0, warn: 1, bad: 2 };
+  if (kind === "vinter" && !t.studded && t.alpine == null && (t.brand || t.year || t.depth != null)) parts.push({ lvl: "ok", f: 1, why: "Kontrollera att de är märkta med alptopp/snöflinga" });
   const worst = parts.reduce((m, x) => (rank[x.lvl] > rank[m.lvl] ? x : m), parts[0]);
   const frac = Math.max(0, Math.min(1, Math.min(...parts.map((x) => x.f))));
   return { lvl: worst.lvl, frac, label: { ok: "Bra", warn: "Snart dags", bad: "Byt" }[worst.lvl], why: worst.lvl === "ok" ? parts.map((x) => x.why).join(" · ") : worst.why, oldDepth: d != null && t.depthAt && t.depthAt < ymd(addMonths(today0(), -13)) };
@@ -2623,6 +2630,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       ${inp("w_pr", "Lufttryck bak (bar)", winter.pressureRear != null ? fmt(winter.pressureRear, 1) : "", 'inputmode="decimal" autocomplete="off"')}
     </div>
     <label class="check"><input type="checkbox" name="w_studded" id="cf-w_studded"${winter.studded ? " checked" : ""}> Vinterdäcken är dubbade</label>
+    <label class="field"><span>Märkta med alptopp/snöflinga?</span><select name="w_alpine" id="cf-w_alpine">${ALPINE_OPTS.map(([v, l]) => `<option value="${v}"${alpineVal(winter) === v ? " selected" : ""}>${l}</option>`).join("")}</select><small>Dubbfria vinterdäck räknas bara som vinterdäck om de har symbolen med ett berg och en snöflinga. Bara M+S räcker inte sedan 1 december 2024.</small></label>
     <p class="hint">Dimensionen står på däckets sida, till exempel 205/55 R16. Rätt lufttryck står oftast på en dekal i förardörren eller i tanklocket. Sommar- och vinterdäcken sparas var för sig.</p>`;
   parts.specs = `
     <label class="field"><span>Anteckningar om bilen</span><textarea name="specsText" id="cf-specsText" rows="9">${esc(c.specsText ?? SPEC_TEMPLATE)}</textarea></label>
@@ -4729,7 +4737,18 @@ function viewCar() {
         : plusLock() ? `<div class="ask" style="margin-top:12px"><button class="btn-soft" type="button" data-act="plus" data-f="forecast">${icon("calendar", 16)} Lägg in i kalendern <span class="plus-badge">Plus</span></button></div>` : ""}
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
-    <!--card:dack--><div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div>${tireMissing ? `<p class="hint" style="margin-top:8px">Lägg till tillverkningsår och mönsterdjup under Ändra, så ser du hur däcken mår.</p>` : ""}</div>
+    <!--card:dack--><div class="card"><h2>Däck <button class="link" type="button" data-act="edit-car" data-section="tires">Ändra</button></h2><div class="rows">${tires}</div>${tireMissing ? `<p class="hint" style="margin-top:8px">Lägg till tillverkningsår och mönsterdjup under Ändra, så ser du hur däcken mår.</p>` : ""}
+      <details class="more tire-law"><summary>Bra att veta om däck</summary>
+        <ul>
+          <li>Vinterdäck krävs när det är vinterväglag (snö, is, snömodd eller frost) från 1 december till 31 mars, med minst 3 mm mönster.</li>
+          <li>Dubbfria vinterdäck måste vara märkta med alptopp/snöflinga. Bara M+S räcker inte sedan 1 december 2024.</li>
+          <li>Dubbdäck får användas 1 oktober–15 april, och även utanför den tiden om det är eller befaras bli vinterväglag.</li>
+          <li>Sommardäck ska ha minst 1,6 mm mönster. 3 mm rekommenderas, eftersom greppet i regn blir mycket sämre.</li>
+          <li>Drar du en släpvagn vid vinterväglag ska den också ha vinterdäck, och dubbdäck om bilen har det.</li>
+          <li>Åldersgränserna i appen är rekommendationer, inte lag: gummit hårdnar med åren och greppar sämre.</li>
+        </ul>
+        <p class="hint">Källa: Transportstyrelsen.</p>
+      </details></div>
     <!--card:media-->${docsCard(c)}
     <!--card:book--><div class="card">
       <h2>Servicebok</h2>
@@ -6238,6 +6257,9 @@ function entryForm(type, e = {}, opts = {}) {
             ${field("Tillverkningsår", `<input name="tireYear" id="ef-tireYear" inputmode="numeric" value="${v("tireYear")}" autocomplete="off">`, "Står efter DOT på däckets sida, till exempel 2425 = vecka 24 år 2025.")}
             <div id="ef-studded-box"${e.tireKind === "vinter" ? "" : " hidden"} style="align-self:center"><label class="check"><input type="checkbox" name="studded" id="ef-studded"${e.studded ? " checked" : ""}> Dubbade</label></div>
           </div>
+          <div id="ef-alpine-box"${e.tireKind === "vinter" && !e.studded ? "" : " hidden"}>
+            ${field("Märkta med alptopp/snöflinga?", `<select name="alpine" id="ef-alpine">${ALPINE_OPTS.map(([v, l]) => `<option value="${v}"${alpineVal(e) === v ? " selected" : ""}>${l}</option>`).join("")}</select>`, "Dubbfria vinterdäck måste ha den symbolen för att räknas som vinterdäck.")}
+          </div>
         </div>
         ${placeField("place", "ef-place", e.place, "tyres", "Däckia")}
         ${amount("800")}${odo(false)}${date}${more()}`;
@@ -6956,6 +6978,7 @@ async function saveEntry(form) {
           tireBrand: str("tireBrand") || null, tireSize: str("tireSize") || null,
           tireYear,
           studded: data.tireKind === "vinter" ? fd.get("studded") === "on" : null,
+          alpine: data.tireKind === "vinter" && fd.get("studded") !== "on" ? alpineFrom(str("alpine")) : null,
         });
       }
       break;
@@ -7058,7 +7081,7 @@ async function saveEntry(form) {
     const tires = [...(carTarget.tires || [])];
     const i = tires.findIndex((t) => t.kind === data.tireKind);
     const old = i >= 0 ? tires[i] : {};
-    const fresh = clean({ kind: data.tireKind, brand: data.tireBrand, size: data.tireSize || old.size || null, year: data.tireYear, depth: data.depth, studded: data.tireKind === "vinter" ? !!data.studded : null, pressureFront: old.pressureFront ?? null, pressureRear: old.pressureRear ?? null });
+    const fresh = clean({ kind: data.tireKind, brand: data.tireBrand, size: data.tireSize || old.size || null, year: data.tireYear, depth: data.depth, studded: data.tireKind === "vinter" ? !!data.studded : null, alpine: data.alpine ?? null, pressureFront: old.pressureFront ?? null, pressureRear: old.pressureRear ?? null });
     if (i >= 0) tires[i] = fresh; else tires.push(fresh);
     carUpdate.tires = tires;
   } else if (type === "dack" && data.tireKind && (data.depth != null || data.depthOff != null)) {
@@ -7073,7 +7096,11 @@ async function saveEntry(form) {
     setDepth(data.tireKind === "vinter" ? "sommar" : "vinter", data.depthOff);
     carUpdate.tires = tires;
   }
-  if (type === "dack" && !existing && isSwap(data.tireAction) && data.depth == null && data.depthOff == null) extraNote = "Glöm inte att mäta mönsterdjupet, det kan du lägga till under Bilen → Däck.";
+  if (type === "dack" && !existing && data.tireAction === "till_vinter" && (carTarget.tires || []).some((t) => t.kind === "vinter" && t.studded)) {
+    const md = (data.date || todayStr()).slice(5);
+    if (md < "10-01" && md > "04-15") extraNote = "Dubbdäck får bara användas före 1 oktober om det är eller befaras bli vinterväglag.";
+  }
+  if (type === "dack" && !existing && isSwap(data.tireAction) && data.depth == null && data.depthOff == null && !extraNote) extraNote = "Glöm inte att mäta mönsterdjupet, det kan du lägga till under Bilen → Däck.";
   // Fulltankning sätter bränslemätaren till Full.
   if (type === "tank" && data.full && !existing) {
     carUpdate.fuelLevel = { level: 8, pct: 100, by: uid(), at: serverTimestamp(), via: "tank" };
@@ -7543,7 +7570,7 @@ function readCarForm(form) {
       tiresOn: str("tiresOn") || "sommar",
       tires: [
         clean({ kind: "sommar", brand: str("s_brand") || null, size: str("s_size") || null, year: str("s_year") || null, depth: num(fd.get("s_depth")), depthAt: depthAtOf("sommar", num(fd.get("s_depth"))), pressureFront: num(fd.get("s_pf")), pressureRear: num(fd.get("s_pr")) }),
-        clean({ kind: "vinter", brand: str("w_brand") || null, size: str("w_size") || null, year: str("w_year") || null, depth: num(fd.get("w_depth")), depthAt: depthAtOf("vinter", num(fd.get("w_depth"))), pressureFront: num(fd.get("w_pf")), pressureRear: num(fd.get("w_pr")), studded: fd.get("w_studded") === "on" }),
+        clean({ kind: "vinter", brand: str("w_brand") || null, size: str("w_size") || null, year: str("w_year") || null, depth: num(fd.get("w_depth")), depthAt: depthAtOf("vinter", num(fd.get("w_depth"))), pressureFront: num(fd.get("w_pf")), pressureRear: num(fd.get("w_pr")), studded: fd.get("w_studded") === "on", alpine: fd.get("w_studded") === "on" ? null : alpineFrom(str("w_alpine")) }),
       ],
     });
   }
@@ -9065,7 +9092,11 @@ function onChange(ev) {
     // Nästa besiktning sätts först när bilen är godkänd.
     const nb = $("#ef-next-besikt"); if (nb && !$("#ef-old-besikt:not([hidden])")) nb.hidden = inspFailed(r);
   }
-  if (ev.target.id === "ef-tireKind") { const sb = $("#ef-studded-box"); if (sb) sb.hidden = ev.target.value !== "vinter"; }
+  if (ev.target.id === "ef-tireKind" || ev.target.id === "ef-studded") {
+    const winter = $("#ef-tireKind")?.value === "vinter";
+    const sb = $("#ef-studded-box"); if (sb) sb.hidden = !winter;
+    const ab = $("#ef-alpine-box"); if (ab) ab.hidden = !winter || !!$("#ef-studded")?.checked;
+  }
   if (ev.target.id === "ef-scan") { scanReceipt(ev.target.files?.[0]); ev.target.value = ""; }
   if (ev.target.id === "bk-addr") geocodeBookingAddress();
   if ((ev.target.id === "ef-date" || ev.target.id === "ef-category") && $("#ef-nextBesiktning")) updateNextInspection();
