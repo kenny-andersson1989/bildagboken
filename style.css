@@ -1850,3 +1850,6 @@ body.car-locked .fab { display: none; }
 .item-info li { margin: 6px 0; color: var(--ink-2); line-height: 1.45; }
 .koll-tile small.kt-y { margin-top: 0; letter-spacing: .02em; font-size: 9.5px; }
 .koll-tile.has-year { min-height: 52px; }
+.tire-hint { display: block; margin-top: 4px; font-size: 12px; line-height: 1.35; color: var(--ink-2); font-weight: 400; }
+.tire-hint[data-level="warn"] { color: var(--accent-text); font-weight: 600; }
+.tire-hint[data-level="bad"] { color: var(--danger); font-weight: 600; }

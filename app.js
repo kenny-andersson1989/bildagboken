@@ -1191,7 +1191,7 @@ function carContext(c) {
     L.push("", `# Uppgifter från Transportstyrelsens register (hämtade ${ymd(new Date(c.reg.at || Date.now()))})`);
     for (const x of c.reg.f) L.push(`${x.k}: ${x.v}`);
   }
-  for (const t of c.tires || []) L.push(`${t.kind === "vinter" ? "Vinterdäck" : "Sommardäck"}${t.on ? " (sitter på)" : ""}: ${[t.brand, t.size, t.year ? `tillverkade ${t.year}` : "", t.depth != null ? `${fmt(t.depth, 1)} mm mönster` : ""].filter(Boolean).join(", ") || "inga uppgifter"}`);
+  for (const t of c.tires || []) L.push(`${t.kind === "vinter" ? "Vinterdäck" : "Sommardäck"}${t.on ? " (sitter på)" : ""}: ${[t.brand, t.size, t.year ? `tillverkade ${tireDotText(t.year)}` : "", t.depth != null ? `${fmt(t.depth, 1)} mm mönster` : ""].filter(Boolean).join(", ") || "inga uppgifter"}`);
 
   L.push("", "# Underhåll");
   for (const s of allItemStatus(c)) {
@@ -2244,6 +2244,50 @@ const CAR_SECTIONS = {
   more: "Växellåda, tank och släp",
   specs: "Anteckningar",
 };
+// Däckens ålder: fyra siffror efter DOT på däckets sida, vecka och år. 4022 = vecka 40, 2022.
+function tireDot(v) {
+  const d = String(v ?? "").replace(/\D/g, "");
+  if (d.length === 4 && +d.slice(0, 2) >= 1 && +d.slice(0, 2) <= 53 && !/^(19|20)/.test(d)) return { week: +d.slice(0, 2), year: 2000 + +d.slice(2) };
+  if (d.length === 4 && /^(19|20)\d\d$/.test(d)) return { week: null, year: +d };
+  return null;
+}
+const tireDotText = (v) => { const t = tireDot(v); return t ? (t.week ? `vecka ${t.week}, ${t.year}` : String(t.year)) : String(v ?? ""); };
+function tireYearHint(v) {
+  const t = tireDot(v);
+  if (!t) return "Fyra siffror efter DOT på däckets sida: vecka och år. 4025 betyder vecka 40, 2025.";
+  const age = new Date().getFullYear() - t.year;
+  return `${t.week ? `Vecka ${t.week}, ${t.year}` : t.year}${age > 0 ? ` · ${age} år gamla` : ""}${age >= 8 ? ". Däck äldre än 8 år blir hårda och bör ses över, även om mönstret är bra." : ""}`;
+}
+// Mönsterdjup: lagkrav och rekommendation. Sommardäck minst 1,6 mm enligt lag, 3 mm rekommenderas.
+// Vinterdäck minst 3 mm enligt lag när vinterdäck krävs (1 december–31 mars), 5 mm rekommenderas.
+const TREAD = { sommar: { law: 1.6, rec: 3 }, vinter: { law: 3, rec: 5 } };
+function tireDepthLevel(kind, v) {
+  const d = num(v), t = TREAD[kind];
+  if (d == null || !t) return null;
+  return d < t.law ? "bad" : d < t.rec ? "warn" : "ok";
+}
+const mmTxt = (n) => (n % 1 ? fmt(n, 1) : String(n));
+function tireDepthHint(kind, v) {
+  const t = TREAD[kind], lvl = tireDepthLevel(kind, v);
+  const base = kind === "vinter" ? `Lagkrav minst ${mmTxt(t.law)} mm (1 december–31 mars), rekommenderat minst ${mmTxt(t.rec)} mm.` : `Lagkrav minst ${mmTxt(t.law)} mm, rekommenderat minst ${mmTxt(t.rec)} mm.`;
+  if (lvl === "bad") return `Under lagkravet på ${mmTxt(t.law)} mm. Däcken måste bytas.`;
+  if (lvl === "warn") return `Under rekommenderade ${mmTxt(t.rec)} mm. Dags att byta snart, greppet blir sämre.`;
+  return base;
+}
+// Hjälptexterna uppdateras medan man skriver.
+document.addEventListener("input", (ev) => {
+  const m = ev.target.id?.match(/^cf-([sw])_(year|depth)$/);
+  if (!m) return;
+  const hint = $(`#cf-${m[1]}_${m[2]}-hint`);
+  if (!hint) return;
+  if (m[2] === "year") hint.textContent = tireYearHint(ev.target.value);
+  else {
+    const kind = m[1] === "s" ? "sommar" : "vinter";
+    hint.textContent = tireDepthHint(kind, ev.target.value);
+    hint.dataset.level = tireDepthLevel(kind, ev.target.value) || "";
+  }
+  if (EN && typeof trTree === "function") trTree(hint.parentElement);
+});
 function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
   const sel = (name, opts, val) => `<select name="${name}" id="cf-${name}">${opts.map((o) => {
     const [v, l] = Array.isArray(o) ? o : [o, o];
@@ -2343,8 +2387,8 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       ${inp("s_size", "Dimension", summer.size, 'autocomplete="off"')}
     </div>
     <div class="row2">
-      ${inp("s_year", "Tillverkningsår", summer.year, 'inputmode="numeric" autocomplete="off"')}
-      ${inp("s_depth", "Mönsterdjup (mm)", summer.depth, 'inputmode="decimal" autocomplete="off"')}
+      <label class="field"><span>Tillverkad (DOT)</span><input name="s_year" id="cf-s_year" value="${esc(summer.year ?? "")}" inputmode="numeric" autocomplete="off" maxlength="4"><small class="tire-hint" id="cf-s_year-hint">${esc(tireYearHint(summer.year))}</small></label>
+      <label class="field"><span>Mönsterdjup (mm)</span><input name="s_depth" id="cf-s_depth" value="${esc(summer.depth ?? "")}" inputmode="decimal" autocomplete="off"><small class="tire-hint" id="cf-s_depth-hint" data-level="${tireDepthLevel("sommar", summer.depth) || ""}">${esc(tireDepthHint("sommar", summer.depth))}</small></label>
     </div>
     <div class="row2">
       ${inp("s_pf", "Lufttryck fram (bar)", summer.pressureFront != null ? fmt(summer.pressureFront, 1) : "", 'inputmode="decimal" autocomplete="off"')}
@@ -2356,8 +2400,8 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       ${inp("w_size", "Dimension", winter.size, 'autocomplete="off"')}
     </div>
     <div class="row2">
-      ${inp("w_year", "Tillverkningsår", winter.year, 'inputmode="numeric" autocomplete="off"')}
-      ${inp("w_depth", "Mönsterdjup (mm)", winter.depth, 'inputmode="decimal" autocomplete="off"')}
+      <label class="field"><span>Tillverkad (DOT)</span><input name="w_year" id="cf-w_year" value="${esc(winter.year ?? "")}" inputmode="numeric" autocomplete="off" maxlength="4"><small class="tire-hint" id="cf-w_year-hint">${esc(tireYearHint(winter.year))}</small></label>
+      <label class="field"><span>Mönsterdjup (mm)</span><input name="w_depth" id="cf-w_depth" value="${esc(winter.depth ?? "")}" inputmode="decimal" autocomplete="off"><small class="tire-hint" id="cf-w_depth-hint" data-level="${tireDepthLevel("vinter", winter.depth) || ""}">${esc(tireDepthHint("vinter", winter.depth))}</small></label>
     </div>
     <div class="row2">
       ${inp("w_pf", "Lufttryck fram (bar)", winter.pressureFront != null ? fmt(winter.pressureFront, 1) : "", 'inputmode="decimal" autocomplete="off"')}
@@ -4262,10 +4306,9 @@ function viewCar() {
     const pressure = t.pressureFront != null || t.pressureRear != null
       ? `${t.pressureFront != null ? fmt(t.pressureFront, 1) : "–"} / ${t.pressureRear != null ? fmt(t.pressureRear, 1) : "–"} bar`
       : "";
-    const sub = [t.brand, t.size, t.year, t.depth != null && t.depth !== "" ? `${fmt(num(t.depth), 1)} mm` : "", pressure, k === "vinter" && t.studded ? "dubbade" : ""].filter(Boolean).join(" · ");
-    const depth = num(t.depth);
-    const low = depth != null && depth < (k === "vinter" ? 4 : 3);
-    return `<div class="dl"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div></div><span class="pill ${low ? "soon" : on ? "ok" : "none"}">${low ? "Slitna" : on ? "På" : "Förråd"}</span></div>`;
+    const sub = [t.brand, t.size, t.year ? `tillverkade ${tireDotText(t.year)}` : "", t.depth != null && t.depth !== "" ? `${fmt(num(t.depth), 1)} mm` : "", pressure, k === "vinter" && t.studded ? "dubbade" : ""].filter(Boolean).join(" · ");
+    const lvl = tireDepthLevel(k, t.depth);
+    return `<div class="dl"><div class="dl-ic">${icon("tire", 20)}</div><div><div class="dl-t">${k === "sommar" ? "Sommardäck" : "Vinterdäck"}${on ? " · sitter på" : ""}</div><div class="dl-s">${esc(sub || "Inga uppgifter")}</div></div><span class="pill ${lvl === "bad" ? "urgent" : lvl === "warn" ? "soon" : on ? "ok" : "none"}">${lvl === "bad" ? "Under lagkrav" : lvl === "warn" ? "Slitna" : on ? "På" : "Förråd"}</span></div>`;
   }).join("");
   return arrangeCards(`${subHeader([c.year, c.fuel].filter(Boolean).join(" · "), carName(c), false, "Bilen")}
     ${carChips(c)}
