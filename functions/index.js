@@ -250,6 +250,8 @@ exports.glomdResa = onSchedule({ schedule: "every 60 minutes", timeZone: TZ }, a
 // 4) AI (Plus): läser ett foto av en servicefaktura, ett besiktningsprotokoll eller ett kvitto och fyller i formuläret.
 // Nyckeln sparas som hemlighet: firebase functions:secrets:set ANTHROPIC_API_KEY. Den når aldrig appen.
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
+// Apple Maps-nyckeln (.p8) för Glenns sökning i närheten, se appleMapsToken.
+const APPLE_MAPS_KEY = defineSecret("APPLE_MAPS_KEY");
 const ADMIN_UID = "mjQJQzsMCpVURkuVSyK5ctKVhG23";
 const AI_MONTHLY_LIMIT = 60;   // läsningar av dokument per hushåll och månad
 const CHAT_MONTHLY_LIMIT = 30; // frågor till Glenn per person och månad
@@ -373,7 +375,7 @@ const CHAT_SYSTEM = [
     "Glenn syns som en liten figur i appen. Är svaret goda nyheter, beröm eller något som ser bra ut, avsluta med taggen [tumme]. Skämtar du eller säger något med glimten i ögat, avsluta med [blink]. Annars ingen tagg. Högst en tagg, och inte i varje svar.",
 ].join(" ");
 
-exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB", maxInstances: 3 }, async (req) => {
+exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY, APPLE_MAPS_KEY], timeoutSeconds: 120, memory: "512MiB", maxInstances: 3 }, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
   const { hid, context, messages } = req.data || {};
@@ -495,6 +497,57 @@ const NEARBY_KINDS = {
   bensin: "[amenity=fuel]", laddning: "[amenity=charging_station]", verkstad: "[shop=car_repair]",
   dack: "[shop=tyres]", biltvatt: "[amenity=car_wash]", parkering: "[amenity=parking]",
 };
+// Apple Maps Server API: samma ställen som i Apple Kartor. Nyckeln (.p8, MapKit JS) sparas med
+// firebase functions:secrets:set APPLE_MAPS_KEY --data-file AuthKey_H9VBZ37S7V.p8
+// Overpass (OpenStreetMap) används som reserv om Apple inte svarar.
+const MAPS_KEY_ID = "H9VBZ37S7V", MAPS_TEAM_ID = "TMWQ9XA77D";
+const APPLE_KINDS = {
+  bensin: ["bensinstation", "GasStation"], laddning: ["laddstation", "EVCharger"], verkstad: ["bilverkstad", "AutomotiveRepair"],
+  dack: ["däckverkstad", null], biltvatt: ["biltvätt", null], parkering: ["parkering", "Parking"],
+};
+let mapsToken = null;
+function pemKey(k) {
+  k = String(k || "").replace(/\r/g, "").trim();
+  if (k.includes("\n")) return k;
+  const body = k.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, "").replace(/\s+/g, "");
+  return `-----BEGIN PRIVATE KEY-----\n${body.match(/.{1,64}/g).join("\n")}\n-----END PRIVATE KEY-----`;
+}
+async function appleMapsToken() {
+  if (mapsToken && mapsToken.exp > Date.now() + 60000) return mapsToken.token;
+  const key = APPLE_MAPS_KEY.value();
+  if (!key) throw new Error("ingen Apple Maps-nyckel");
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const data = `${b64({ alg: "ES256", kid: MAPS_KEY_ID, typ: "JWT" })}.${b64({ iss: MAPS_TEAM_ID, iat: now, exp: now + 1800 })}`;
+  const sig = require("crypto").sign("sha256", Buffer.from(data), { key: pemKey(key), dsaEncoding: "ieee-p1363" }).toString("base64url");
+  const r = await fetch("https://maps-api.apple.com/v1/token", { headers: { Authorization: `Bearer ${data}.${sig}` }, signal: AbortSignal.timeout(6000) });
+  if (!r.ok) throw new Error("apple token " + r.status);
+  const j = await r.json();
+  mapsToken = { token: j.accessToken, exp: Date.now() + (Number(j.expiresInSeconds) || 1800) * 1000 };
+  return mapsToken.token;
+}
+async function appleNearby(kind, here, radiusM) {
+  const [q, cat] = APPLE_KINDS[kind] || APPLE_KINDS.bensin;
+  const token = await appleMapsToken();
+  const ask = async (withCat) => {
+    const u = new URL("https://maps-api.apple.com/v1/search");
+    u.searchParams.set("q", q); u.searchParams.set("searchLocation", `${here.lat},${here.lon}`); u.searchParams.set("lang", "sv-SE");
+    u.searchParams.set("resultTypeFilter", "Poi");
+    if (withCat && cat) u.searchParams.set("includePoiCategories", cat);
+    const r = await fetch(u, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(7000) });
+    if (!r.ok) throw new Error(`apple search ${r.status}`);
+    return (await r.json()).results || [];
+  };
+  let res = await ask(true);
+  if (!res.length && cat) res = await ask(false);
+  return res.map((x) => {
+    const lat = x.coordinate?.latitude, lon = x.coordinate?.longitude;
+    if (lat == null || lon == null) return null;
+    const a = x.structuredAddress || {};
+    const addr = [a.fullThoroughfare || x.formattedAddressLines?.[0], a.locality].filter(Boolean).join(", ");
+    return { namn: x.name || null, kedja: null, adress: addr || null, km: Math.round(distKm(here, { lat, lon }) * 10) / 10, oppet: null, lat, lon };
+  }).filter((x) => x && x.namn && x.km * 1000 <= radiusM).sort((a, b) => a.km - b.km).slice(0, 6);
+}
 const OVERPASS_URLS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
 const NEARBY_TOOL = {
   name: "sok_i_narheten",
@@ -516,6 +569,11 @@ async function nearby(input = {}, here) {
   if (!here) return { fel: "Användarens plats är okänd. Be hen tillåta platsen i appen." };
   const kind = NEARBY_KINDS[input.typ] ? input.typ : "bensin";
   const r = Math.round(Math.min(25, Math.max(1, Number(input.radie_km) || 5)) * 1000);
+  // Först Apple Maps, sedan OpenStreetMap om Apple inte svarar eller inte hittar något.
+  try {
+    const list = await appleNearby(kind, here, r);
+    if (list.length) return { typ: kind, radie_km: r / 1000, antal: list.length, kalla: "Apple Maps", places: list };
+  } catch (e) { logger.warn("Apple Maps svarade inte", { message: e?.message }); }
   const q = `[out:json][timeout:15];nwr(around:${r},${here.lat},${here.lon})${NEARBY_KINDS[kind]};out center tags 40;`;
   // Overpass är ofta överbelastad. Prova flera servrar i tur och ordning.
   let els = null, lastErr = null;
