@@ -1848,3 +1848,5 @@ body.car-locked .fab { display: none; }
 .manual-base .ask { margin-top: 8px; align-items: center; }
 .item-info ul { margin: 8px 0 0; padding-left: 18px; }
 .item-info li { margin: 6px 0; color: var(--ink-2); line-height: 1.45; }
+.koll-tile small.kt-y { margin-top: 0; letter-spacing: .02em; font-size: 9.5px; }
+.koll-tile.has-year { min-height: 52px; }

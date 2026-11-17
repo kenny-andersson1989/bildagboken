@@ -3968,7 +3968,9 @@ function entryIcon(e) {
 // En rad i loggen: datumbricka (som i På gång), ikonen för typen, rubrik och detaljer, belopp till höger.
 function logTile(dateStr, urgent = false) {
   const dt = parseDate(dateStr);
-  return dt ? `<span class="koll-tile${urgent ? " hot" : ""}"><b>${dt.getDate()}</b><small>${esc(MONTHS_SHORT[dt.getMonth()])}</small></span>` : `<span class="koll-tile"></span>`;
+  // Året visas när posten inte är från i år.
+  const year = dt && dt.getFullYear() !== new Date().getFullYear() ? `<small class="kt-y">${dt.getFullYear()}</small>` : "";
+  return dt ? `<span class="koll-tile${urgent ? " hot" : ""}${year ? " has-year" : ""}"><b>${dt.getDate()}</b><small>${esc(MONTHS_SHORT[dt.getMonth()])}</small>${year}</span>` : `<span class="koll-tile"></span>`;
 }
 function entryRow(e, fromCat = null) {
   const mine = e.createdBy === uid();
