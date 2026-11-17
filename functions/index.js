@@ -5,7 +5,7 @@
 // 4) Läsning med AI av servicefakturor, besiktningsprotokoll och kvitton (Plus).
 // Telefonernas adresser för notiser sparas av appen i households/{hid}/tokens/{token}.
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const AnthropicSdk = require("@anthropic-ai/sdk");
 const Anthropic = AnthropicSdk.default || AnthropicSdk;
@@ -657,6 +657,60 @@ exports.adminPlus = onCall({ timeoutSeconds: 20, memory: "256MiB", maxInstances:
   const until = new Date(from.getFullYear(), from.getMonth() + months, from.getDate(), 23, 59);
   await ref.update({ "plus.until": admin.firestore.Timestamp.fromDate(until), "plus.gift": true });
   return { ok: true, until: until.getTime() };
+});
+
+// Köp av Plus i iPhone-appen, via RevenueCat. RevenueCat anropar den här adressen vid köp, förnyelse, uppsägning,
+// återbetalning och när prenumerationen tar slut. Användarens id i RevenueCat är Firebase-id:t (uid), så Plus
+// hamnar på det hushåll som köparen är med i. Anropet måste ha lösenordet som står under Integrations → Webhooks
+// i RevenueCat (Authorization), och som sparas med: firebase functions:secrets:set REVENUECAT_WEBHOOK_AUTH
+const REVENUECAT_WEBHOOK_AUTH = defineSecret("REVENUECAT_WEBHOOK_AUTH");
+const PLUS_ENTITLEMENT = "plus";
+exports.revenuecatWebhook = onRequest({ secrets: [REVENUECAT_WEBHOOK_AUTH], invoker: "public", timeoutSeconds: 30, memory: "256MiB", maxInstances: 2 }, async (req, res) => {
+  const want = REVENUECAT_WEBHOOK_AUTH.value().trim();
+  const got = String(req.get("authorization") || "").trim();
+  if (req.method !== "POST" || !want || (got !== want && got !== `Bearer ${want}`)) { res.status(401).send("Nej"); return; }
+  const ev = req.body?.event || {};
+  const type = String(ev.type || "");
+  try {
+    if (type === "TEST") { logger.info("RevenueCat: testanrop"); res.json({ ok: true, test: true }); return; }
+    const ents = Array.isArray(ev.entitlement_ids) ? ev.entitlement_ids : ev.entitlement_id ? [ev.entitlement_id] : [];
+    if (ents.length && !ents.includes(PLUS_ENTITLEMENT)) { res.json({ ok: true, skipped: "annan entitlement" }); return; }
+    const exp = Number(ev.expiration_at_ms);
+    // Köparen: Firebase-id:t. Anonyma id:n i RevenueCat ($RCAnonymousID) hör inte till något hushåll.
+    const ids = [ev.app_user_id, ev.original_app_user_id, ...(Array.isArray(ev.aliases) ? ev.aliases : [])].map(String).filter((x) => x && !x.startsWith("$RCAnonymous"));
+    const uid = ids.find((x) => /^[A-Za-z0-9]{20,40}$/.test(x));
+    if (!uid || !Number.isFinite(exp) || exp <= 0) { logger.info("RevenueCat: inget att göra", { type, hasUid: !!uid }); res.json({ ok: true, skipped: true }); return; }
+    const hs = await db.collection("households").where("members", "array-contains", uid).limit(1).get();
+    if (hs.empty) { logger.warn("RevenueCat: köparen är inte med i något hushåll", { type }); res.json({ ok: true, skipped: "inget hushåll" }); return; }
+    const ref = hs.docs[0].ref;
+    const out = await db.runTransaction(async (tx) => {
+      const cur = (await tx.get(ref)).data()?.plus || {};
+      const curUntil = cur.until?.toMillis?.() ?? 0;
+      // Betalar någon annan i hushållet redan för en längre period rör vi inte den.
+      if (cur.by && cur.by !== uid && curUntil > exp && curUntil > Date.now()) return "annan betalar";
+      // En gåva som räcker längre än köpet behålls.
+      const keepGift = !!cur.gift && curUntil > exp;
+      tx.update(ref, {
+        plus: {
+          until: admin.firestore.Timestamp.fromMillis(keepGift ? curUntil : exp),
+          by: uid,
+          ...(keepGift ? { gift: true } : {}),
+          store: String(ev.store || "APP_STORE"),
+          product: String(ev.product_id || ""),
+          trial: ev.period_type === "TRIAL",
+          sandbox: ev.environment === "SANDBOX",
+          event: type,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+      });
+      return "ok";
+    });
+    logger.info("RevenueCat", { type, result: out, until: new Date(exp).toISOString(), sandbox: ev.environment === "SANDBOX" });
+    res.json({ ok: true, result: out });
+  } catch (e) {
+    logger.error("RevenueCat: fel", e);
+    res.status(500).send("Fel");
+  }
 });
 
 // Papperskorgen: bilar och poster som har legat borttagna i 30 dagar raderas för gott, med logg, resor och bilder.

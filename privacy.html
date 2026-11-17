@@ -68,6 +68,7 @@
       <li><b>OpenStreetMap and Photon</b> as a fallback when Apple Maps cannot find an address or a place.</li>
       <li><b>Registreringsnummer API</b> (registreringsnummerapi.se) for the car's details. When you tap Fetch, the registration number is sent there, and the service answers with, for example, the make, model, model year, colour and VIN. Nothing about you is sent, and owner details are not stored.</li>
       <li><b>Wikipedia</b> for a picture of the car model, if you have not added your own.</li>
+      <li><b>Apple and RevenueCat</b> when you buy Plus in the iPhone app. Payment is handled by Apple, and Bildagboken never sees your card details. RevenueCat (revenuecat.com) keeps track of the subscription for Bildagboken. It receives your user ID in Bildagboken, what you bought and when, and technical details about the phone, but not your name or email address.</li>
       <li><b>Anthropic (Claude)</b> for reading with AI and Glenn in Bildagboken Plus. When you choose Read with AI, the photo of the receipt, invoice or protocol is sent to Anthropic, which reads it and sends the details back. When you ask Glenn a question, the question and what you have logged about the car (car details, maintenance, costs, driving log totals and the log, but no photos) are sent to Anthropic, which answers. Anthropic does not use the images or the details to train its models.</li>
       <li><b>Your location when you ask Glenn</b>, if you have allowed it. The approximate location is sent with the question so that Glenn can answer about the weather and find the nearest petrol station or workshop. For that, the coordinates are passed on to <b>OpenStreetMap</b> and <b>Open-Meteo</b>, without anything about you. The location is not saved. The app remembers roughly where you were (to within a kilometre or so) on the phone and asks Open-Meteo for the weather there, so that Glenn can dress for the weather.</li>
       <li><b>Google (Text-to-Speech)</b> for Glenn's voice in Bildagboken Plus. When an answer is read aloud, its text is sent to Google, which turns it into speech.</li>
@@ -79,7 +80,7 @@
 
   <article>
     <h2>Data outside the EU</h2>
-    <p>The database is in Sweden. But Google, Apple and Anthropic are American companies, so data sent to their services (for example sign-in, Glenn, read-aloud and maps) may be processed in the USA. This is done with the safeguards the EU requires: the EU–US Data Privacy Framework or the EU standard contractual clauses. There is a data processing agreement with every service that processes data on behalf of Bildagboken.</p>
+    <p>The database is in Sweden. But Google, Apple, Anthropic and RevenueCat are American companies, so data sent to their services (for example sign-in, Glenn, read-aloud, maps and buying Plus) may be processed in the USA. This is done with the safeguards the EU requires: the EU–US Data Privacy Framework or the EU standard contractual clauses. There is a data processing agreement with every service that processes data on behalf of Bildagboken.</p>
   </article>
 
   <article>
@@ -90,6 +91,7 @@
       <li><b>Backups:</b> a copy of the database is kept every day for 14 days. What you delete therefore remains in the backups for at most 14 days.</li>
       <li><b>Error reports:</b> 90 days.</li>
       <li><b>Answers from the registration number service:</b> 30 days, so that the same car does not need to be fetched again.</li>
+      <li><b>Plus purchases:</b> as long as the subscription exists, and then as long as accounting law requires.</li>
       <li><b>Questions to Glenn:</b> not stored in Bildagboken. The conversation only exists in the app until you close it.</li>
     </ul>
   </article>

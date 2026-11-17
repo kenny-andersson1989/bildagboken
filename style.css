@@ -1875,3 +1875,15 @@ body.car-locked .fab { display: none; }
 }
 /* Kontrollerat i dag: knappen är tryckt och går inte att trycka igen. */
 .btn.check-done, .btn.check-done:disabled { opacity: 1; background: var(--sage-soft); color: var(--sage); border-color: transparent; cursor: default; }
+/* Skaffa Plus: månad eller år */
+.plus-pkgs { display: grid; gap: 10px; margin: 14px 0; }
+.plus-pkg { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; cursor: pointer;
+  padding: 16px; border-radius: 18px; border: 1.5px solid var(--line); background: var(--card, var(--glass-strong)); color: var(--ink); font: 500 15px var(--f-body); }
+.plus-pkg b { display: block; font-size: 17px; }
+.plus-pkg small { display: block; color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+.plus-pkg.best { border-color: var(--accent); background: var(--accent-soft); }
+.plus-pkg .plus-price { text-align: right; font-weight: 700; font-size: 17px; white-space: nowrap; }
+.plus-pkg:disabled { opacity: .55; cursor: default; }
+.plus-pkg.busy { opacity: 1; }
+.plus-pkg.busy .plus-price::after { content: " …"; }
+#sheet .hint a, .plus-t + .hint a { color: var(--accent-text); }
