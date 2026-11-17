@@ -1915,3 +1915,9 @@ body.car-locked .fab { display: none; }
 .cmp-bar i.fc { background: var(--accent-soft); outline: 1px dashed var(--accent); outline-offset: -1px; }
 .cmp-v { text-align: right; font-weight: 600; white-space: nowrap; }
 .cmp-v small { display: block; font-weight: 400; color: var(--ink-3); font-size: 12px; }
+/* Däckens hälsa */
+.tire-meter { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 8px 0 4px; max-width: 220px; }
+.tire-meter i { display: block; height: 100%; border-radius: 3px; background: var(--ok, #3F8A55); }
+.tire-meter.warn i { background: #D99A2B; }
+.tire-meter.bad i { background: #C8432B; }
+.tire-why { font-size: 13px; color: var(--ink-2); line-height: 1.35; }
