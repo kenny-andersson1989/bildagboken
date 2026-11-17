@@ -478,6 +478,38 @@ function limited(h = S.house) {
 }
 // Plus visas för alla först när det går att köpa. Administratören ser det i testläget.
 const plusOnSale = () => PLUS_ON_SALE || !!testMode();
+// Funktioner som bara finns i Plus. Administratören har dem (utom i testläget).
+const plusFeat = () => hasPlus() || (isAdmin() && !testMode());
+// Låst, men går att köpa: då visas funktionen med en hänvisning till Plus. Innan Plus säljs är den dold.
+const plusLock = () => !plusFeat() && plusOnSale();
+// Rutan som visas när man trycker på något som ingår i Plus.
+const PLUS_FEATURES = {
+  garage: ["wrench", "Glenns Garage", "Tre teman i pixelstil, med Glenns skylt på Översikt och saker från verkstaden på korten."],
+  glenn: ["spark", "Fråga Glenn", "Glenn är appens AI. Skriv eller prata med honom om allt ni har loggat: kostnader, service, däck och förbrukning."],
+  ai: ["camera", "Läsning med AI", "Fota kvittot, servicefakturan eller besiktningsprotokollet, så fylls allt i åt dig."],
+  trips: ["route", "Körjournal", "Logga tjänsteresor och privata resor. Milersättningen räknas ut, och iPhone-appen kan logga resorna själv."],
+  cars: ["car", "Upp till 6 bilar", "Hela familjens bilar i samma app, och alla fungerar samtidigt."],
+  members: ["home", "Upp till 6 personer", "Alla i familjen som kör bilarna kan vara med."],
+  photos: ["image", "2 000 bilder", "Plats för kvitton, dokument och bilder på bilen."],
+  docs: ["doc", "Papper och avtal", "Försäkring, garanti, vägassistans och andra papper på ett ställe, med påminnelse innan något går ut."],
+  forecast: ["calendar", "Smarta påminnelser", "Appen räknar ut när service och byten blir aktuella utifrån hur mycket ni kör, och lägger in dem i kalendern."],
+  econ: ["coin", "Mer om kostnaderna", "Jämför år mot år och se vad bilen beräknas kosta i år."],
+  salepack: ["print", "Säljpaket", "Serviceboken som PDF med kvittona och en sammanställning av kostnaderna, inför en försäljning."],
+  letter: ["bell", "Glenns månadsbrev", "En hälsning från Glenn varje månad: vad bilen kostade, hur mycket ni körde och vad som närmar sig."],
+};
+function plusUpsell(key) {
+  const f = PLUS_FEATURES[key];
+  if (!f || !plusOnSale()) return plusSheet();
+  const others = PLUS_PERKS.filter(([, t]) => t !== f[1]).slice(0, 4).map(([, t]) => (/^Fråga/.test(t) ? t : t[0].toLowerCase() + t.slice(1)));
+  openSheet("Ingår i Plus", `
+    <div class="upsell-hero"><span class="dl-ic">${icon(f[0], 26)}</span><div><b>${esc(f[1])}</b><span>${esc(f[2])}</span></div></div>
+    <p class="muted">${esc(`Med Plus får ni också ${others.join(", ")} och mer. Ett köp gäller alla i hushållet.`)}</p>
+    <div class="form" style="margin-top:14px">
+      ${canBuyHere() ? `<button class="btn primary block" type="button" data-act="plus-buy">Prova gratis i 14 dagar</button>` : ""}
+      <button class="btn ${canBuyHere() ? "ghost" : "primary"} block" type="button" data-act="plus">Läs mer om Plus</button>
+    </div>
+    ${canBuyHere() ? "" : `<p class="hint">Plus köps i iPhone-appen och gäller sedan för alla i hushållet, också här.</p>`}`);
+}
 // "Ni har Plus till 3 mars 2027", eller utan datum (testläget).
 const plusUntilText = () => { const u = tsMs(S.house?.plus?.until); return u > Date.now() ? `Ni har Plus till ${fmtDate(ymd(new Date(u)))}` : "Ni har Plus"; };
 // Fördelarna med Plus, i den ordning de visas överallt.
@@ -617,7 +649,7 @@ function viewLocked() {
     <h2>${esc(`${carName(c)} är låst`)}</h2>
     <p class="muted">${esc(`Utan Plus fungerar en bil i taget, och just nu är det ${carName(a)}. Allt som är loggat på ${carName(c)} finns kvar och syns igen när ni har Plus.`)}</p>
     <div class="form" style="margin-top:14px">
-      <button class="btn primary block" type="button" data-act="plus">${icon("spark", 18)} Skaffa Plus, så fungerar alla bilar</button>
+      <button class="btn primary block" type="button" data-act="plus" data-f="cars">${icon("spark", 18)} Skaffa Plus, så fungerar alla bilar</button>
       <button class="btn block" type="button" data-act="pick-car" data-id="${esc(a.id)}">${esc(`Gå till ${carName(a)}`)}</button>
       ${isOwner()
         ? next ? `<p class="hint">${esc(`Du kan byta vilken bil som fungerar igen ${fmtDate(ymd(new Date(next)))}.`)}</p>`
@@ -634,7 +666,13 @@ function plusTipCard() {
   if (S.entries.length < 20 && !month) return "";
   return `<article class="card plus-tip">
     <h2>Gillar ni Bildagboken?</h2>
-    <p class="muted">Med Bildagboken Plus kan ni ha fler bilar, vara fler i hushållet och spara upp till 2 000 bilder.</p>
+    <div class="tip-perks">
+      <div>${icon("spark", 18)}<span><b>Fråga Glenn</b> om allt ni har loggat, med text eller röst</span></div>
+      <div>${icon("route", 18)}<span><b>Körjournal</b> som räknar ut milersättningen</span></div>
+      <div>${icon("camera", 18)}<span><b>Fota kvittot</b>, så fyller AI i resten</span></div>
+      <div>${icon("car", 18)}<span><b>Hela familjen</b>: upp till 6 bilar och 6 personer</span></div>
+    </div>
+    <p class="muted">${esc(canBuyHere() ? "Prova gratis i 14 dagar. Ett köp gäller alla i hushållet." : "Ett köp gäller alla i hushållet.")}</p>
     <div class="ask"><button class="btn-soft" type="button" data-act="plus-tip" data-id="read">${icon("spark", 16)} Läs om Plus</button><button class="hh-ghost" type="button" data-act="plus-tip">Inte nu</button></div>
   </article>`;
 }
@@ -1669,7 +1707,7 @@ const speakerSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" 
 // Rutan som i ChatGPT: samtalet, och längst ner en rad med fältet, mikrofonen (prata in text) och
 // röstläget (prata med Glenn). När det står något i fältet blir röstknappen en skicka-knapp.
 function chatSheet() {
-  if (!chatOn()) return plusOnSale() ? plusSheet() : null;
+  if (!chatOn()) return plusOnSale() ? plusUpsell("glenn") : null;
   const st = chatState();
   GLENN_FRAMES.forEach((f) => { new Image().src = glennSrc(f); new Image().src = glennSrc(f, true); });
   openSheet(`Fråga ${AI_NAME}`, `<div class="chat">
@@ -1929,8 +1967,8 @@ function pixelCar(root) {
 function garagePicker() {
   const list = Object.entries(COLORS).filter(([, t]) => t.garage);
   return `<div class="gp-pick">
-    <div class="gp-head">${glennFig(`<img src="${glennSrc("base")}" alt="" width="56" height="56">`, false, "gp-fig")}<div><b>GLENNS GARAGE</b><span>Tre teman i pixelstil</span></div></div>
-    <div class="gp-minis" role="group" aria-label="Glenns Garage">${list.map(([k, t]) => `<button class="gp-mini ${t.garage}" type="button" data-act="theme-color" data-v="${k}" aria-pressed="${themePrefs().color === k}" aria-label="${esc(t.name.replace(/\u00ad/g, ""))}">
+    <div class="gp-head">${glennFig(`<img src="${glennSrc("base")}" alt="" width="56" height="56">`, false, "gp-fig")}<div><b>GLENNS GARAGE</b><span>${plusLock() ? "Tre teman i pixelstil · ingår i Plus" : "Tre teman i pixelstil"}</span></div>${plusLock() ? `<span class="plus-badge">Plus</span>` : ""}</div>
+    <div class="gp-minis" role="group" aria-label="Glenns Garage">${list.map(([k, t]) => `<button class="gp-mini ${t.garage}${plusLock() ? " locked" : ""}" type="button" ${plusLock() ? `data-act="plus" data-f="garage"` : `data-act="theme-color" data-v="${k}"`} aria-pressed="${themePrefs().color === k}" aria-label="${esc(t.name.replace(/\u00ad/g, ""))}">
       <span class="gm-screen" aria-hidden="true"><span class="gm-sign"><img src="${glennSrc("base")}" alt="">GLENNS GARAGE</span><span class="gm-card"><i></i><i></i></span><span class="gm-card"><i></i></span><span class="gm-nav"><i></i></span></span>
       <span class="gm-name">${t.name}</span></button>`).join("")}</div>
   </div>`;
@@ -2421,7 +2459,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       <label for="cf-plate">Registreringsnummer</label>
       <span class="geo-row"><input name="plate" id="cf-plate" value="${esc(c.plate || "")}" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="8">
         <button class="btn-soft" type="button" data-act="reg-lookup">${icon("search", 16)} Hämta</button></span>
-      <div id="cf-reg-status" class="reg-status" aria-live="polite"${isNew ? "" : ` data-plate="${esc(plateKey(c.plate))}"`}><small>${isNew ? "Skriv registreringsnumret och tryck på Hämta, så fylls bilens uppgifter i." : "Tryck på Hämta för att fylla i uppgifterna från registret igen."}</small></div>
+      <div id="cf-reg-status" class="reg-status" aria-live="polite"${isNew ? "" : ` data-plate="${esc(plateKey(c.plate))}"`}${!isNew && regFetchedPlate(c) ? ` data-fetched="${esc(regFetchedPlate(c))}"` : ""}><small>${isNew ? "Skriv registreringsnumret och tryck på Hämta, så fylls bilens uppgifter i." : regFetchedPlate(c) ? "Uppgifterna är redan hämtade. Har du skrivit fel registreringsnummer, rätta det och tryck på Hämta." : "Tryck på Hämta för att fylla i uppgifterna från registret."}</small></div>
       <input type="hidden" name="regJson" id="cf-regJson">
     </div>
     <div class="row2">
@@ -2787,6 +2825,8 @@ function regFormLookup(force = false) {
     return;
   }
   if (!force && box.dataset.plate === key) return;
+  // En hämtning per bil. Har man skrivit fel registreringsnummer går det att hämta igen med det rätta.
+  if (box.dataset.fetched && box.dataset.fetched === key) { box.innerHTML = `<div class="reg-fail"><p>${esc(`Uppgifterna för ${fmtPlate(key)} är redan hämtade.`)}</p></div>`; return; }
   regLookup(box, key, regFillForm);
 }
 // Sökningen görs bara när man trycker på Hämta (eller Enter i fältet), aldrig av sig själv.
@@ -2816,8 +2856,11 @@ function regFillForm(f) {
 }
 // Uppgifterna från det dolda fältet, för att spara på bilen.
 function regFromForm(form) {
-  try { const f = JSON.parse(form.elements.namedItem("regJson")?.value || "null"); return Array.isArray(f) && f.length ? { f: f.slice(0, 150), at: Date.now() } : null; } catch { return null; }
+  try { const f = JSON.parse(form.elements.namedItem("regJson")?.value || "null"); return Array.isArray(f) && f.length ? { f: f.slice(0, 150), at: Date.now(), plate: plateKey(form.elements.namedItem("plate")?.value || "") } : null; } catch { return null; }
 }
+// Registreringsnumret som uppgifterna hämtades för (äldre bilar: det nuvarande).
+const regFetchedPlate = (c) => (c?.reg?.f?.length ? c.reg.plate || plateKey(c.plate || "") : "");
+const regCanFetch = (c) => plateOk(c.plate) && regFetchedPlate(c) !== plateKey(c.plate);
 // Bilen: uppgifterna från registret, och hämta dem (igen) för en bil som redan finns.
 function regCard(c) {
   if (!c.reg?.f?.length) {
@@ -2827,7 +2870,7 @@ function regCard(c) {
       <div id="reg-box-${esc(c.id)}"></div>
       <div class="ask"><button class="btn-soft" type="button" data-act="reg-refresh">${icon("search", 16)} Hämta uppgifterna</button></div></div>`;
   }
-  return `<div class="card"><h2>Från registret <button class="link" type="button" data-act="reg-refresh">Hämta igen</button></h2>
+  return `<div class="card"><h2>Från registret${regCanFetch(c) ? ` <button class="link" type="button" data-act="reg-refresh">Hämta igen</button>` : ""}</h2>
     <div id="reg-box-${esc(c.id)}"></div>
     <details class="more"><summary>${esc(`Visa alla uppgifter (${c.reg.f.length})`)}</summary>
       <dl class="detail-list">${c.reg.f.map((x) => `<div><dt data-notr>${esc(x.k)}</dt><dd data-notr>${esc(x.v)}</dd></div>`).join("")}</dl></details>
@@ -2836,10 +2879,11 @@ function regCard(c) {
 async function regRefresh(c) {
   const box = $(`#reg-box-${c.id}`);
   if (!box) return;
+  if (!regCanFetch(c)) { box.innerHTML = `<div class="reg-fail"><p>Uppgifterna är redan hämtade för den här bilen.</p></div>`; return; }
   await regLookup(box, c.plate, async (f) => {
     const d = regToCar(f);
     // Det man själv har skrivit står kvar. Besiktningen tas från registret.
-    const upd = { reg: { f: f.slice(0, 150), at: Date.now() } };
+    const upd = { reg: { f: f.slice(0, 150), at: Date.now(), plate: plateKey(c.plate) } };
     if (d.besiktning && !c.besiktning) upd.besiktning = d.besiktning;
     for (const k of ["vin", "color", "year", "engine", "fuel", "gearbox", "towMax", "totalWeight", "trainWeight", "skattBelopp", "bodyStyle", "seats", "firstReg", "co2"]) if (d[k] != null && (c[k] == null || c[k] === "")) upd[k] = d[k];
     try { await updateDoc(ref("cars", c.id), upd); Object.assign(c, upd); showToast("Uppgifterna är hämtade"); render(); } catch (e) { onWriteError(e); }
@@ -3499,7 +3543,7 @@ const RECEIPT_TYPES = ["tank", "service", "eget", "dack", "tvatt", "parkering", 
 const aiOn = () => hasPlus() || (isAdmin() && !testMode());
 function receiptButton() {
   return `<label class="btn ghost block receipt-btn" id="receipt-btn">${icon(aiOn() ? "spark" : "camera", 18)} <span id="receipt-label">${aiOn() ? "Läs av med AI" : "Läs av ett kvitto"}</span>
-    <input type="file" id="ef-scan" accept="image/*" class="vh"></label>${!aiOn() && plusOnSale() ? `<p class="hint plus-hint" style="margin-top:6px">Med Plus fyller AI i allt från kvittot. <button class="link" type="button" data-act="plus">Läs mer</button></p>` : ""}`;
+    <input type="file" id="ef-scan" accept="image/*" class="vh"></label>${!aiOn() && plusOnSale() ? `<p class="hint plus-hint" style="margin-top:6px">Med Plus fyller AI i allt från kvittot. <button class="link" type="button" data-act="plus" data-f="ai">Läs mer</button></p>` : ""}`;
 }
 async function scanReceipt(file) {
   const label = $("#receipt-label"), btn = $("#receipt-btn");
@@ -4510,7 +4554,7 @@ function viewSettings() {
           ? `<button class="link danger" type="button" data-act="leave-house">Lämna</button>`
           : isOwner() ? `<button class="link danger" type="button" data-act="remove-member" data-id="${esc(m)}" aria-label="Ta bort ${esc(memberName(m))}">Ta bort</button>` : "") : ""}</span></div>`).join("")}</div>
       ${members.length > 1 ? `<p class="hint" style="margin-top:6px">${esc(isOwner() ? "Du är hushållets ägare och den enda som kan ta bort bilar och andra personer. Lämnar du hushållet väljer du vem som tar över." : `${memberName(ownerUid())} är hushållets ägare och den enda som kan ta bort bilar och andra personer.`)}</p>` : ""}
-      ${membersFull() ? `<div class="hh-invite"><div class="hh-grow"><span class="label">Hushållet är fullt</span><span class="dl-s">${esc(caps() === PLUS ? `Bildagboken Plus har plats för ${PLUS.members} personer.` : `Gratisversionen har plats för ${FREE.members} personer. Med Plus kan ni vara upp till ${PLUS.members}.`)}</span></div>${caps() === PLUS ? "" : `<button class="btn-soft" type="button" data-act="plus">Läs om Plus</button>`}</div>` : `      <div class="hh-invite">
+      ${membersFull() ? `<div class="hh-invite"><div class="hh-grow"><span class="label">Hushållet är fullt</span><span class="dl-s">${esc(caps() === PLUS ? `Bildagboken Plus har plats för ${PLUS.members} personer.` : `Gratisversionen har plats för ${FREE.members} personer. Med Plus kan ni vara upp till ${PLUS.members}.`)}</span></div>${caps() === PLUS ? "" : `<button class="btn-soft" type="button" data-act="plus" data-f="members">Läs om Plus</button>`}</div>` : `      <div class="hh-invite">
         <div class="hh-grow"><span class="label">Inbjudningskod</span><span class="hh-code" data-notr>${esc(S.house?.inviteCode || "")}</span></div>
         <button class="btn-soft" type="button" data-act="copy-invite">Kopiera länk</button>
         <button class="hh-ghost" type="button" data-act="new-invite-code">Byt kod</button>
@@ -4964,7 +5008,7 @@ function typePicker() {
   openSheet("Vad vill du logga?", LOG_GROUPS.map(([name, keys]) => `<p class="types-head">${name}</p><div class="types">
     ${keys.map((k) => `<button type="button" data-act="new-entry" data-type="${k === "besiktning" ? "kostnad" : k}"${k === "besiktning" ? ' data-cat="Besiktning"' : ""}>${icon(typeIcon(k), 26)}${typeLabel(k)}</button>`).join("")}
   </div>`).join("") + `
-  ${!tripsOn() && plusOnSale() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="plus" class="plus-teaser">${icon("car", 26)}Resa<span class="plus-badge">Plus</span></button></div>` : ""}
+  ${!tripsOn() && plusOnSale() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="plus" data-f="trips" class="plus-teaser">${icon("car", 26)}Resa<span class="plus-badge">Plus</span></button></div>` : ""}
   ${tripsOn() && !tripsVisible() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="trips-on">${icon("route", 26)}Slå på körjournalen</button></div>` : ""}
   ${tripsVisible() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="trip-menu">${icon("car", 26)}${openTrip() ? "Avsluta resa" : "Resa"}</button></div>` : ""}
   <p class="types-head">Boka</p><button class="btn primary block" type="button" data-act="new-booking">${icon("calendar", 18)} Lägg in bokad tid</button>
@@ -7188,7 +7232,9 @@ const darkMq = matchMedia("(prefers-color-scheme: dark)");
 function themePrefs() {
   const old = { auto: ["orange", "auto"], light: ["orange", "light"], dark: ["orange", "dark"], gron: ["gron", "light"], hav: ["hav", "light"], natt: ["lila", "dark"] }[pref.get("theme") || "auto"] || ["orange", "auto"];
   const c = pref.get("themeColor") || old[0], m = pref.get("themeMode") || old[1];
-  return { color: COLORS[c] ? c : "orange", mode: MODES[m] ? m : "auto" };
+  // Glenns Garage ingår i Plus. Utan Plus blir det vanliga färger igen.
+  const ok = COLORS[c] && !(COLORS[c].garage && S.house && plusLock());
+  return { color: ok ? c : "orange", mode: MODES[m] ? m : "auto" };
 }
 const isDarkNow = () => { const { mode } = themePrefs(); return mode === "dark" || (mode === "auto" && darkMq.matches); };
 function applyTheme() {
@@ -7794,7 +7840,7 @@ const ACTIONS = {
     const sections = (el.dataset.section || "basic,photo,dates").split(",").filter((k) => CAR_SECTIONS[k]);
     carSheet(true, sections.length ? sections : ["basic"]);
   },
-  plus() { plusSheet(); },
+  plus(el) { if (el?.dataset?.f) plusUpsell(el.dataset.f); else plusSheet(); },
   "test-mode"(el) {
     pref.set("testMode", el.value);
     pref.set("plusTip." + S.hid, "");
@@ -8917,6 +8963,7 @@ function subscribe(hid) {
   S.unsubs.push(onSnapshot(doc(db, "households", hid), (s) => {
     S.house = s.data({ serverTimestamps: "estimate" });
     S.loaded.house = true;
+    applyTheme(); // Glenns Garage kräver Plus
     if (S.justJoined) {
       showToast(typeof S.justJoined === "string" ? `Välkommen till ${S.justJoined}!` : "Välkommen! Nu delar ni bilen.", 4500);
       S.justJoined = null;

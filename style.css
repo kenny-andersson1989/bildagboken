@@ -1887,3 +1887,17 @@ body.car-locked .fab { display: none; }
 .plus-pkg.busy { opacity: 1; }
 .plus-pkg.busy .plus-price::after { content: " …"; }
 #sheet .hint a, .plus-t + .hint a { color: var(--accent-text); }
+/* Ingår i Plus: rutan när man trycker på något låst */
+.upsell-hero { display: flex; gap: 14px; align-items: flex-start; padding: 16px; border-radius: 18px; background: var(--accent-soft); margin-bottom: 12px; }
+.upsell-hero .dl-ic { flex: none; width: 48px; height: 48px; }
+.upsell-hero b { display: block; font-size: 18px; margin-bottom: 4px; }
+.upsell-hero span:not(.dl-ic) { color: var(--ink-2); font-size: 15px; }
+/* Glenns Garage utan Plus: syns men är låst */
+.gp-head .plus-badge { margin-left: auto; align-self: center; }
+.gp-mini.locked { position: relative; }
+.gp-mini.locked .gm-screen { filter: saturate(.55) brightness(.92); }
+/* Tipskortet om Plus */
+.tip-perks { display: grid; gap: 10px; margin: 6px 0 10px; }
+.tip-perks > div { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; color: var(--ink-2); }
+.tip-perks svg { flex: none; color: var(--accent-text); margin-top: 2px; }
+.tip-perks b { color: var(--ink); font-weight: 600; }
