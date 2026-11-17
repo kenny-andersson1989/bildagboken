@@ -1901,3 +1901,17 @@ body.car-locked .fab { display: none; }
 .tip-perks > div { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; color: var(--ink-2); }
 .tip-perks svg { flex: none; color: var(--accent-text); margin-top: 2px; }
 .tip-perks b { color: var(--ink); font-weight: 600; }
+/* Säljpaket i Servicebok-kortet */
+.salepack { display: grid; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.salepack b { display: block; margin-bottom: 2px; }
+.salepack span:not(.plus-badge) { color: var(--ink-2); font-size: 14px; }
+.salepack .btn-soft { justify-self: start; }
+/* Prognos och jämförelse */
+.cmp-years { display: grid; gap: 8px; }
+.cmp-row { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; font-size: 14px; }
+.cmp-y { color: var(--ink-2); font-weight: 600; }
+.cmp-bar { position: relative; height: 12px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.cmp-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: var(--accent); }
+.cmp-bar i.fc { background: var(--accent-soft); outline: 1px dashed var(--accent); outline-offset: -1px; }
+.cmp-v { text-align: right; font-weight: 600; white-space: nowrap; }
+.cmp-v small { display: block; font-weight: 400; color: var(--ink-3); font-size: 12px; }
