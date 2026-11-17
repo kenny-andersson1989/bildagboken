@@ -1944,6 +1944,15 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   nav.hidden = !showNav;
   const resorTab = document.getElementById("tab-resor");
   if (resorTab) { const on = S.user && S.hid ? tripsVisible() : false; resorTab.hidden = !on; resorTab.parentElement.classList.toggle("with-resor", on); }
+  // Glenn under sidomenyn på datorn och surfplattan på bredden, där knapparna uppe till höger är dolda.
+  let navGlenn = document.getElementById("nav-glenn");
+  const glennOn = !!(showNav && S.user && S.hid && (chatOn() || plusOnSale()));
+  if (glennOn) {
+    if (!navGlenn) { navGlenn = document.createElement("button"); navGlenn.id = "nav-glenn"; navGlenn.type = "button"; navGlenn.className = "nav-glenn"; navGlenn.dataset.act = "chat"; nav.appendChild(navGlenn); }
+    const html = `${glennFig(`<img src="${glennSrc("base", true)}" alt="" width="128" height="136">`, true, "nav-glenn-fig")}<span>Fråga Glenn</span>`;
+    if (navGlenn.dataset.html !== html) { navGlenn.innerHTML = html; navGlenn.dataset.html = html; }
+  }
+  if (navGlenn) navGlenn.hidden = !glennOn;
   if (showNav) {
     nav.querySelectorAll(".tab").forEach((t) => {
       if (t.dataset.go === S.view) t.setAttribute("aria-current", "page");
