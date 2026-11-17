@@ -7505,11 +7505,15 @@ const ACTIONS = {
     const c = car(), id = el.dataset.id;
     const item = (c?.items || []).find((i) => i.id === id);
     if (!item) return;
+    const before = c.items;
     const items = c.items.map((i) => (i.id === id ? clean({ ...i, baseDate: null, baseMil: null }) : i));
     try {
       await updateDoc(ref("cars", c.id), { items });
       c.items = items;
-      showToast(`${item.name}: räknas nu från loggen`);
+      // Ångra: lägg tillbaka datumet som fanns.
+      showToast(`${item.name}: räknas nu från loggen`, 6000, () => {
+        updateDoc(ref("cars", c.id), { items: before }).then(() => { c.items = before; const cur = S.cars.find((x) => x.id === c.id); if (cur) cur.items = before; render(); if (!sheet.hidden) itemSheet(id); }).catch(onWriteError);
+      });
       itemSheet(id);
       render();
     } catch (e) { onWriteError(e); }
