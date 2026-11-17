@@ -713,6 +713,64 @@ exports.revenuecatWebhook = onRequest({ secrets: [REVENUECAT_WEBHOOK_AUTH], invo
   }
 });
 
+// Glenns månadsbrev (Plus): den första i månaden kl. 10 får hushåll med Plus en notis per bil om förra månaden:
+// vad bilen kostade (och månaden innan), hur långt den kördes, tankningar, och om besiktningen närmar sig.
+// Enheter som har stängt av månadsbrevet (prefs.letter) hoppas över.
+const nf = (n, lang) => Math.round(n).toLocaleString(lang === "en" ? "en-GB" : "sv-SE").replace(/,/g, lang === "en" ? "," : " ");
+function monthLetter(c, cur, prev, lang, today) {
+  const en = lang === "en";
+  const sum = (list) => list.reduce((a, e) => a + (Number(e.amount) > 0 ? Number(e.amount) : 0), 0);
+  const cost = sum(cur), before = sum(prev);
+  const odos = cur.map((e) => Number(e.odometer)).filter((x) => Number.isFinite(x) && x > 0);
+  const driven = odos.length >= 2 ? Math.max(...odos) - Math.min(...odos) : null;
+  const tanks = cur.filter((e) => e.type === "tank").length;
+  const parts = [];
+  if (!cur.length) parts.push(en ? "Nothing was logged last month. Log your fill-ups and odometer, and I'll keep track for you." : "Ingenting loggades förra månaden. Logga tankningar och mätarställning, så håller jag koll åt er.");
+  else {
+    parts.push(en ? `The car cost ${nf(cost, lang)} kr${before ? ` (${nf(before, lang)} kr the month before)` : ""}.` : `Bilen kostade ${nf(cost, lang)} kr${before ? ` (${nf(before, lang)} kr månaden innan)` : ""}.`);
+    if (driven) parts.push(en ? `You drove about ${nf(driven, lang)} mil.` : `Ni körde ungefär ${nf(driven, lang)} mil.`);
+    if (tanks) parts.push(en ? `${tanks} fill-up${tanks === 1 ? "" : "s"}.` : `${tanks} ${tanks === 1 ? "tankning" : "tankningar"}.`);
+  }
+  if (c.besiktning && c.besiktning >= today) {
+    const d = daysBetween(today, c.besiktning);
+    if (d <= 60) parts.push(en ? `Inspection is due by ${shortDate(c.besiktning, "en")}.` : `Besiktningen ska vara klar senast ${shortDate(c.besiktning, "sv")}.`);
+  }
+  return parts.join(" ");
+}
+exports.manadsbrev = onSchedule({ schedule: "0 10 1 * *", timeZone: TZ, timeoutSeconds: 300 }, async () => {
+  const today = todayStr();
+  const [y, m] = today.split("-").map(Number);
+  const ym = (yy, mm) => `${yy}-${String(mm).padStart(2, "0")}`;
+  const last = m === 1 ? ym(y - 1, 12) : ym(y, m - 1);
+  const [ly, lm] = last.split("-").map(Number);
+  const before = lm === 1 ? ym(ly - 1, 12) : ym(ly, lm - 1);
+  const houses = await db.collection("households").get();
+  let sent = 0;
+  for (const h of houses.docs) {
+    const hd = h.data();
+    const plus = (hd.plus?.until?.toMillis?.() ?? 0) > Date.now() || (hd.members || []).includes(ADMIN_UID);
+    if (!plus) continue;
+    const tokens = await tokensOf(h.id, "letter");
+    if (!tokens.length) continue;
+    const cars = (await db.collection(`households/${h.id}/cars`).get()).docs.filter((d) => !d.data().deletedAt);
+    if (!cars.length) continue;
+    const ents = (await db.collection(`households/${h.id}/entries`).where("date", ">=", `${before}-01`).where("date", "<=", `${last}-31`).get())
+      .docs.map((d) => d.data()).filter((e) => !e.deletedAt);
+    const several = cars.length > 1;
+    for (const c of cars) {
+      const mine = ents.filter((e) => e.carId === c.id);
+      const cur = mine.filter((e) => String(e.date).startsWith(last)), prev = mine.filter((e) => String(e.date).startsWith(before));
+      const name = carName(c.data());
+      const msg = { tag: `letter-${c.id}-${last}`, url: "./#ekonomi",
+        sv: { title: `${several ? `${name}: ` : ""}Glenns månadsbrev för ${MONTHS.sv[lm - 1]}`, body: monthLetter(c.data(), cur, prev, "sv", today) },
+        en: { title: `${several ? `${name}: ` : ""}Glenn's letter for ${MONTHS.en[lm - 1]}`, body: monthLetter(c.data(), cur, prev, "en", today) } };
+      await send(h.id, tokens, msg);
+      sent++;
+    }
+  }
+  logger.info(`Månadsbrev skickade: ${sent}`);
+});
+
 // Kalenderfilen som appen har sparat (icsfiles/{id}), som text/calendar. Telefonen frågar då om händelserna
 // ska läggas in i kalendern. Id:t är slumpat och svårt att gissa, och filen gallras efter två dagar.
 exports.kalender = onRequest({ invoker: "public", timeoutSeconds: 10, memory: "256MiB", maxInstances: 2 }, async (req, res) => {

@@ -4450,7 +4450,7 @@ function compareCard(paid) {
       return `<div class="cmp-row"><span class="cmp-y">${yy}</span><span class="cmp-bar">${f ? `<i class="fc" style="width:${Math.round((f / max) * 100)}%"></i>` : ""}<i style="width:${Math.round((v / max) * 100)}%"></i></span><span class="cmp-v">${fmtKr(v)} kr${f ? `<small>${esc(`ca ${fmtKr(f)}`)}</small>` : ""}</span></div>`;
     }).join("")}</div>
     ${catRows.length && years.includes(y - 1) ? `<p class="label" style="margin:16px 0 6px">${esc(`I år mot samma tid ${y - 1}`)}</p>
-      <div class="rows">${catRows.map(([k, [a, b]]) => `<div class="dl"><div class="dl-ic">${icon("coin", 18)}</div><div><div class="dl-t">${esc(k)}</div><div class="dl-s">${esc(`${fmtKr(a)} kr i år · ${fmtKr(b)} kr ${y - 1}`)}</div></div><span class="pill ${a > b ? "soon" : "ok"}">${esc(b ? `${a >= b ? "+" : "−"}${Math.abs(Math.round(((a - b) / b) * 100))} %` : "Ny")}</span></div>`).join("")}</div>` : ""}
+      <div class="rows">${catRows.map(([k, [a, b]]) => `<div class="dl"><div class="dl-ic">${icon("coin", 18)}</div><div><div class="dl-t">${esc(k)}</div><div class="dl-s">${esc(`${fmtKr(a)} kr i år · ${fmtKr(b)} kr ${y - 1}`)}</div></div><span class="pill ${!b ? "none" : a > b ? "soon" : "ok"}">${esc(b ? `${a >= b ? "+" : "−"}${Math.abs(Math.round(((a - b) / b) * 100))} %` : "Ny")}</span></div>`).join("")}</div>` : ""}
   </div>`;
 }
 function viewEconomy() {
@@ -4740,7 +4740,7 @@ function viewSettings() {
       <h2>Notiser</h2>
       ${pushOn()
         ? `<p class="muted">Påslagna på den här enheten. Välj vad du vill få notiser om:</p>
-          <div class="push-kinds">${PUSH_KINDS.map(([k, l, d]) => `<label class="ios-switch-row push-kind"><span><b>${esc(l)}</b><small>${esc(d)}</small></span><input type="checkbox" class="ios-switch" data-push-kind="${k}"${pushPrefs()[k] ? " checked" : ""}></label>`).join("")}</div>
+          <div class="push-kinds">${PUSH_KINDS.filter(([k]) => k !== "letter" || plusFeat()).map(([k, l, d]) => `<label class="ios-switch-row push-kind"><span><b>${esc(l)}</b><small>${esc(d)}</small></span><input type="checkbox" class="ios-switch" data-push-kind="${k}"${pushPrefs()[k] ? " checked" : ""}></label>`).join("")}</div>
           <div class="ask"><button class="link" type="button" data-act="push-off">Stäng av alla notiser på den här enheten</button></div>`
         : `<p class="muted">${perm === "denied" ? "Notiserna är avstängda i telefonens inställningar för den här appen." : "Få påminnelser om bokade tider, besiktning, försäkring och däckbyte, och en notis när någon av de andra loggar något. Även när appen är stängd."}</p>
           ${perm !== "denied" ? `<div class="ask"><button class="btn-soft" type="button" data-act="push-on">${icon("bell", 16)} Slå på notiser</button></div>` : ""}
@@ -4812,6 +4812,7 @@ const PUSH_KINDS = [
   ["bookings", "Bokade tider", "Dagen innan och samma dag"],
   ["dates", "Datum att hålla koll på", "Besiktning, försäkring, skatt, dokument och däckbyte"],
   ["activity", "När någon annan loggar", "Till exempel en tankning eller service"],
+  ["letter", "Glenns månadsbrev", "Den första i månaden: vad bilen kostade och hur mycket ni körde"],
 ];
 function pushPrefs() {
   let p = {};
