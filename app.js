@@ -654,9 +654,76 @@ function plusSheet() {
     <table class="plus-t"><thead><tr><th></th><th>Gratis</th><th>Plus</th></tr></thead>
       <tbody>${rows.map(([a, b, c]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td><td><b>${esc(c)}</b></td></tr>`).join("")}</tbody></table>
     ${hasPlus() && !tripsVisible() ? `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="trips-on">${icon("route", 18)} Slå på körjournalen</button></div>` : ""}
-    ${hasPlus() ? "" : plusOnSale() ? `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="plus-buy">Skaffa Plus</button>
-      <p class="hint">39 kr per månad. Prova gratis i 14 dagar. Avsluta när du vill.</p></div>`
-      : `<p class="hint" style="margin-top:16px">Plus går inte att köpa än, men kommer snart. Allt ni loggar nu finns kvar när ni uppgraderar.</p>`}`);
+    ${hasPlus() ? (S.house?.plus?.by === uid() && !S.house?.plus?.gift ? `<p class="hint" style="margin-top:16px">${canBuyHere() ? `Du betalar för Plus via App Store. <a href="https://apps.apple.com/account/subscriptions" target="_blank" rel="noopener">Hantera eller avsluta prenumerationen</a>` : "Du betalar för Plus via App Store. Prenumerationen hanterar du i iPhone-appen eller under Inställningar → ditt namn → Prenumerationer på din iPhone."}</p>` : "")
+      : !plusOnSale() ? `<p class="hint" style="margin-top:16px">Plus går inte att köpa än, men kommer snart. Allt ni loggar nu finns kvar när ni uppgraderar.</p>`
+      : canBuyHere() ? `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="plus-buy">Skaffa Plus</button>
+      <p class="hint">Prova gratis i 14 dagar. Avsluta när du vill.</p></div>`
+      : `<p class="hint" style="margin-top:16px">Plus köps i iPhone-appen. När någon i hushållet har köpt det gäller det för alla, också här.</p>`}`);
+}
+
+// Köp av Plus i iPhone-appen, med RevenueCat. Den publika nyckeln får synas i appen. Användarens id i
+// RevenueCat är Firebase-id:t, så servern (revenuecatWebhook) vet vilket hushåll köpet gäller.
+const RC_KEY = "appl_FjMWAabuQLsCPRttCaLPjSvJxqP";
+const canBuyHere = () => NATIVE && !ANDROID;
+let rcUser = null;
+async function rcPlugin() {
+  if (!canBuyHere() || !S.user || !window.Capacitor?.isPluginAvailable?.("Purchases")) return null;
+  const P = nativePlugin("Purchases");
+  if (rcUser === null) await P.configure({ apiKey: RC_KEY, appUserID: S.user.uid });
+  else if (rcUser !== S.user.uid) await P.logIn({ appUserID: S.user.uid });
+  rcUser = S.user.uid;
+  return P;
+}
+const rcCancelled = (e) => !!(e?.userCancelled || e?.data?.userCancelled) || String(e?.code ?? e?.data?.code ?? "") === "1";
+const rcHasPlus = (info) => !!(info?.customerInfo || info)?.entitlements?.active?.plus;
+const PERIOD_UNIT = { DAY: ["dag", "dagar"], WEEK: ["vecka", "veckor"], MONTH: ["månad", "månader"], YEAR: ["år", "år"] };
+function introText(p) {
+  const i = p?.introPrice;
+  if (!i) return "";
+  const n = i.periodNumberOfUnits || 1, u = PERIOD_UNIT[i.periodUnit] || ["", ""];
+  const len = `${n} ${n === 1 ? u[0] : u[1]}`;
+  return i.price === 0 ? `${len} gratis` : `${i.priceString} de första ${len}`;
+}
+let rcPkgs = [];
+async function plusBuySheet() {
+  openSheet("Skaffa Plus", `<p class="muted">Hämtar priserna …</p>`);
+  let P = null;
+  try {
+    P = await rcPlugin();
+    if (P) {
+      const o = await P.getOfferings();
+      const order = { MONTHLY: 1, ANNUAL: 2 };
+      rcPkgs = (o?.current?.availablePackages || []).slice().sort((a, b) => (order[a.packageType] || 9) - (order[b.packageType] || 9));
+    }
+  } catch (e) { reportError(e, "plus-offerings"); rcPkgs = []; }
+  if (!P) {
+    openSheet("Skaffa Plus", `<p>Den här versionen av appen kan inte köpa Plus än. Uppdatera Bildagboken i App Store (eller TestFlight) och försök igen.</p>`);
+    return;
+  }
+  if (!rcPkgs.length) {
+    openSheet("Skaffa Plus", `<p>Priserna gick inte att hämta just nu. Kontrollera att du är uppkopplad och försök igen om en stund.</p>
+      <div class="form"><button class="btn block" type="button" data-act="plus-buy">Försök igen</button></div>`);
+    return;
+  }
+  const rows = rcPkgs.map((pk, i) => {
+    const p = pk.product || {};
+    const yearly = pk.packageType === "ANNUAL";
+    const intro = introText(p);
+    const sub = [yearly && p.pricePerMonthString ? `${p.pricePerMonthString} i månaden` : "", intro].filter(Boolean).join(" · ");
+    return `<button class="plus-pkg${yearly ? " best" : ""}" type="button" data-act="plus-pkg" data-i="${i}">
+      <span><b>${yearly ? "Ett år" : pk.packageType === "MONTHLY" ? "En månad" : esc(p.title || "Plus")}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</span>
+      <span class="plus-price">${esc(p.priceString || "")}<small>${yearly ? "per år" : pk.packageType === "MONTHLY" ? "per månad" : ""}</small></span></button>`;
+  }).join("");
+  openSheet("Skaffa Plus", `<p class="muted">Ett köp gäller alla i hushållet.</p>
+    <div class="plus-pkgs">${rows}</div>
+    <p class="hint">Betalningen dras från ditt Apple-konto när provperioden är slut. Prenumerationen förnyas automatiskt tills du avslutar den, senast ett dygn innan perioden tar slut. Du avslutar den när du vill under Inställningar → ditt namn → Prenumerationer.</p>
+    <p class="hint"><a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" rel="noopener">Användarvillkor</a> · <a href="${LANG === "en" ? "privacy.html" : "integritet.html"}" target="_blank" rel="noopener">Integritet</a></p>
+    <div class="form"><button class="btn ghost block" type="button" data-act="plus-restore">Återställ tidigare köp</button></div>`);
+}
+// Efter köpet: servern slår på Plus när RevenueCat har hört av sig, oftast inom några sekunder.
+function plusThanks() {
+  openSheet("Tack!", `<p>Plus slås nu på för hela hushållet. Det tar oftast bara några sekunder.</p>
+    <div class="form"><button class="btn primary block" type="button" data-act="close-sheet">Klart</button></div>`);
 }
 // Hushållets ägare: den som betalar för Plus (plus.by, skrivs av servern vid köpet), annars den som skapade
 // hushållet. Bara ägaren kan ta bort andra (också i säkerhetsreglerna).
@@ -7970,7 +8037,34 @@ const ACTIONS = {
       render();
     } catch (e) { el.disabled = false; showToast(`Det gick inte: ${e.message || e}`, 6000); }
   },
-  "plus-buy"() { showToast("Köpet går inte att göra än."); },
+  "plus-buy"() { plusBuySheet(); },
+  async "plus-pkg"(el) {
+    const pk = rcPkgs[Number(el.dataset.i)];
+    if (!pk) return;
+    const btns = [...document.querySelectorAll("#sheet .plus-pkg, #sheet [data-act=plus-restore]")];
+    btns.forEach((b) => (b.disabled = true));
+    el.classList.add("busy");
+    try {
+      const P = await rcPlugin();
+      const r = await P.purchasePackage({ aPackage: pk });
+      if (rcHasPlus(r)) plusThanks();
+      else { showToast("Köpet gick igenom, men Plus syns inte än. Tryck på Återställ tidigare köp om en stund.", 6000); plusBuySheet(); }
+    } catch (e) {
+      if (!rcCancelled(e)) { reportError(e, "plus-purchase"); showToast(`Köpet gick inte igenom${e?.message ? `: ${e.message}` : "."}`, 6000); }
+      btns.forEach((b) => (b.disabled = false));
+      el.classList.remove("busy");
+    }
+  },
+  async "plus-restore"(el) {
+    el.disabled = true;
+    try {
+      const P = await rcPlugin();
+      const r = await P.restorePurchases();
+      if (rcHasPlus(r)) plusThanks();
+      else showToast("Hittade inget köp av Plus på det här Apple-kontot.", 5000);
+    } catch (e) { reportError(e, "plus-restore"); showToast(`Det gick inte att återställa${e?.message ? `: ${e.message}` : "."}`, 6000); }
+    el.disabled = false;
+  },
   "add-car"() {
     if (caps() && S.cars.length >= caps().cars) return limitSheet("cars");
     carSheet(false);
