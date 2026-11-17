@@ -887,7 +887,8 @@ function itemStatus(item, c, ents) {
   const label = frac < 0
     ? (by === "mil" ? `${fmt(-remMil)} mil över` : `${daysText(-remDays)} över`)
     : by === "mil" ? `${fmt(remMil)} mil kvar` : `${daysText(remDays)} kvar`;
-  return { item, last, lastDate, lastMil, remMil, remDays, dueDate, frac, by, level, label };
+  const dueMil = item.mil && lastMil != null ? lastMil + item.mil : null;
+  return { item, last, lastDate, lastMil, remMil, remDays, dueDate, dueMil, frac, by, level, label };
 }
 
 // Senaste kontrollen ("ser bra ut") efter senaste bytet, för delar där det räcker.
@@ -906,7 +907,15 @@ function itemStatusWithCheck(item, c, ents) {
   const chk = lastCheck(item, c, ents, st.lastDate);
   if (!chk) return st;
   // Som om delen byttes vid kontrollen, men med den korta förlängningen som intervall.
-  const ext = itemStatus({ ...item, ...checkExtension(item), baseDate: chk.date, baseMil: null }, c, ents.filter((e) => !entryCovers(e, item)));
+  // Mätarställningen vid kontrollen: sparad på posten, annars den som var loggad närmast före (eller efter).
+  let chkMil = chk.checkMil ?? chk.odometer ?? null;
+  if (chkMil == null) {
+    const odos = ents.filter((e) => e.odometer != null && e.date);
+    const before = odos.filter((e) => e.date <= chk.date).sort((a, b) => b.date.localeCompare(a.date) || b.odometer - a.odometer)[0];
+    const after = odos.filter((e) => e.date > chk.date).sort((a, b) => a.date.localeCompare(b.date) || a.odometer - b.odometer)[0];
+    chkMil = (before || after)?.odometer ?? (chk.date >= todayStr() ? odoOf(c) : null);
+  }
+  const ext = itemStatus({ ...item, ...checkExtension(item), baseDate: chk.date, baseMil: chkMil }, c, ents.filter((e) => !entryCovers(e, item)));
   const left = (x) => (x.remDays != null ? x.remDays : x.remMil != null ? x.remMil * 3 : -Infinity); // ungefär 3 dagar per mil
   const use = st.unknown || left(ext) > left(st) ? ext : st;
   return { ...use, item, check: chk, last: st.last, replacedDate: st.lastDate, replacedMil: st.lastMil };
@@ -4303,7 +4312,7 @@ function itemSubText(s) {
 
 // Nästa gräns i text: "Vid 23 700 mil eller senast juli 2027".
 function dueText(s) {
-  return [s.item.mil && s.lastMil != null ? `Vid ${fmt(s.lastMil + s.item.mil)} mil` : "", s.dueDate ? `senast ${MONTHS[s.dueDate.getMonth()]} ${s.dueDate.getFullYear()}` : ""]
+  return [s.dueMil != null ? `Vid ${fmt(s.dueMil)} mil` : "", s.dueDate ? `senast ${MONTHS[s.dueDate.getMonth()]} ${s.dueDate.getFullYear()}` : ""]
     .filter(Boolean).join(" eller ").replace(/^s/, "S");
 }
 
@@ -7661,6 +7670,7 @@ const ACTIONS = {
     el.disabled = true;
     const eid = doc(col("entries")).id;
     const data = clean({ type: "eget", carId: c.id, date: todayStr(), title: `${item.name} kontrollerat`, note: "Ser bra ut",
+      checkMil: odoOf(c) ?? null,
       work: [{ key: `item:${id}`, itemId: id, name: item.name, action: "kontrollerat", sides: [] }], createdBy: uid(), createdAt: serverTimestamp() });
     try {
       await setDoc(ref("entries", eid), data);
