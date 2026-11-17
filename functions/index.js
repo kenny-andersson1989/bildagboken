@@ -47,6 +47,7 @@ function tireHealthServer(c, kind) {
   const year = d.length === 4 && /^(19|20)\d\d$/.test(d) ? +d : d.length === 4 ? 2000 + +d.slice(2) : null;
   const age = year ? new Date().getFullYear() - year : null;
   if (age != null && (age >= 10 || age >= (kind === "vinter" ? 6 : 8))) return { sv: `${sv} är ${age} år och bör bytas.`, en: `${en} are ${age} years old and should be replaced.` };
+  if (kind === "vinter" && !t.studded && t.alpine === false) return { sv: "Vinterdäcken är bara märkta M+S och räknas inte som vinterdäck. Dubbfria vinterdäck måste ha alptopp/snöflinga.", en: "The winter tyres are only marked M+S and don't count as winter tyres. Non-studded winter tyres must have the mountain/snowflake symbol." };
   const depth = Number(String(t.depth ?? "").replace(",", "."));
   const law = kind === "vinter" ? 3 : 1.6;
   if (t.depth != null && t.depth !== "" && Number.isFinite(depth) && depth < law) return { sv: `${sv} har ${String(depth).replace(".", ",")} mm mönster, under lagkravet på ${String(law).replace(".", ",")} mm.`, en: `${en} have ${depth} mm tread, below the legal ${law} mm.` };
@@ -117,13 +118,13 @@ function reminders(c, today) {
   if (on === "sommar" && month === 11 && day === 1 && !tireBooked) {
     const h = health("vinter");
     add("dack-vinter-boka",
-      { title: "Dags att boka däckbyte", body: `Vinterdäcken ska vara på senast 1 december.${h ? ` ${h.sv}` : ""}${depthTip.sv}` },
-      { title: "Time to book a tyre change", body: `Winter tyres must be on by 1 December.${h ? ` ${h.en}` : ""}${depthTip.en}` });
+      { title: "Dags att boka däckbyte", body: `Från 1 december krävs vinterdäck vid vinterväglag. Byt innan det blir halt.${h ? ` ${h.sv}` : ""}${depthTip.sv}` },
+      { title: "Time to book a tyre change", body: `From 1 December winter tyres are required in winter conditions. Change before it gets slippery.${h ? ` ${h.en}` : ""}${depthTip.en}` });
   }
   if (on === "sommar" && month === 11 && day === 24) {
     add("dack-vinter",
-      { title: "Dags för vinterdäck", body: `Vinterdäcken ska vara på senast 1 december.${depthTip.sv}` },
-      { title: "Time for winter tyres", body: `Winter tyres must be on by 1 December.${depthTip.en}` });
+      { title: "Dags för vinterdäck", body: `Från 1 december krävs vinterdäck när det är vinterväglag.${depthTip.sv}` },
+      { title: "Time for winter tyres", body: `From 1 December winter tyres are required in winter conditions.${depthTip.en}` });
   }
   if (on === "vinter" && month === 3 && day === 15 && !tireBooked) {
     const h = health("sommar");
@@ -134,8 +135,8 @@ function reminders(c, today) {
   const studded = (c.tires || []).some((t) => t.kind === "vinter" && t.studded);
   if (on === "vinter" && studded && month === 4 && day === 8) {
     add("dack-dubb",
-      { title: "Dubbdäcken ska av", body: `Senast 15 april.${depthTip.sv}` },
-      { title: "Studded tyres off", body: `By 15 April.${depthTip.en}` });
+      { title: "Dubbdäcken ska av", body: `Senast 15 april, om det inte är vinterväglag.${depthTip.sv}` },
+      { title: "Studded tyres off", body: `By 15 April, unless there are winter conditions.${depthTip.en}` });
   }
   return out.map((r) => ({ ...r, car: name }));
 }

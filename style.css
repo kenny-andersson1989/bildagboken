@@ -1921,3 +1921,6 @@ body.car-locked .fab { display: none; }
 .tire-meter.warn i { background: #D99A2B; }
 .tire-meter.bad i { background: #C8432B; }
 .tire-why { font-size: 13px; color: var(--ink-2); line-height: 1.35; }
+.tire-law { margin-top: 12px; }
+.tire-law ul { margin: 8px 0 4px; padding-left: 18px; color: var(--ink-2); font-size: 14px; line-height: 1.45; }
+.tire-law li { margin: 4px 0; }
