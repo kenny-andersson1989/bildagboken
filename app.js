@@ -514,6 +514,29 @@ function activeCarId() {
 const carLocked = (c) => { const a = activeCarId(); return !!(a && c && c.id !== a); };
 // När ägaren får byta bil nästa gång (0 = nu).
 const activeCarNext = () => { const t = tsMs(S.house?.activeCarAt); return t && Date.now() - t < ACTIVE_CAR_DAYS * 864e5 ? t + ACTIVE_CAR_DAYS * 864e5 : 0; };
+// Förr kunde "Senast bytt" fyllas i för hand under Underhåll, utanför loggen. De datumen flyttas in i loggen
+// som egna jobb (ett per datum), så att allt underhåll finns i loggen. Id:t bestäms av bilen och datumet,
+// så det blir bara en post även om flera telefoner gör det samtidigt.
+const baseMigrated = new Set();
+function migrateBaseDates(c) {
+  const withBase = (c.items || []).filter((i) => i.baseDate);
+  if (!withBase.length || baseMigrated.has(c.id) || !S.hid) return;
+  baseMigrated.add(c.id);
+  const byDate = {};
+  for (const i of withBase) (byDate[i.baseDate] = byDate[i.baseDate] || []).push(i);
+  const writes = Object.entries(byDate).map(([date, list]) => {
+    const names = list.map((i) => i.name);
+    const title = `${names.length > 1 ? `${names.slice(0, -1).join(", ")} och ${names.at(-1).toLowerCase()}` : names[0]} bytt`;
+    const mil = list.find((i) => i.baseMil != null)?.baseMil ?? null;
+    return setDoc(doc(col("entries"), `base-${c.id}-${date}`), clean({
+      type: "eget", carId: c.id, date, title, items: list.map((i) => i.id), odometer: mil, note: "Fanns ifyllt i Underhåll",
+      fromBase: true, createdBy: uid(), createdAt: serverTimestamp(),
+    }), { merge: true });
+  });
+  Promise.all(writes)
+    .then(() => updateDoc(ref("cars", c.id), { items: c.items.map((i) => { const { baseDate, baseMil, ...rest } = i; return rest; }) }))
+    .catch((e) => { baseMigrated.delete(c.id); console.warn("Flytta datum till loggen", e); });
+}
 // Papperskorgen: en borttagen bil (deletedAt) ligger kvar i TRASH_DAYS dagar och kan återställas av ägaren.
 // Funktionen rensaPapperskorg raderar den sedan för gott. Loggen och resorna för bilen döljs under tiden.
 const TRASH_DAYS = 30;
@@ -6761,7 +6784,7 @@ function itemSheet(id) {
       : manual ? "" : `<p class="muted" style="margin-top:6px">Inga loggade byten än. Kryssa i ${esc(item.name.toLowerCase())} när du loggar en service eller ett eget jobb, så hamnar det här.</p>`}
     <div class="form" style="margin-top:18px">
       <button class="btn primary block" type="button" data-act="log-item" data-id="${esc(id)}">Logga byte</button>
-      <button class="btn ghost block" type="button" data-act="edit-item-form" data-id="${esc(id)}">Ändra intervall eller senaste byte</button>
+      <button class="btn ghost block" type="button" data-act="edit-item-form" data-id="${esc(id)}">Ändra intervall</button>
     </div>`);
 }
 
@@ -6887,10 +6910,7 @@ function itemRowHtml(i) {
           <select name="monthsUnit" aria-label="Enhet"><option value="ar"${years || !i.months ? " selected" : ""}>år</option><option value="man"${i.months && !years ? " selected" : ""}>mån</option></select></span></label>`;
       })()}
     </div>
-    <div class="row2">
-      <label class="field"><span>Senast bytt</span><input name="baseDate" type="date" value="${esc(i.baseDate || "")}"></label>
-      <label class="field"><span>Mätarställning då (mil)</span><input name="baseMil" inputmode="numeric" value="${i.baseMil ?? ""}"></label>
-    </div>
+
     <button class="link" type="button" data-act="remove-item-row" style="justify-self:start">Ta bort</button>
   </div>`;
 }
@@ -7795,7 +7815,21 @@ const ACTIONS = {
   "edit-items"() { itemsSheet(); },
   "edit-item"(el) { itemSheet(el.dataset.id); },
   "edit-item-form"(el) { itemsSheet(el.dataset.id); },
-  "log-item"(el) { entryForm("service", { items: [el.dataset.id] }, { back: "edit-item", backId: el.dataset.id }); },
+  // Logga byte: på verkstad (service) eller själv (eget jobb). Datumet kan vara bakåt i tiden.
+  "log-item"(el) {
+    const item = (car()?.items || []).find((i) => i.id === el.dataset.id);
+    if (!item) return;
+    openSheet(`Logga byte: ${item.name}`, `<p class="muted">Var byttes ${esc(item.name.toLowerCase())}? Har det redan gjorts tidigare väljer du bara datumet då.</p>
+      <div class="rows" style="margin-top:10px">
+        <button class="dl as-btn" type="button" data-act="log-item-as" data-id="${esc(item.id)}" data-type="service"><span class="dl-ic">${icon("wrench", 20)}</span><span><span class="dl-t">På verkstad</span><span class="dl-s">Med verkstad, kostnad och kvitto om du vill</span></span><span class="dl-v">›</span></button>
+        <button class="dl as-btn" type="button" data-act="log-item-as" data-id="${esc(item.id)}" data-type="eget"><span class="dl-ic">${icon("hand", 20)}</span><span><span class="dl-t">Själv</span><span class="dl-s">Ett eget jobb</span></span><span class="dl-v">›</span></button>
+      </div>`, { back: "edit-item", backId: item.id });
+  },
+  "log-item-as"(el) {
+    const item = (car()?.items || []).find((i) => i.id === el.dataset.id);
+    if (!item) return;
+    entryForm(el.dataset.type, { items: [item.id], ...(el.dataset.type === "eget" ? { title: `${item.name} bytt` } : {}) }, { back: "edit-item", backId: item.id });
+  },
   "w-add"(el) {
     const list = $("#work-rows");
     if (!list) return;
@@ -8329,10 +8363,11 @@ function saveItems(form) {
       name: g("name"),
       mil: num(g("mil")),
       months: num(g("months")) != null ? Math.round(num(g("months")) * (g("monthsUnit") === "man" ? 1 : 12)) || null : null,
-      baseDate: g("baseDate") || null,
-      baseMil: num(g("baseMil")),
     });
   }).filter((i) => i.name);
+  // Ett gammalt datum ifyllt för hand (före loggen) följer med tills det har flyttats in i loggen.
+  const old = Object.fromEntries((car()?.items || []).map((i) => [i.id, i]));
+  for (const i of items) if (old[i.id]?.baseDate) Object.assign(i, clean({ baseDate: old[i.id].baseDate, baseMil: old[i.id].baseMil ?? null }));
   updateDoc(ref("cars", S.carId), { items }).catch(onWriteError);
   closeSheet();
   showToast("Underhållet är sparat");
@@ -8633,6 +8668,7 @@ function subscribe(hid) {
       S.carId = S.cars.find((c) => c.id === saved)?.id || S.cars[0]?.id || null;
     }
     addNewItems(S.cars);
+    S.cars.forEach(migrateBaseDates);
     checkFuelChanges(S.cars, !S.loaded.cars);
     checkNewBookings(S.cars, !S.loaded.cars);
     S.loaded.cars = true;
