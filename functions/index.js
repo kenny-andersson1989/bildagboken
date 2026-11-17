@@ -368,6 +368,7 @@ const CHAT_SYSTEM = [
   "Svara på svenska, eller på engelska om användaren skriver på engelska (då som en glad göteborgare som pratar engelska).",
   "Du kan logga en tankning åt användaren med verktyget logga_tankning. Vill användaren logga en tankning: fråga först efter det som saknas, en sak i taget och kort: var hen tankade, vad det kostade totalt och om det var full tank. Mätarställning är frivillig, så fråga inte efter den, men ta med den om användaren säger den. Datum är i dag om användaren inte säger något annat. Anropa verktyget först när du vet station, belopp och full tank, och skriv samtidigt en kort mening om att du har fyllt i det. Användaren sparar själv med en knapp i appen.",
   "Du vet var användaren är just nu om appen har fått lov (se Just nu nedan). Med verktyget sok_i_narheten hittar du närmaste mack, laddstolpe, verkstad, däckverkstad, biltvätt eller parkering, och med verktyget vader får du vädret där användaren är eller på en ort. Säg grader och vind i hela tal, avstånd i kilometer med högst en decimal, och nämn gärna halka, snö eller hård vind när det spelar roll för bilen. Appen visar knappar med vägbeskrivning till ställena du hittar, så du behöver inte läsa upp hela adresser.",
+  "Frågar användaren efter närmaste mack, laddstolpe, verkstad, däckverkstad, biltvätt eller parkering, anropa sok_i_narheten direkt, utan att fråga något först. Säger användaren en kedja (till exempel Circle K) när hen loggar en tankning, behöver du inte söka efter den. Går ett verktyg inte att använda, säg det kort i en mening och fortsätt. Beskriv aldrig vad du gjorde eller inte gjorde i tidigare svar.",
   "Vill användaren ha en vägbeskrivning, eller säger något som \"kör mig till\" eller \"hur kommer jag till\", använd verktyget starta_vagbeskrivning med ett enda mål. Målet kan vara ett ställe du har hittat med sok_i_narheten (ta med namn, adress, lat och lon därifrån), en sparad plats som Hem eller Kontoret, adressen i en bokad tid (se Sparade platser och Bokade tider), eller en adress eller ett ställe som användaren säger (skicka det som adress, gärna med ort). Hitta inte på koordinater. Är målet oklart, fråga först. Svara sedan kort med målet och ungefär hur långt det är om du vet, och säg att användaren trycker på Starta vägbeskrivning. Appen öppnar då kartan.",
     "Glenn syns som en liten figur i appen. Är svaret goda nyheter, beröm eller något som ser bra ut, avsluta med taggen [tumme]. Skämtar du eller säger något med glimten i ögat, avsluta med [blink]. Annars ingen tagg. Högst en tagg, och inte i varje svar.",
 ].join(" ");
@@ -431,7 +432,7 @@ exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120,
           else out = "Okänt verktyg.";
         } catch (e) {
           logger.warn("Verktyget fungerade inte", { tool: b.name, message: e?.message });
-          out = "Det gick inte att hämta just nu.";
+          out = "Det gick inte att hämta just nu. Säg det kort i en mening och föreslå att försöka igen om en stund. Be inte om ursäkt för tidigare svar.";
         }
         results.push({ type: "tool_result", tool_use_id: b.id, content: String(out).slice(0, 8000) });
       }
@@ -494,6 +495,7 @@ const NEARBY_KINDS = {
   bensin: "[amenity=fuel]", laddning: "[amenity=charging_station]", verkstad: "[shop=car_repair]",
   dack: "[shop=tyres]", biltvatt: "[amenity=car_wash]", parkering: "[amenity=parking]",
 };
+const OVERPASS_URLS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
 const NEARBY_TOOL = {
   name: "sok_i_narheten",
   description: "Söker ställen nära användarens plats just nu: bensinmackar, laddstolpar, bilverkstäder, däckverkstäder, biltvättar eller parkeringar. Ger namn, adress, avstånd och öppettider.",
@@ -515,12 +517,20 @@ async function nearby(input = {}, here) {
   const kind = NEARBY_KINDS[input.typ] ? input.typ : "bensin";
   const r = Math.round(Math.min(25, Math.max(1, Number(input.radie_km) || 5)) * 1000);
   const q = `[out:json][timeout:15];nwr(around:${r},${here.lat},${here.lon})${NEARBY_KINDS[kind]};out center tags 40;`;
-  const resp = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Bildagboken/1.0" },
-    body: "data=" + encodeURIComponent(q), signal: AbortSignal.timeout(12000),
-  });
-  if (!resp.ok) throw new Error("overpass " + resp.status);
-  const els = (await resp.json()).elements || [];
+  // Overpass är ofta överbelastad. Prova flera servrar i tur och ordning.
+  let els = null, lastErr = null;
+  for (const url of OVERPASS_URLS) {
+    try {
+      const resp = await fetch(url, {
+        method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Bildagboken/1.0 (kontakt@bildagboken.com)" },
+        body: "data=" + encodeURIComponent(q), signal: AbortSignal.timeout(8000),
+      });
+      if (!resp.ok) throw new Error(`overpass ${resp.status} ${new URL(url).host}`);
+      els = (await resp.json()).elements || [];
+      break;
+    } catch (e) { lastErr = e; logger.warn("Overpass svarade inte", { url, message: e?.message }); }
+  }
+  if (!els) throw lastErr || new Error("overpass");
   const list = els.map((e) => {
     const t = e.tags || {};
     const lat = e.lat ?? e.center?.lat, lon = e.lon ?? e.center?.lon;
