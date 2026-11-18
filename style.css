@@ -1989,3 +1989,11 @@ body.car-locked .fab { display: none; }
 .koll-row.urgent .koll-tile b, .koll-row.urgent .koll-tile small { color: #fff; }
 .maint-rows > .dl > div { min-width: 0; }
 .maint-rows > .dl .dl-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Karta i en sparad resa: start (A, grön) och mål (B, orange) */
+.trip-map { height: 180px; margin: 0 0 8px; }
+.trip-ends { display: flex; flex-direction: column; gap: 4px; margin: 0 0 14px; font: 500 13.5px var(--f-body); color: var(--ink-2); }
+.trip-ends span { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.trip-ends i { flex: none; width: 10px; height: 10px; border-radius: 50%; }
+.trip-ends .te-a { background: #2f9e5b; }
+.trip-ends .te-b { background: #E77026; }
