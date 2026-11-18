@@ -2,6 +2,12 @@
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
   // Delkatalogen (parts.js)
+  "Motorfäste": "Engine mount",
+  "Växellådsfäste": "Gearbox mount",
+  "Drivknut": "CV joint",
+  "Damask till drivknut": "CV joint boot",
+  "Insugspackning": "Intake gasket",
+  "Turboaggregat": "Turbocharger",
   "Inre styrled": "Inner tie rod",
   "Stötdämpare fram": "Shock absorbers front",
   "Stötdämpare bak": "Shock absorbers rear",
