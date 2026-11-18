@@ -13,6 +13,7 @@ import {
 import { firebaseConfig } from "./firebase-config.js";
 import { MAPKIT_TOKEN } from "./maps-config.js";
 import { CAR_MODELS } from "./car-models.js";
+import { PARTS } from "./parts.js";
 
 const VERSION = "2.8";
 
@@ -146,8 +147,41 @@ const daysText = (d) => {
   return m >= 18 ? `${fmt(m / 12, 1)} år` : `${m} mån`;
 };
 // I Glenns teman används symbolerna i pixelstil (px-), annars de vanliga (i-).
-const icon = (name, size = 22) => `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#${document.documentElement.dataset.garage ? "px" : "i"}-${name}"/></svg>`;
-// Symbolerna som står direkt i index.html (menyn) byts när temat byts.
+const normWord = (t) => String(t || "").toLowerCase().replace(/é/g, "e").trim();
+// Saknas en pixelvariant (till exempel delarnas ikoner) används pixelskiftnyckeln.
+const icon = (name, size = 22) => {
+  const px = document.documentElement.dataset.garage && (document.getElementById(`px-${name}`) ? name : "wrench");
+  return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#${px ? `px-${px}` : `i-${name}`}"/></svg>`;
+};
+
+// Ikon för en underhållspunkt eller en del. Först punktens id, sedan delkatalogen i parts.js:
+// den del vars ord (namn eller alias) är längst och finns i namnet vinner. Inget träffar: skiftnyckeln.
+const PART_ICON_IDS = { olja: "p-olja", luftfilter: "p-luftfilter", kupefilter: "p-kupefilter", tandstift: "p-tandstift", bromsvatska: "p-bromsvatska", torkare: "p-torkare", ac: "p-ac", batteri: "p-batteri", kamrem: "p-kamrem" };
+// Underhållspunkternas namn räknas också, så att till exempel "Tändstiftsats" får tändstiftets ikon.
+const PART_WORDS = [
+  ["motorolja", "p-olja"], ["luftfilter", "p-luftfilter"], ["kupefilter", "p-kupefilter"], ["tändstift", "p-tandstift"],
+  ["torkarblad", "p-torkare"], ["batteri", "p-batteri"], ["klimatanläggning", "p-klimat"],
+  ...PARTS.flatMap((x) => [x.name, ...(x.alias || [])].map((w) => [w, x.icon])),
+].map(([w, ic]) => [normWord(w), ic]).sort((a, b) => b[0].length - a[0].length);
+function partIcon(name, id) {
+  if (id && PART_ICON_IDS[id]) return PART_ICON_IDS[id];
+  const t = normWord(name);
+  return PART_WORDS.find(([w]) => t.includes(w))?.[1] || "wrench";
+}
+// Delar i katalogen som passar det man skrivit: namn som börjar med texten först, sedan namn som innehåller den,
+// sedan delar där ett annat ord för delen passar (skriver man "belägg" föreslås Bromsklotsar).
+const PART_SIDES = { fram: ["Vänster fram", "Höger fram"], bak: ["Vänster bak", "Höger bak"] };
+function catalogMatches(q) {
+  const t = normWord(q);
+  if (t.length < 2) return [];
+  const score = (x) => {
+    const n = normWord(x.name);
+    if (n.startsWith(t)) return 0;
+    if (n.includes(t)) return 1;
+    return (x.alias || []).some((a) => normWord(a).startsWith(t) || (t.length >= 4 && t.includes(normWord(a)))) ? 2 : 9;
+  };
+  return PARTS.map((x) => [score(x), x]).filter(([sc]) => sc < 9).sort((a, b) => a[0] - b[0]).map(([, x]) => x);
+}// Symbolerna som står direkt i index.html (menyn) byts när temat byts.
 function swapIcons(root = document) {
   const px = !!document.documentElement.dataset.garage;
   root.querySelectorAll("use").forEach((u) => {
@@ -812,7 +846,6 @@ const ITEM_WORDS = {
   torkare: ["torkarblad", "torkarbladen", "torkare", "torkarna"],
   kamrem: ["kamrem", "kamremmen", "kamremssats"],
 };
-const normWord = (t) => String(t || "").toLowerCase().replace(/é/g, "e").trim();
 
 // Räknas posten som ett byte av punkten? Antingen ikryssad, eller skriven i "Annat som byttes"
 // (som hela ord, så att till exempel "växellådsolja" inte räknas som motorolja).
@@ -853,7 +886,7 @@ const NO_POSITION = ["olja", "luftfilter", "kupefilter", "bromsvatska", "kamrem"
 // Menyn "Var på bilen" visas bara för delar som sitter på flera ställen. Appen känner igen dem på namnet.
 // Allt annat (AC, batteri, vätskor, filter och liknande) får en liten länk för att ange det ändå.
 const POS_FRONTBACK = /torkar|lamp|lykt|strålkastar|blinker/i;
-const POS_CORNERS = /broms(?!vätsk)|belägg|skiv|bromsok|däck|hjul|fälg|stötdämp|dämpare|fjäder|länkarm|bussning|drivknut|drivaxel|spindel|styrled|kulled|krängning/i;
+const POS_CORNERS = /broms(?!vätsk|huvud|servo|olja)|belägg|skiv|bromsok|däck|hjul|fälg|stötdämp|dämpare|fjäder|länkarm|bussning|drivknut|drivaxel|spindel|styrled|kulled|krängning/i;
 function posKind(itemId, name) {
   if (itemId && NO_POSITION.includes(itemId)) return null;
   if (itemId === "torkare" || POS_FRONTBACK.test(name || "")) return "fb";
@@ -3947,7 +3980,7 @@ function viewOverview() {
     parts.push(`<article class="card">
       <h2>Underhåll</h2>
       <div class="rows">${top.map((x) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(x.item.id)}">
-        <span class="dl-ic">${icon("wrench", 20)}</span>
+        <span class="dl-ic">${icon(partIcon(x.item.name, x.item.id), 20)}</span>
         <span><span class="dl-t">${esc(x.item.name)}</span><span class="dl-s">${esc(itemSubText(x))}</span>${wearBar(x)}</span>
         <span class="pill ${x.level}">${esc(x.label)}</span></button>`).join("")}</div>
       ${known.length > 3 ? `<button class="link" type="button" data-act="toggle-maint" style="margin-top:10px">${S.maintAll ? "Visa färre" : `Visa ${known.length - 3} till`}</button>` : ""}
@@ -4749,7 +4782,7 @@ function viewCar() {
         if (!all.length) return `<div class="rows"><p class="muted">Inga punkter. Lägg till under Ändra.</p></div>`;
         const per = 10, pages = Math.ceil(all.length / per), page = Math.min(S.maintPage || 0, pages - 1);
         const shown = S.maintOpen ? all.slice(page * per, page * per + per) : all.slice(0, 5);
-        const row = (s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`;
+        const row = (s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon(partIcon(s.item.name, s.item.id), 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`;
         const nav = !S.maintOpen
           ? (all.length > 5 ? `<button class="link" type="button" data-act="maint-more" style="margin-top:10px">${esc(`Visa fler (${all.length - 5})`)}</button>` : "")
           : `<div class="pg-pages maint-pages">${page > 0 ? `<button class="link" type="button" data-act="maint-page" data-d="-1">${icon("back", 14)} Föregående</button>` : "<span></span>"}
@@ -4761,7 +4794,7 @@ function viewCar() {
       ${(() => {
         const extras = extraParts(c);
         if (!extras.length) return "";
-        const rows = extras.map((x) => `<button class="dl as-btn" type="button" data-act="open-part" data-id="${esc(x.key)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(x.name)}</div><div class="dl-s">${esc(`senast ${(WORK_ACTIONS[x.lastAction] || "Bytt").toLowerCase()} ${fmtDateShort(x.entries[0].date)}${x.entries.length > 1 ? ` · ${x.entries.length} gånger` : ""}`)}</div></div><span></span></button>`).join("");
+        const rows = extras.map((x) => `<button class="dl as-btn" type="button" data-act="open-part" data-id="${esc(x.key)}"><div class="dl-ic">${icon(partIcon(x.name), 20)}</div><div><div class="dl-t">${esc(x.name)}</div><div class="dl-s">${esc(`senast ${(WORK_ACTIONS[x.lastAction] || "Bytt").toLowerCase()} ${fmtDateShort(x.entries[0].date)}${x.entries.length > 1 ? ` · ${x.entries.length} gånger` : ""}`)}</div></div><span></span></button>`).join("");
         return `${S.partsAll ? `<p class="label" style="margin:14px 0 2px">Annat som har gjorts</p><div class="rows">${rows}</div>` : ""}
           <button class="link" type="button" data-act="toggle-parts" style="margin-top:10px">${S.partsAll ? "Visa färre" : `Visa ${extras.length} till`}</button>`;
       })()}
@@ -6843,11 +6876,18 @@ function workSuggest(q) {
   // Det man skrivit går alltid att lägga till som egen del, utom när det är exakt samma namn som något som redan finns.
   const exact = known.some((x) => x.key === t) || (itemHit && normWord(itemHit.name) === t) || present.has(t);
   const itemThere = itemHit && present.has(`item:${itemHit.id}`);
+  // Vanliga delar ur katalogen som inte redan är använda, tillagda eller samma som en underhållspunkt.
+  // Delar med sida (Bromsbelägg fram) visas även om delen redan används, eftersom sidan läggs till på samma rad.
+  const taken = new Set([...known.map((x) => x.key), ...extraParts(c).map((x) => x.key), ...(c.items || []).map((i) => normWord(i.name))]);
+  const common = catalogMatches(q).filter((x) => (x.side || (!taken.has(normWord(x.name)) && !present.has(normWord(x.name)))) && !(c.items || []).some((i) => nameMatchesItem(x.name, i))).slice(0, Math.max(0, 6 - known.length));
+  const exactAll = exact || common.some((x) => normWord(x.name) === t);
+  const sug = (ic, title, sub, attrs) => `<button type="button" class="sg-ic" data-act="w-add" ${attrs}><span class="sg-i">${icon(ic, 18)}</span><span class="sg-t"><b>${title}</b><span>${sub}</span></span></button>`;
   box.innerHTML = [
-    ...known.map((x) => `<button type="button" data-act="w-add" data-name="${esc(x.name)}"><b>${esc(x.name)}</b><span>Använd förut</span></button>`),
-    itemHit && !itemThere ? `<button type="button" data-act="w-add" data-item="${esc(itemHit.id)}" data-name="${esc(itemHit.name)}"><b>${esc(itemHit.name)}</b><span>Underhållspunkt</span></button>` : "",
+    ...known.map((x) => sug(partIcon(x.name), esc(x.name), "Använd förut", `data-name="${esc(x.name)}"`)),
+    itemHit && !itemThere ? sug(partIcon(itemHit.name, itemHit.id), esc(itemHit.name), "Underhållspunkt", `data-item="${esc(itemHit.id)}" data-name="${esc(itemHit.name)}"`) : "",
+    ...common.map((x) => sug(x.icon, esc(x.name), "Vanlig del", `data-name="${esc(x.add || x.name)}"${x.side ? ` data-sides="${esc(PART_SIDES[x.side].join("|"))}"` : ""}`)),
     itemThere ? `<p class="hint">${esc(itemHit.name)} finns redan i listan ovanför.</p>` : "",
-    !exact ? `<button type="button" data-act="w-add" data-name="${esc(q.trim().replace(/^./, (x) => x.toUpperCase()))}"><b>Lägg till ”${esc(q.trim())}”</b><span>Ny del</span></button>` : "",
+    !exactAll ? sug(partIcon(q), `Lägg till ”${esc(q.trim())}”`, "Ny del", `data-name="${esc(q.trim().replace(/^./, (x) => x.toUpperCase()))}"`) : "",
   ].join("");
   box.hidden = !box.innerHTML;
 }
@@ -8496,10 +8536,20 @@ const ACTIONS = {
     if (!list) return;
     const itemId = el.dataset.item || null;
     const key = itemId ? `item:${itemId}` : normWord(el.dataset.name);
+    // Ett förslag med sida (Bromsbelägg fram) väljer den sidan. Finns raden redan läggs sidan till där.
+    const sides = (el.dataset.sides || "").split("|").filter(Boolean);
     let row = list.querySelector(`.work-row[data-key="${CSS.escape(key)}"]`);
     if (!row) {
-      list.insertAdjacentHTML("beforeend", workRowHtml({ key, itemId, name: el.dataset.name }, { action: "bytt" }));
+      list.insertAdjacentHTML("beforeend", workRowHtml({ key, itemId, name: el.dataset.name }, { action: "bytt", sides }));
       row = list.lastElementChild;
+    } else if (sides.length) {
+      const sel = row.querySelector(".w-pos");
+      if (sel) {
+        const all = [...new Set([...sel.value.split("|").filter(Boolean), ...sides])];
+        sel.innerHTML = posOptions(itemId, all, posKind(itemId, el.dataset.name) || "corners");
+        sel.hidden = false;
+        row.querySelector(".w-posbtn")?.remove();
+      }
     }
     row.scrollIntoView({ block: "nearest" });
     const s = $("#w-search"); if (s) s.value = "";
