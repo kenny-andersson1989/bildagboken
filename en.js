@@ -2,6 +2,19 @@
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
   // Delkatalogen (parts.js)
+  "Bromsbelägg fram": "Brake pads front",
+  "Bromsbelägg bak": "Brake pads rear",
+  "Bromsbelägg": "Brake pads",
+  "Bromsskivor fram": "Brake discs front",
+  "Bromsskivor bak": "Brake discs rear",
+  "Bromsokshållare": "Caliper bracket",
+  "Bromsslangar": "Brake hoses",
+  "Bromsrör": "Brake lines",
+  "ABS-hydraulaggregat": "ABS hydraulic unit",
+  "Handbromsvajer": "Handbrake cable",
+  "Parkeringsbromsmotor": "Parking brake motor",
+  "Bromshuvudcylinder": "Brake master cylinder",
+  "Bromsservo": "Brake booster",
   "Motorolja": "Engine oil",
   "Spännrulle": "Tensioner pulley",
   "Löprulle": "Idler pulley",
