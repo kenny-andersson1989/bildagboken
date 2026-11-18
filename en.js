@@ -2,6 +2,10 @@
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
   // Delkatalogen (parts.js)
+  "Motorolja": "Engine oil",
+  "Spännrulle": "Tensioner pulley",
+  "Löprulle": "Idler pulley",
+  "Kylarvätska": "Coolant",
   "Oljefilter": "Oil filter",
   "Oljetråg": "Oil pan",
   "Multirem": "Serpentine belt",
