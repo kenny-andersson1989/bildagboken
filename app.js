@@ -4714,6 +4714,17 @@ function itemForecast(s, c) {
 }
 const forecastText = (f) => (f.d <= today0() ? "Redan nu" : `Runt ${MONTHS[f.d.getMonth()]} ${f.d.getFullYear()}`);
 
+// Bläddra tio i taget: pil vänster, "11–20 av 34", pil höger.
+const PAGE_SIZE = 10;
+function pager(act, page, total) {
+  const pages = Math.ceil(total / PAGE_SIZE);
+  if (pages < 2) return "";
+  const from = page * PAGE_SIZE + 1, to = Math.min(total, from + PAGE_SIZE - 1);
+  return `<div class="pager"><button class="pager-btn" type="button" data-act="${act}" data-d="-1" aria-label="Föregående"${page <= 0 ? " disabled" : ""}>${icon("back", 18)}</button>
+    <span>${esc(`${from}–${to} av ${total}`)}</span>
+    <button class="pager-btn" type="button" data-act="${act}" data-d="1" aria-label="Nästa"${page >= pages - 1 ? " disabled" : ""}>${icon("next", 18)}</button></div>`;
+}
+
 // Intervallet i text: "var 2 000 mil eller 1 år". Hela år skrivs i år, annars i månader.
 function monthsText(m) { return m % 12 === 0 ? `${m / 12} år` : `${m} mån`; }
 function intervalText(item) {
@@ -4785,18 +4796,17 @@ function viewCar() {
         const row = (s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon(partIcon(s.item.name, s.item.id), 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`;
         const nav = !S.maintOpen
           ? (all.length > 5 ? `<button class="link" type="button" data-act="maint-more" style="margin-top:10px">${esc(`Visa fler (${all.length - 5})`)}</button>` : "")
-          : `<div class="pg-pages maint-pages">${page > 0 ? `<button class="link" type="button" data-act="maint-page" data-d="-1">${icon("back", 14)} Föregående</button>` : "<span></span>"}
-              ${pages > 1 ? `<span class="hint">${esc(`${page * per + 1}–${Math.min(all.length, page * per + per)} av ${all.length}`)}</span>` : "<span></span>"}
-              ${page < pages - 1 ? `<button class="link" type="button" data-act="maint-page" data-d="1">${esc(`Nästa ${Math.min(per, all.length - (page + 1) * per)}`)} ${icon("next", 14)}</button>` : "<span></span>"}</div>
-             <button class="link" type="button" data-act="maint-less" style="margin-top:6px">Visa färre</button>`;
+          : `${pager("maint-page", page, all.length)}<button class="link" type="button" data-act="maint-less" style="margin-top:6px">Visa färre</button>`;
         return `<div class="rows">${shown.map(row).join("")}</div>${nav}`;
       })()}
       ${(() => {
         const extras = extraParts(c);
         if (!extras.length) return "";
-        const rows = extras.map((x) => `<button class="dl as-btn" type="button" data-act="open-part" data-id="${esc(x.key)}"><div class="dl-ic">${icon(partIcon(x.name), 20)}</div><div><div class="dl-t">${esc(x.name)}</div><div class="dl-s">${esc(`senast ${(WORK_ACTIONS[x.lastAction] || "Bytt").toLowerCase()} ${fmtDateShort(x.entries[0].date)}${x.entries.length > 1 ? ` · ${x.entries.length} gånger` : ""}`)}</div></div><span></span></button>`).join("");
-        return `${S.partsAll ? `<p class="label" style="margin:14px 0 2px">Annat som har gjorts</p><div class="rows">${rows}</div>` : ""}
-          <button class="link" type="button" data-act="toggle-parts" style="margin-top:10px">${S.partsAll ? "Visa färre" : `Visa ${extras.length} till`}</button>`;
+        const rows = extras.map((x) => `<button class="dl as-btn" type="button" data-act="open-part" data-id="${esc(x.key)}"><div class="dl-ic">${icon(partIcon(x.name), 20)}</div><div><div class="dl-t">${esc(x.name)}</div><div class="dl-s">${esc(`senast ${(WORK_ACTIONS[x.lastAction] || "Bytt").toLowerCase()} ${fmtDateShort(x.entries[0].date)}${x.entries.length > 1 ? ` · ${x.entries.length} gånger` : ""}`)}</div></div><span></span></button>`);
+        const pg = Math.min(S.partsPage || 0, Math.ceil(extras.length / PAGE_SIZE) - 1);
+        const shownRows = rows.slice(pg * PAGE_SIZE, pg * PAGE_SIZE + PAGE_SIZE).join("");
+        return `${S.partsAll ? `<p class="label" style="margin:14px 0 2px">Annat som har gjorts</p><div class="rows">${shownRows}</div>${pager("parts-page", pg, extras.length)}` : ""}
+          <button class="link" type="button" data-act="toggle-parts" style="margin-top:10px">${S.partsAll ? "Visa färre" : `Annat som har gjorts (${extras.length})`}</button>`;
       })()}
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
@@ -8565,10 +8575,11 @@ const ACTIONS = {
     sb.hidden = false; if (ob) ob.hidden = true;
     $("#w-search")?.focus();
   },
-  "toggle-parts"() { S.partsAll = !S.partsAll; render(); },
+  "toggle-parts"() { S.partsAll = !S.partsAll; S.partsPage = 0; render(); },
+  "parts-page"(el) { S.partsPage = Math.max(0, (S.partsPage || 0) + Number(el.dataset.d)); render(); },
   "maint-more"() { S.maintOpen = true; S.maintPage = 0; render(); },
   "maint-less"() { S.maintOpen = false; S.maintPage = 0; render(); document.getElementById("underhall")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
-  "maint-page"(el) { S.maintPage = Math.max(0, (S.maintPage || 0) + Number(el.dataset.d)); render(); document.getElementById("underhall")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
+  "maint-page"(el) { S.maintPage = Math.max(0, (S.maintPage || 0) + Number(el.dataset.d)); render(); },
   "open-part"(el) { partSheet(el.dataset.id); },
   "log-part"(el) { entryForm("service", { parts: [el.dataset.id] }, { back: "open-part", backId: normWord(el.dataset.id) }); },
   "part-to-item"(el) {

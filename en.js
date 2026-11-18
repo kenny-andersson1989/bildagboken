@@ -1736,6 +1736,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Annat som har gjorts \((\d+)\)$/, "Other work done ($1)"],
   [/^Visa fler \((\d+)\)$/, "Show more ($1)"],
   [/^Nästa (\d+)$/, "Next $1"],
   [/^(\d+)–(\d+) av (\d+)$/, "$1–$2 of $3"],
