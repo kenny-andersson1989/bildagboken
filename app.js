@@ -13,6 +13,7 @@ import {
 import { firebaseConfig } from "./firebase-config.js";
 import { MAPKIT_TOKEN } from "./maps-config.js";
 import { CAR_MODELS } from "./car-models.js";
+import { PARTS } from "./parts.js";
 
 const VERSION = "2.8";
 
@@ -146,58 +147,40 @@ const daysText = (d) => {
   return m >= 18 ? `${fmt(m / 12, 1)} år` : `${m} mån`;
 };
 // I Glenns teman används symbolerna i pixelstil (px-), annars de vanliga (i-).
+const normWord = (t) => String(t || "").toLowerCase().replace(/é/g, "e").trim();
 // Saknas en pixelvariant (till exempel delarnas ikoner) används pixelskiftnyckeln.
 const icon = (name, size = 22) => {
   const px = document.documentElement.dataset.garage && (document.getElementById(`px-${name}`) ? name : "wrench");
   return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#${px ? `px-${px}` : `i-${name}`}"/></svg>`;
 };
 
-// Ikon för en underhållspunkt eller en del. Först punktens id, sedan ord i namnet.
-// Ordningen spelar roll: de mer specifika orden står före de allmänna (till exempel "filter").
-const PART_ICON_IDS = { olja: "olja", luftfilter: "luftfilter", kupefilter: "kupefilter", tandstift: "tandstift", bromsvatska: "bromsvatska", torkare: "torkare", ac: "ac", batteri: "batteri", kamrem: "rem" };
-const PART_ICON_WORDS = [
-  [/motorolja|oljefilter|oljebyte|^olja/, "olja"],
-  [/luftfilter/, "luftfilter"],
-  [/kupefilter|pollenfilter/, "kupefilter"],
-  [/tändstift/, "tandstift"],
-  [/bromsvätska|bromsolja/, "bromsvatska"],
-  [/bromsklots|bromsbelägg/, "bromsklotsar"],
-  [/bromsskiv/, "bromsskiva"],
-  [/\babs\b/, "abs"],
-  [/spolarvätska|spolar/, "spolarvatska"],
-  [/torkar/, "torkare"],
-  [/klimat/, "klimat"],
-  [/^ac\b|ac-|luftkonditionering/, "ac"],
-  [/batteri/, "batteri"],
-  [/remspänn|spännrulle|remsträckare/, "remspannare"],
-  [/brytrulle|styrrulle|överföringsrulle/, "brytrulle"],
-  [/rem\b|remmen|remsats/, "rem"],
-  [/fjäder|fjädrar/, "fjader"],
-  [/länkarm|bärarm|triangelarm/, "lankarm"],
-  [/hjullager/, "hjullager"],
-  [/lager/, "rullager"],
-  [/generator/, "generator"],
-  [/ledningsmatta|kabelstam|kablage/, "ledningsmatta"],
-  [/stötfångare/, "stotfangare"],
-  [/hjulskifte|däckbyte|däckskifte/, "hjulskifte"],
-  [/balanser/, "balansering"],
-  [/hjulbult|hjulmutter|bult/, "hjulbult"],
-  [/lampa|lykta|strålkastare|blinkers/, "lampa"],
-  [/hjulinställning|hjulvinkel/, "hjulinstallning"],
-  [/parkering/, "parking"],
-  [/lack/, "lack"],
-  [/filter/, "filter"],
-  [/krankhammare|motor/, "motor"],
-];
+// Ikon för en underhållspunkt eller en del. Först punktens id, sedan delkatalogen i parts.js:
+// den del vars ord (namn eller alias) är längst och finns i namnet vinner. Inget träffar: skiftnyckeln.
+const PART_ICON_IDS = { olja: "p-olja", luftfilter: "p-luftfilter", kupefilter: "p-kupefilter", tandstift: "p-tandstift", bromsvatska: "p-bromsvatska", torkare: "p-torkare", ac: "p-ac", batteri: "p-batteri", kamrem: "p-rem" };
+// Underhållspunkternas namn räknas också, så att till exempel "Tändstiftsats" får tändstiftets ikon.
+const PART_WORDS = [
+  ["motorolja", "p-olja"], ["luftfilter", "p-luftfilter"], ["kupefilter", "p-kupefilter"], ["tändstift", "p-tandstift"],
+  ["torkarblad", "p-torkare"], ["batteri", "p-batteri"], ["klimatanläggning", "p-klimat"],
+  ...PARTS.flatMap((x) => [x.name, ...(x.alias || [])].map((w) => [w, x.icon])),
+].map(([w, ic]) => [normWord(w), ic]).sort((a, b) => b[0].length - a[0].length);
 function partIcon(name, id) {
-  if (id && PART_ICON_IDS[id]) return `p-${PART_ICON_IDS[id]}`;
+  if (id && PART_ICON_IDS[id]) return PART_ICON_IDS[id];
   const t = normWord(name);
-  if (/stötfångare/.test(t) && /hölje|kåpa/.test(t)) return "p-holje";
-  const hit = PART_ICON_WORDS.find(([re]) => re.test(t));
-  if (!hit) return "wrench";
-  return hit[1] === "parking" ? "parking" : `p-${hit[1]}`;
+  return PART_WORDS.find(([w]) => t.includes(w))?.[1] || "wrench";
 }
-// Symbolerna som står direkt i index.html (menyn) byts när temat byts.
+// Delar i katalogen som passar det man skrivit: namn som börjar med texten först, sedan namn som innehåller den,
+// sedan delar där ett annat ord för delen passar (skriver man "belägg" föreslås Bromsklotsar).
+function catalogMatches(q) {
+  const t = normWord(q);
+  if (t.length < 2) return [];
+  const score = (x) => {
+    const n = normWord(x.name);
+    if (n.startsWith(t)) return 0;
+    if (n.includes(t)) return 1;
+    return (x.alias || []).some((a) => normWord(a).startsWith(t) || (t.length >= 4 && t.includes(normWord(a)))) ? 2 : 9;
+  };
+  return PARTS.map((x) => [score(x), x]).filter(([sc]) => sc < 9).sort((a, b) => a[0] - b[0]).map(([, x]) => x);
+}// Symbolerna som står direkt i index.html (menyn) byts när temat byts.
 function swapIcons(root = document) {
   const px = !!document.documentElement.dataset.garage;
   root.querySelectorAll("use").forEach((u) => {
@@ -862,7 +845,6 @@ const ITEM_WORDS = {
   torkare: ["torkarblad", "torkarbladen", "torkare", "torkarna"],
   kamrem: ["kamrem", "kamremmen", "kamremssats"],
 };
-const normWord = (t) => String(t || "").toLowerCase().replace(/é/g, "e").trim();
 
 // Räknas posten som ett byte av punkten? Antingen ikryssad, eller skriven i "Annat som byttes"
 // (som hela ord, så att till exempel "växellådsolja" inte räknas som motorolja).
@@ -6878,11 +6860,17 @@ function workSuggest(q) {
   // Det man skrivit går alltid att lägga till som egen del, utom när det är exakt samma namn som något som redan finns.
   const exact = known.some((x) => x.key === t) || (itemHit && normWord(itemHit.name) === t) || present.has(t);
   const itemThere = itemHit && present.has(`item:${itemHit.id}`);
+  // Vanliga delar ur katalogen som inte redan är använda, tillagda eller samma som en underhållspunkt.
+  const taken = new Set([...present, ...known.map((x) => x.key), ...extraParts(c).map((x) => x.key), ...(c.items || []).map((i) => normWord(i.name))]);
+  const common = catalogMatches(q).filter((x) => !taken.has(normWord(x.name)) && !(c.items || []).some((i) => nameMatchesItem(x.name, i))).slice(0, Math.max(0, 6 - known.length));
+  const exactAll = exact || common.some((x) => normWord(x.name) === t);
+  const sug = (ic, title, sub, attrs) => `<button type="button" class="sg-ic" data-act="w-add" ${attrs}><span class="sg-i">${icon(ic, 18)}</span><span class="sg-t"><b>${title}</b><span>${sub}</span></span></button>`;
   box.innerHTML = [
-    ...known.map((x) => `<button type="button" data-act="w-add" data-name="${esc(x.name)}"><b>${esc(x.name)}</b><span>Använd förut</span></button>`),
-    itemHit && !itemThere ? `<button type="button" data-act="w-add" data-item="${esc(itemHit.id)}" data-name="${esc(itemHit.name)}"><b>${esc(itemHit.name)}</b><span>Underhållspunkt</span></button>` : "",
+    ...known.map((x) => sug(partIcon(x.name), esc(x.name), "Använd förut", `data-name="${esc(x.name)}"`)),
+    itemHit && !itemThere ? sug(partIcon(itemHit.name, itemHit.id), esc(itemHit.name), "Underhållspunkt", `data-item="${esc(itemHit.id)}" data-name="${esc(itemHit.name)}"`) : "",
+    ...common.map((x) => sug(x.icon, esc(x.name), "Vanlig del", `data-name="${esc(x.name)}"`)),
     itemThere ? `<p class="hint">${esc(itemHit.name)} finns redan i listan ovanför.</p>` : "",
-    !exact ? `<button type="button" data-act="w-add" data-name="${esc(q.trim().replace(/^./, (x) => x.toUpperCase()))}"><b>Lägg till ”${esc(q.trim())}”</b><span>Ny del</span></button>` : "",
+    !exactAll ? sug(partIcon(q), `Lägg till ”${esc(q.trim())}”`, "Ny del", `data-name="${esc(q.trim().replace(/^./, (x) => x.toUpperCase()))}"`) : "",
   ].join("");
   box.hidden = !box.innerHTML;
 }
