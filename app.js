@@ -156,7 +156,7 @@ const icon = (name, size = 22) => {
 
 // Ikon för en underhållspunkt eller en del. Först punktens id, sedan delkatalogen i parts.js:
 // den del vars ord (namn eller alias) är längst och finns i namnet vinner. Inget träffar: skiftnyckeln.
-const PART_ICON_IDS = { olja: "p-olja", luftfilter: "p-luftfilter", kupefilter: "p-kupefilter", tandstift: "p-tandstift", bromsvatska: "p-bromsvatska", torkare: "p-torkare", ac: "p-ac", batteri: "p-batteri", kamrem: "p-rem" };
+const PART_ICON_IDS = { olja: "p-olja", luftfilter: "p-luftfilter", kupefilter: "p-kupefilter", tandstift: "p-tandstift", bromsvatska: "p-bromsvatska", torkare: "p-torkare", ac: "p-ac", batteri: "p-batteri", kamrem: "p-kamrem" };
 // Underhållspunkternas namn räknas också, så att till exempel "Tändstiftsats" får tändstiftets ikon.
 const PART_WORDS = [
   ["motorolja", "p-olja"], ["luftfilter", "p-luftfilter"], ["kupefilter", "p-kupefilter"], ["tändstift", "p-tandstift"],
