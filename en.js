@@ -1736,6 +1736,9 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Visa fler \((\d+)\)$/, "Show more ($1)"],
+  [/^Nästa (\d+)$/, "Next $1"],
+  [/^(\d+)–(\d+) av (\d+)$/, "$1–$2 of $3"],
   [/^(\d+) (post|poster) · dela eller spara som PDF$/, (m, n) => `${n} ${n === "1" ? "entry" : "entries"} · share or save as PDF`],
   [/^Gränsen för körkort (\S+)\. Bilen orkar (.+) kg\.$/, "The limit for licence $1. The car can tow $2 kg."],
   [/^Utan egna bromsar högst (.+) kg\.$/, "Without its own brakes, max $1 kg."],
