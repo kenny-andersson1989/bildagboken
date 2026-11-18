@@ -4797,7 +4797,10 @@ function viewCar() {
         const all = [...items.map(row), ...extras.map(extraRow)];
         if (!all.length) return `<div class="rows"><p class="muted">Inga punkter. Lägg till under Ändra.</p></div>`;
         const pages = Math.ceil(all.length / MAINT_PAGE), page = Math.min(S.maintPage || 0, pages - 1);
-        return `<div class="rows">${all.slice(page * MAINT_PAGE, page * MAINT_PAGE + MAINT_PAGE).join("")}</div>${pager("maint-page", page, all.length, MAINT_PAGE)}`;
+        // Alla rader är lika höga, och sista sidan fylls ut, så att pilarna står still när man bläddrar.
+        const shown = all.slice(page * MAINT_PAGE, page * MAINT_PAGE + MAINT_PAGE);
+        const pad = pages > 1 ? MAINT_PAGE - shown.length : 0;
+        return `<div class="rows maint-rows">${shown.join("")}${'<div class="dl maint-pad" aria-hidden="true"></div>'.repeat(pad)}</div>${pager("maint-page", page, all.length, MAINT_PAGE)}`;
       })()}
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
