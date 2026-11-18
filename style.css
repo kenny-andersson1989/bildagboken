@@ -1997,3 +1997,34 @@ body.car-locked .fab { display: none; }
 .trip-ends i { flex: none; width: 10px; height: 10px; border-radius: 50%; }
 .trip-ends .te-a { background: #2f9e5b; }
 .trip-ends .te-b { background: #E77026; }
+
+/* Körjournalen: Bluetooth, felsökning, arbetstider */
+.auto-sub { margin: 12px 0 4px; padding-top: 12px; border-top: 1px solid var(--line); }
+.auto-sub > b { font: 600 15px var(--f-body); }
+.bt-new { margin: 8px 0; padding: 10px 12px; border-radius: 14px; background: var(--accent-soft); color: var(--ink); font: 500 13.5px var(--f-body); }
+.bt-new .review-btns { margin-top: 8px; flex-wrap: wrap; }
+.steps { margin: 6px 0 8px; padding-left: 20px; font: 400 14px/1.45 var(--f-body); color: var(--ink-2); }
+.steps li { margin: 4px 0; }
+.auto-log-list { list-style: none; margin: 8px 0; padding: 0; font: 400 13px/1.4 var(--f-body); color: var(--ink-2); }
+.auto-log-list li { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.auto-log-list li span { flex: none; min-width: 74px; color: var(--ink-3, var(--ink-2)); font-variant-numeric: tabular-nums; }
+.work-hours { margin: 4px 0 10px; }
+.day-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.day-chips .chip-btn { min-width: 46px; justify-content: center; }
+/* Svep en resa att gå igenom */
+.swipe-wrap { position: relative; overflow: hidden; border-radius: 14px; }
+.swipe-wrap .swipe-row { position: relative; touch-action: pan-y; }
+.swipe-wrap.sw-right .swipe-row, .swipe-wrap.sw-left .swipe-row { background: var(--ground); }
+.sw-bg { position: absolute; inset: 0; display: none; align-items: center; padding: 0 18px; font: 700 14px var(--f-body); color: #fff; }
+.sw-work { background: #2f9e5b; justify-content: flex-start; }
+.sw-priv { background: var(--accent); justify-content: flex-end; }
+.swipe-wrap.sw-right .sw-work, .swipe-wrap.sw-left .sw-priv { display: flex; }
+.swipe-wrap.sw-armed .sw-bg { filter: brightness(1.08); }
+/* Slå ihop och dela */
+.trip-tools { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.trip-tools .btn { flex: 1 1 140px; }
+.auto-sub .rows + .ios-switch-row, .auto-sub .bt-new + .ios-switch-row { margin-top: 12px; }
+.auto-sub > details.more { margin-top: 6px; }
+.trip-settings .auto-log { margin: 0 0 10px; }
+.trip-settings .work-sub { margin-bottom: 12px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.trip-settings .work-sub .auto-row { padding-bottom: 6px; }

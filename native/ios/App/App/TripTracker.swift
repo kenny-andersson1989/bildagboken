@@ -5,6 +5,8 @@
 //    inget batteri, och iOS väcker appen i bakgrunden när telefonen har flyttat sig.
 //    Där bilen parkerades bevakas också ett område på 150 meter, så att appen väcks direkt när bilen kör iväg.
 // 2. Då slås noggrann GPS på en stund. Går det fortare än 18 km/h räknas det som en resa, och vägen mäts.
+//    iOS meddelar också när man lämnar ett ställe man har varit på en stund (besök), och en genväg
+//    ("När bilen ansluts" i appen Genvägar) kan starta mätningen direkt när telefonen kopplas till bilen.
 //    Resan räknas från där bilen stod parkerad, inte från där GPS:en hann vakna, så att början inte försvinner.
 // 3. När bilen har stått still i fyra minuter är resan slut. Den sparas i telefonen och GPS:en stängs av.
 // 4. Webbappen hämtar de sparade resorna (TripTracker.trips) och lägger in dem i körjournalen.
@@ -16,6 +18,8 @@ import CoreLocation
 import Capacitor
 import ActivityKit
 import UIKit
+import AVFoundation
+import AppIntents
 
 final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotificationCenterDelegate, NotificationHandlerProtocol {
     static let shared = TripTracker()
@@ -29,6 +33,11 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     private let langKey = "autoTrips.lang"
     private let parkedKey = "autoTrips.parked"  // där senaste resan slutade: lat, lon, time
     private let parkedRegion = "bildagboken.parked"
+    private let logKey = "autoTrips.log"        // senaste händelserna, för felsökning i appen
+    private var path: [CLLocationCoordinate2D] = []  // vägen under resan, en punkt ungefär var 75:e meter
+    private var carName: String?                // bilens Bluetooth eller CarPlay under resan
+    private var carConnected = false            // genvägen "Bilen är ansluten" har körts
+    private var lastRouteCheck = Date.distantPast
     static let category = "AUTO_TRIP_DONE"
     static let manualKey = "autoTrips.manualSince"  // starttid (ms) för en resa man har startat själv i appen
     static let manualEndKey = "autoTrips.manualEnded"  // när den resan avslutades (ms)
@@ -76,10 +85,37 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         }
     }
 
-    // Anropas när appen startar, även när iOS startar den i bakgrunden för en platsändring.
-    func resumeIfEnabled() {
-        if enabled { startMonitoring() }
+    // Kort logg över vad som har hänt (väckt, resa startad, avbrutet), som visas under Felsökning i appen.
+    func log(_ text: String) {
+        var list = defaults.array(forKey: logKey) as? [[String: Any]] ?? []
+        list.append(["t": Date().timeIntervalSince1970 * 1000, "m": text])
+        if list.count > 40 { list.removeFirst(list.count - 40) }
+        defaults.set(list, forKey: logKey)
     }
+
+    // Anropas när appen startar, även när iOS startar den i bakgrunden för en platsändring.
+    func resumeIfEnabled(background: Bool = false) {
+        if enabled {
+            if background { log("Appen startades i bakgrunden av iOS") }
+            startMonitoring()
+        }
+    }
+
+    // Genvägen "Bilen är ansluten" (Bluetooth eller CarPlay): titta noga direkt, och längre än vanligt.
+    func carDidConnect() {
+        guard enabled else { return }
+        carConnected = true
+        log("Bilen ansluten (genväg)")
+        if watching { watchStarted = Date() } else { startWatching() }
+    }
+    // Genvägen "Bilen är frånkopplad": resan avslutas efter en kort stund stilla i stället för fyra minuter.
+    func carDidDisconnect() {
+        guard enabled else { return }
+        carConnected = false
+        log("Bilen frånkopplad (genväg)")
+        if driving { quickStop = true }
+    }
+    private var quickStop = false
 
     func enable() {
         defaults.set(true, forKey: enabledKey)
@@ -95,6 +131,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     func disable() {
         defaults.set(false, forKey: enabledKey)
         manager.stopMonitoringSignificantLocationChanges()
+        manager.stopMonitoringVisits()
         for r in manager.monitoredRegions where r.identifier == parkedRegion { manager.stopMonitoring(for: r) }
         stopWatching()
         resetTrip()
@@ -103,7 +140,8 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     private func startMonitoring() {
         guard CLLocationManager.significantLocationChangeMonitoringAvailable() else { return }
         manager.startMonitoringSignificantLocationChanges()
-        if let p = parked { watchParked(p) }
+        manager.startMonitoringVisits()
+        if let p = parked { watchParked(p) } else if let here = manager.location { watchParked(here) }
     }
 
     // Där bilen står parkerad. Används som resans start, och ett område runt den väcker appen när bilen kör iväg.
@@ -128,6 +166,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
 
     private func startWatching() {
         guard !watching else { return }
+        log("GPS på, letar efter en bilresa")
         watching = true
         watchStarted = Date()
         manager.startUpdatingLocation()
@@ -141,6 +180,9 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
 
     private func resetTrip() {
         driving = false
+        quickStop = false
+        path = []
+        carName = nil
         startTime = nil
         startLoc = nil
         lastLoc = nil
@@ -164,6 +206,14 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     // Telefonen har lämnat parkeringen: titta noga direkt, i stället för att vänta på nästa platsändring.
     func locationManager(_ m: CLLocationManager, didExitRegion region: CLRegion) {
         guard enabled, region.identifier == parkedRegion else { return }
+        log("Lämnade parkeringen")
+        startWatching()
+    }
+
+    // Ett besök är slut (man har lämnat ett ställe där man har varit en stund): kanske på väg att köra.
+    func locationManager(_ m: CLLocationManager, didVisit visit: CLVisit) {
+        guard enabled, visit.departureDate != .distantFuture else { return }
+        log("Lämnade ett besök")
         startWatching()
     }
 
@@ -198,8 +248,14 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
                     }
                 }
                 lastMove = now
-            } else if now.timeIntervalSince(watchStarted) > giveUpAfter {
+                path = [startLoc?.coordinate ?? loc.coordinate, loc.coordinate]
+                checkCar(force: true)
+                log("Resa startad")
+            } else if now.timeIntervalSince(watchStarted) > (carConnected ? 900 : giveUpAfter) {
+                log("Ingen bilresa, GPS av")
                 stopWatching()
+                // Ett nytt område där telefonen är nu, så att appen väcks igen så fort den flyttar sig.
+                watchParked(loc)
             }
             lastLoc = loc
             return
@@ -209,17 +265,50 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
             let d = loc.distance(from: prev)
             // Små hopp när bilen står still är GPS-brus och räknas inte.
             if d >= 10 || speed > 1.5 { meters += d; lastLoc = loc }
+            if let last = path.last, CLLocation(latitude: last.latitude, longitude: last.longitude).distance(from: loc) >= 75, path.count < 3000 {
+                path.append(loc.coordinate)
+            }
         } else {
             lastLoc = loc
         }
         if speed > 1.5 { lastMove = now }
-        if now.timeIntervalSince(lastMove) > stopAfter { finishTrip(end: lastLoc ?? loc) }
+        checkCar(force: false)
+        if now.timeIntervalSince(lastMove) > (quickStop ? 45 : stopAfter) { finishTrip(end: lastLoc ?? loc) }
+    }
+
+    // Bilens Bluetooth eller CarPlay, om telefonen är kopplad till den. Kollas högst var 30:e sekund.
+    private func checkCar(force: Bool) {
+        guard force || Date().timeIntervalSince(lastRouteCheck) > 30 else { return }
+        lastRouteCheck = Date()
+        let kinds: [AVAudioSession.Port] = [.carAudio, .bluetoothA2DP, .bluetoothHFP, .bluetoothLE]
+        if let out = AVAudioSession.sharedInstance().currentRoute.outputs.first(where: { kinds.contains($0.portType) }) {
+            carName = out.portType == .carAudio ? "CarPlay: \(out.portName)" : out.portName
+        }
+    }
+
+    // Vägen som en kort textsträng (samma format som Google använder för linjer på kartor).
+    private func encodePath(_ pts: [CLLocationCoordinate2D]) -> String {
+        var out = "", pLat = 0, pLon = 0
+        func enc(_ v: Int) {
+            var x = v < 0 ? ~(v << 1) : (v << 1)
+            while x >= 0x20 { out.append(Character(UnicodeScalar(UInt8((0x20 | (x & 0x1f)) + 63)))); x >>= 5 }
+            out.append(Character(UnicodeScalar(UInt8(x + 63))))
+        }
+        for c in pts {
+            let lat = Int((c.latitude * 1e5).rounded()), lon = Int((c.longitude * 1e5).rounded())
+            enc(lat - pLat); enc(lon - pLon); pLat = lat; pLon = lon
+        }
+        return out
     }
 
     private func finishTrip(end: CLLocation) {
         defer { resetTrip(); stopWatching(); setParked(end) }
-        guard let start = startTime, let from = startLoc, meters >= minMeters else { return }
-        let trip: [String: Any] = [
+        guard let start = startTime, let from = startLoc, meters >= minMeters else {
+            log("Kort förflyttning, sparas inte (\(Int(meters)) m)")
+            return
+        }
+        log("Resa klar, \(Int(meters / 100) / 10) km")
+        var trip: [String: Any] = [
             "id": UUID().uuidString,
             "start": start.timeIntervalSince1970 * 1000,
             "end": lastMove.timeIntervalSince1970 * 1000,
@@ -227,13 +316,18 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
             "endLat": end.coordinate.latitude, "endLon": end.coordinate.longitude,
             "meters": meters.rounded(),
         ]
+        var pts = path
+        if let lastPt = pts.last, CLLocation(latitude: lastPt.latitude, longitude: lastPt.longitude).distance(from: end) > 5 { pts.append(end.coordinate) }
+        if pts.count >= 2 { trip["path"] = encodePath(pts) }
+        if let car = carName { trip["car"] = car }
         var list = defaults.array(forKey: tripsKey) as? [[String: Any]] ?? []
         list.append(trip)
         if list.count > 300 { list.removeFirst(list.count - 300) }
         defaults.set(list, forKey: tripsKey)
         // Pågår en resa som man har startat själv sparas GPS-punkterna till den, men ingen notis skickas.
         // Även om den nyss avslutades: bilen står ofta still några minuter innan GPS-resan räknas som slut.
-        if let since = defaults.object(forKey: TripTracker.manualKey) as? Double, since <= lastMove.timeIntervalSince1970 * 1000 { return }
+        if let since = defaults.object(forKey: TripTracker.manualKey) as? Double, since <= lastMove.timeIntervalSince1970 * 1000,
+           lastMove.timeIntervalSince1970 * 1000 - since < 12 * 3600 * 1000 { return }
         if let ended = defaults.object(forKey: TripTracker.manualEndKey) as? Double, ended >= start.timeIntervalSince1970 * 1000 { return }
         notify(trip)
     }
@@ -353,6 +447,13 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         defaults.set(kinds, forKey: kindsKey)
     }
 
+    // Bilens Bluetooth eller CarPlay just nu, så att appen kan erbjuda att koppla den till en bil.
+    func currentCarRoute() -> String? {
+        let kinds: [AVAudioSession.Port] = [.carAudio, .bluetoothA2DP, .bluetoothHFP, .bluetoothLE]
+        guard let out = AVAudioSession.sharedInstance().currentRoute.outputs.first(where: { kinds.contains($0.portType) }) else { return nil }
+        return out.portType == .carAudio ? "CarPlay: \(out.portName)" : out.portName
+    }
+
     func status() -> [String: Any] {
         let auth: String
         switch manager.authorizationStatus {
@@ -367,6 +468,9 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
             r["since"] = s.timeIntervalSince1970 * 1000
             r["meters"] = meters.rounded()
         }
+        r["watching"] = watching
+        r["log"] = defaults.array(forKey: logKey) as? [[String: Any]] ?? []
+        if let name = currentCarRoute() { r["carNow"] = name }
         return r
     }
 }
@@ -519,5 +623,34 @@ public class TripActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             call.resolve(["supported": true])
         }
+    }
+}
+
+
+// MARK: - Genvägar: "Bilen är ansluten" och "Bilen är frånkopplad"
+// Syns i appen Genvägar. Med en automation (När Bluetooth/CarPlay ansluts → Bilen är ansluten) startar
+// mätningen direkt när man sätter sig i bilen, och resan sparas med bilens namn.
+
+@available(iOS 16.0, *)
+struct CarConnectedIntent: AppIntent {
+    static var title: LocalizedStringResource = "Bilen är ansluten"
+    static var description = IntentDescription("Startar den automatiska körjournalen direkt. Använd i en automation när telefonen ansluts till bilens Bluetooth eller CarPlay.")
+    static var openAppWhenRun: Bool = false
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        TripTracker.shared.carDidConnect()
+        return .result()
+    }
+}
+
+@available(iOS 16.0, *)
+struct CarDisconnectedIntent: AppIntent {
+    static var title: LocalizedStringResource = "Bilen är frånkopplad"
+    static var description = IntentDescription("Avslutar en pågående automatisk resa snabbare. Använd i en automation när telefonen kopplas från bilen.")
+    static var openAppWhenRun: Bool = false
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        TripTracker.shared.carDidDisconnect()
+        return .result()
     }
 }

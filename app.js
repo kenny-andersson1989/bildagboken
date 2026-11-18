@@ -4293,7 +4293,20 @@ function cardsSettingsCard(view = "oversikt") {
 
 // "Uppdaterad för 3 veckor sedan" under mätarställningen. Orange efter en månad.
 // Påminnelse när mätarställningen inte har uppdaterats på en månad, så att underhållet räknas rätt.
+// Senaste mätarställningen som är avläst (inte beräknad från GPS-resor).
+function realOdoEntry(carId) {
+  const saved = S.trips;
+  S.trips = saved.filter((t) => !t.odoEstimated);
+  try { return latestOdoEntry(carId); } finally { S.trips = saved; }
+}
 function odoReminder(c) {
+  // Med automatisk körjournal räknas mätaren fram från GPS-sträckorna. En gång i månaden: läs av den riktiga.
+  const est = S.trips.filter((t) => t.carId === c.id && t.odoEstimated && t.odoEnd != null);
+  const real = est.length ? realOdoEntry(c.id) : null;
+  if (est.length && real?.date && -daysUntil(parseDate(real.date)) >= 30) {
+    const since = est.filter((t) => (t.date || "") >= real.date);
+    if (since.length) return [{ icon: "gauge", title: "Läs av mätaren", sub: `GPS-resorna har räknat fram ${fmt(since.reduce((a, t) => a + (tripMil(t) || 0), 0), 1)} mil sedan ${fmtDateShort(real.date)}. Med en riktig mätarställning stämmer körjournalen.`, level: "soon", label: "Läs av", act: "new-entry", type: "matare", always: true, days: 0 }];
+  }
   const last = latestOdoEntry(c.id);
   if (!last?.date) return [];
   const ago = -daysUntil(parseDate(last.date));
@@ -5560,9 +5573,41 @@ const editedText = (t) => { const e = t.edits?.at(-1); return e ? `Ändrad ${fmt
 const clock = (ms) => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
 
+// Svep en resa att gå igenom: höger blir Tjänst, vänster Privat. Ett kort svep glider tillbaka.
+(() => {
+  let row = null, x0 = 0, y0 = 0, dx = 0, lock = null;
+  document.addEventListener("touchstart", (ev) => {
+    const r = ev.target.closest?.(".swipe-row");
+    if (!r || ev.target.closest("button")) return;
+    row = r; x0 = ev.touches[0].clientX; y0 = ev.touches[0].clientY; dx = 0; lock = null;
+    row.style.transition = "none";
+  }, { passive: true });
+  document.addEventListener("touchmove", (ev) => {
+    if (!row) return;
+    const mx = ev.touches[0].clientX - x0, my = ev.touches[0].clientY - y0;
+    if (lock == null && (Math.abs(mx) > 8 || Math.abs(my) > 8)) lock = Math.abs(mx) > Math.abs(my) ? "x" : "y";
+    if (lock !== "x") return;
+    dx = mx;
+    row.style.transform = `translateX(${dx}px)`;
+    row.parentElement.classList.toggle("sw-right", dx > 0);
+    row.parentElement.classList.toggle("sw-left", dx < 0);
+    row.parentElement.classList.toggle("sw-armed", Math.abs(dx) > 90);
+  }, { passive: true });
+  document.addEventListener("touchend", () => {
+    if (!row) return;
+    const r = row; row = null;
+    r.style.transition = "transform .2s ease";
+    if (lock === "x" && Math.abs(dx) > 90) {
+      r.style.transform = `translateX(${dx > 0 ? "110%" : "-110%"})`;
+      navigator.vibrate?.(10);
+      setTimeout(() => ACTIONS["trip-kind"]({ dataset: { id: r.dataset.id, kind: dx > 0 ? "tjanst" : "privat" } }), 180);
+    } else { r.style.transform = ""; r.parentElement.classList.remove("sw-right", "sw-left", "sw-armed"); }
+  });
+})();
+
 // Fliken Resor: allt som har med körjournalen att göra.
 // Tjänst och Privat för en automatisk resa. Det som de sparade platserna föreslår är markerat.
-const reviewBtns = (t) => `<div class="review-btns">${["tjanst", "privat"].map((k) => `<button class="btn-soft${t.suggestKind === k ? " sug" : ""}" type="button" data-act="trip-kind" data-id="${esc(t.id)}" data-kind="${k}">${k === "tjanst" ? "Tjänst" : "Privat"}</button>`).join("")}<button class="link" type="button" data-act="edit-trip" data-id="${esc(t.id)}">Mer</button></div>${t.suggestKind ? `<p class="hint sug-t">${esc(`Förslag: ${t.suggestKind === "tjanst" ? "Tjänst" : "Privat"}, från dina sparade platser`)}</p>` : ""}`;
+const reviewBtns = (t) => `<div class="review-btns">${["tjanst", "privat"].map((k) => `<button class="btn-soft${t.suggestKind === k ? " sug" : ""}" type="button" data-act="trip-kind" data-id="${esc(t.id)}" data-kind="${k}">${k === "tjanst" ? "Tjänst" : "Privat"}</button>`).join("")}<button class="link" type="button" data-act="edit-trip" data-id="${esc(t.id)}">Mer</button></div>${t.suggestKind ? `<p class="hint sug-t">${esc(`Förslag: ${t.suggestKind === "tjanst" ? "Tjänst" : "Privat"}, ${t.suggestFrom === "hours" ? "från dina arbetstider" : "från dina sparade platser"}`)}</p>` : ""}`;
 
 function viewTrips() {
   const c = car();
@@ -5582,8 +5627,9 @@ function viewTrips() {
           <span class="s">${esc([open.to ? `Mot ${open.to}` : "", `Startade ${clock(tsMs(open.startedAt))} vid ${fmt(open.odoStart, 1)} mil`].filter(Boolean).join(" · "))}</span>
           <div class="row"><button class="rz-stop" type="button" data-act="start-trip"><span class="tb-sq"></span> Avsluta</button>${open.to ? `<button class="rz-ghost" type="button" data-act="trip-nav">Vägbeskrivning</button>` : ""}</div></div>`
       : `<button class="rz-start" type="button" data-act="trip-start-now">${icon("gauge", 24)} Starta resa</button><button class="link rz-link" type="button" data-act="new-trip">Logga en resa i efterhand</button>`}</article>
-    ${review.length ? `<article class="card"><h2>${esc(`${review.length} ${review.length === 1 ? "resa" : "resor"} att gå igenom`)}</h2><div class="rows">${review.map((t) => `<div class="dl"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.from, t.to].filter(Boolean).join(" → ") || "Resa")}</div><div class="dl-s">${esc(`${fmtDateShort(t.date)} ${clock(tsMs(t.startedAt))}–${clock(tsMs(t.endedAt))} · ${fmt(tripMil(t), 1)} mil · GPS`)}</div>
-      ${reviewBtns(t)}</div></div>`).join("")}</div></article>` : ""}
+    ${review.length ? `<article class="card"><h2>${esc(`${review.length} ${review.length === 1 ? "resa" : "resor"} att gå igenom`)}</h2><div class="rows">${review.map((t) => `<div class="swipe-wrap"><span class="sw-bg sw-work">Tjänst</span><span class="sw-bg sw-priv">Privat</span><div class="dl swipe-row" data-id="${esc(t.id)}"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.from, t.to].filter(Boolean).join(" → ") || "Resa")}</div><div class="dl-s">${esc(`${fmtDateShort(t.date)} ${clock(tsMs(t.startedAt))}–${clock(tsMs(t.endedAt))} · ${fmt(tripMil(t), 1)} mil · GPS`)}</div>
+      ${reviewBtns(t)}</div></div></div>`).join("")}</div>
+      <p class="hint" style="margin-top:8px">Svep åt höger för Tjänst och åt vänster för Privat.</p></article>` : ""}
     ${gaps.length ? `<article class="card gap-card"><h2>${esc(gaps.length === 1 ? "En lucka i körjournalen" : `${gaps.length} luckor i körjournalen`)}</h2>
       <p class="muted" style="margin-top:0">Mätaren har gått längre mellan resorna än det som är loggat.</p>
       <div class="rows">${gaps.slice(0, 3).map((g) => `<div class="dl"><div class="dl-ic">${icon("gauge", 20)}</div><div><div class="dl-t">${esc(gapText(g))}</div><div class="dl-s">${esc(`Mätaren ${fmt(num(g.a.odoEnd), 1)} → ${fmt(num(g.b.odoStart), 1)} mil`)}</div>
@@ -5595,13 +5641,14 @@ function viewTrips() {
       <p class="hint" style="margin-top:10px">${esc(`Ersättningen räknas med ${MIL_RATE} kr per mil, Skatteverkets skattefria belopp för egen bil.`)}</p></article>
     <article class="card"><h2>Senaste resorna ${list.length ? `<button class="link" type="button" data-act="trips">Alla</button>` : ""}</h2>
       ${recent.length ? `<div class="rows">${recent.map(row).join("")}</div>` : `<p class="muted">Inga resor än. Tryck på Starta resa när du åker.</p>`}
-      ${list.length ? `<div class="ask"><button class="btn-soft" type="button" data-act="export-trips">Ladda ner som kalkylark</button></div>` : ""}</article>
+      ${list.length ? `<div class="ask"><button class="btn-soft" type="button" data-act="trip-year">${icon("print", 16)} Årsrapport (PDF)</button><button class="btn-soft" type="button" data-act="export-trips">Ladda ner som kalkylark</button></div>` : ""}</article>
     <article class="card"><h2>Sparade platser</h2>
       <p class="muted" style="margin-top:0">Resor som börjar eller slutar vid en sparad plats får platsens namn, och appen föreslår tjänst eller privat.</p>
       ${S.places.length ? `<div class="rows">${S.places.map((p) => `<button class="dl as-btn" type="button" data-act="edit-place" data-id="${esc(p.id)}"><div class="dl-ic">${icon("pin", 20)}</div><div><div class="dl-t">${esc(p.name)}</div><div class="dl-s">${esc([p.addr, p.kind ? PLACE_KINDS[p.kind] : ""].filter(Boolean).join(" · "))}</div></div></button>`).join("")}</div>` : ""}
       <div class="ask"><button class="btn-soft" type="button" data-act="new-place">${icon("plus", 16)} Lägg till plats</button></div></article>
     <article class="card trip-settings"><h2>Inställningar för körjournalen</h2>
       ${autoTripsHtml()}
+      ${workHoursHtml()}
       <button class="dl as-btn" type="button" data-act="trips-off"><span class="dl-ic">${icon("close", 18)}</span><span><span class="dl-t">Dölj fliken Resor</span><span class="dl-s">Resorna finns kvar. Slå på den igen under Inställningar → Bildagboken Plus.</span></span><span class="dl-v">›</span></button></article>`;
 }
 
@@ -5611,6 +5658,46 @@ function viewTrips() {
 const autoAvailable = () => NATIVE && !ANDROID && tripsOn();
 const tracker = () => nativePlugin("TripTracker");
 const toReview = (cid = S.carId) => S.trips.filter((t) => t.carId === cid && t.auto && !t.kind);
+
+// Mina inställningar för körjournalen (sparas på mig i hushållet): arbetstider och bara resor i mina bilar.
+const myInfo = () => S.house?.memberInfo?.[uid()] || {};
+const saveMyInfo = (k, v) => {
+  if (!S.house) return;
+  S.house.memberInfo = { ...(S.house.memberInfo || {}), [uid()]: { ...myInfo(), [k]: v } };
+  updateDoc(doc(db, "households", S.hid), { [`memberInfo.${uid()}.${k}`]: v }).catch(onWriteError);
+};
+/* Arbetstider: resor inom tiden föreslås som Tjänst, utanför som Privat (om ingen sparad plats säger något annat). */
+const WORK_DEFAULT = { on: false, days: [1, 2, 3, 4, 5], from: "07:00", to: "17:00" };
+const workHours = () => ({ ...WORK_DEFAULT, ...(myInfo().workHours || {}) });
+const hm = (t) => { const [h, m] = String(t || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+function kindFromHours(ms) {
+  const w = workHours();
+  if (!w.on || !ms) return null;
+  const d = new Date(ms), min = d.getHours() * 60 + d.getMinutes();
+  return w.days.includes(d.getDay()) && min >= hm(w.from) && min < hm(w.to) ? "tjanst" : "privat";
+}
+const WORK_DAYS = [[1, "Mån"], [2, "Tis"], [3, "Ons"], [4, "Tor"], [5, "Fre"], [6, "Lör"], [0, "Sön"]];
+
+// Vägen som telefonen mätte, som en kort textsträng (Googles format för linjer). Avkodas till [[lat, lon], ...].
+function decodePath(str) {
+  const out = [];
+  if (typeof str !== "string" || !str) return out;
+  let i = 0, lat = 0, lon = 0;
+  const next = () => { let r = 0, sh = 0, b; do { b = str.charCodeAt(i++) - 63; r |= (b & 0x1f) << sh; sh += 5; } while (b >= 0x20 && i < str.length); return r & 1 ? ~(r >> 1) : r >> 1; };
+  while (i < str.length) { lat += next(); lon += next(); out.push([lat / 1e5, lon / 1e5]); }
+  return out;
+}
+function encodePath(pts) {
+  let out = "", pLat = 0, pLon = 0;
+  const enc = (v) => { let x = v < 0 ? ~(v << 1) : v << 1; while (x >= 0x20) { out += String.fromCharCode((0x20 | (x & 0x1f)) + 63); x >>= 5; } out += String.fromCharCode(x + 63); };
+  for (const [a, b] of pts) { const la = Math.round(a * 1e5), lo = Math.round(b * 1e5); enc(la - pLat); enc(lo - pLon); pLat = la; pLon = lo; }
+  return out;
+}
+const pathLen = (pts) => pts.reduce((s2, p, i) => (i ? s2 + distM({ lat: pts[i - 1][0], lon: pts[i - 1][1] }, { lat: p[0], lon: p[1] }) : 0), 0);
+
+// Bilens Bluetooth eller CarPlay: kopplas till en bil, så att GPS-resor hamnar på rätt bil.
+const carByBt = (name) => (name ? S.cars.find((x) => !x.deletedAt && (x.btNames || []).includes(name)) || null : null);
+const btLabel = (name) => String(name || "").replace(/^CarPlay: /, "CarPlay · ");
 
 /* Sparade platser: Hem, Kontoret, Kund: Volvo och så vidare. En resa som börjar eller slutar inom 250 meter
    från en sparad plats får platsens namn. Är platsen markerad som tjänst eller privat föreslås det för resan. */
@@ -5672,8 +5759,65 @@ function autoTripsHtml() {
   else if (st.auth !== "always") fix = autoFix("Platsen behöver vara på Alltid", "Nu mäts resor bara när appen är öppen. Med Alltid mäts de även när telefonen ligger i fickan.", "Tillåt Alltid", "always");
   else if (st.precise === false) fix = autoFix("Exakt plats är avstängd", "Då blir sträckorna fel. Tryck nedan och slå på Exakt plats under Plats.", "Öppna inställningar", "settings");
   const ok = !fix ? `<div class="auto-ok">${icon("check", 16)} Resorna mäts i bakgrunden</div>` : "";
-  return `${sw}${fix}${ok}`;
+  return `${sw}${fix}${ok}${btHtml(st)}${autoLogHtml(st)}`;
 }
+
+// Bilens Bluetooth eller CarPlay: kopplade bilar, förslag att koppla den som telefonen är ansluten till nu,
+// och hur man gör en genväg som startar mätningen direkt när telefonen ansluts till bilen.
+function btHtml(st) {
+  const cars = S.cars.filter((x) => !x.deletedAt);
+  const linked = cars.flatMap((x) => (x.btNames || []).map((n) => [x, n]));
+  const seen = [st.carNow, ...S.trips.filter((t) => t.auto && t.btName).sort((a, b) => tsMs(b.startedAt) - tsMs(a.startedAt)).map((t) => t.btName)];
+  const fresh = [...new Set(seen.filter((n) => n && !carByBt(n)))].slice(0, 2);
+  const c = car();
+  return `<div class="auto-sub"><b>Bilens Bluetooth och CarPlay</b>
+    <p class="hint" style="margin:2px 0 8px">Kopplar du bilens Bluetooth eller CarPlay till en bil hamnar GPS-resorna på rätt bil.</p>
+    ${linked.length ? `<div class="rows">${linked.map(([x, n]) => `<div class="dl"><span class="dl-ic">${icon("car", 18)}</span><span><span class="dl-t">${esc(btLabel(n))}</span><span class="dl-s">${esc(carName(x))}</span></span><button class="link" type="button" data-act="bt-unlink" data-car="${esc(x.id)}" data-name="${esc(n)}">Ta bort</button></div>`).join("")}</div>` : ""}
+    ${fresh.map((n) => `<div class="bt-new"><span>${esc(`${n === st.carNow ? "Ansluten nu" : "Sedd under en resa"}: ${btLabel(n)}`)}</span>${cars.length > 1
+      ? `<div class="review-btns">${cars.map((x) => `<button class="btn-soft${x.id === c.id ? " sug" : ""}" type="button" data-act="bt-link" data-car="${esc(x.id)}" data-name="${esc(n)}">${esc(carName(x))}</button>`).join("")}</div>`
+      : `<div class="review-btns"><button class="btn-soft" type="button" data-act="bt-link" data-car="${esc(c.id)}" data-name="${esc(n)}">${esc(`Koppla till ${carName(c)}`)}</button></div>`}</div>`).join("")}
+    ${!linked.length && !fresh.length ? `<p class="hint" style="margin:0">Sätt dig i bilen med telefonen ansluten och öppna den här sidan, så kan du koppla den.</p>` : ""}
+    ${linked.length ? `<label class="ios-switch-row auto-row"><span><b>Bara resor i mina bilar</b><small>Resor utan någon av bilarna ovan sparas inte, till exempel med buss eller i någon annans bil. Kräver att telefonen ansluts till bilen varje gång.</small></span>
+      <input type="checkbox" class="ios-switch" data-act="bt-only"${myInfo().autoOnlyCars ? " checked" : ""} aria-label="Bara resor i mina bilar"></label>` : ""}
+    <details class="more"><summary>Starta direkt när du sätter dig i bilen</summary>
+      <p class="hint">Med en automation i appen Genvägar startar mätningen så fort telefonen ansluts till bilen, i stället för när du har kört en bit.</p>
+      <ol class="steps">
+        <li>Öppna appen <b>Genvägar</b> och tryck på <b>Automation</b> längst ned.</li>
+        <li>Tryck på <b>+</b> och välj <b>Bluetooth</b> (eller <b>CarPlay</b>).</li>
+        <li>Välj bilen, markera <b>Är ansluten</b> och <b>Kör omedelbart</b>. Tryck på <b>Nästa</b>.</li>
+        <li>Välj <b>Ny tom automation</b>, tryck på <b>Lägg till åtgärd</b>, sök på <b>Bildagboken</b> och välj <b>Bilen är ansluten</b>.</li>
+        <li>Gör gärna en till för <b>Är frånkopplad</b> med <b>Bilen är frånkopplad</b>. Då avslutas resan direkt när du stänger av bilen.</li>
+      </ol>
+      <p class="hint">Kräver den senaste versionen av appen.</p>
+    </details></div>`;
+}
+// Vad den automatiska körjournalen har gjort senast, för att se varför en resa inte kom med.
+const AUTO_LOG_EN = { "Appen startades i bakgrunden av iOS": "iOS started the app in the background", "GPS på, letar efter en bilresa": "GPS on, looking for a drive", "Ingen bilresa, GPS av": "No drive, GPS off", "Resa startad": "Trip started", "Lämnade parkeringen": "Left the parking spot", "Lämnade ett besök": "Left a place", "Bilen ansluten (genväg)": "Car connected (shortcut)", "Bilen frånkopplad (genväg)": "Car disconnected (shortcut)" };
+function autoLogHtml(st) {
+  const list = Array.isArray(st.log) ? st.log.slice().reverse() : null;
+  if (!list) return "";
+  const when = (ms) => { const d = new Date(ms); return `${ymd(d) === todayStr() ? "" : `${fmtDateShort(ymd(d))} `}${clock(ms)}`; };
+  return `<details class="more auto-log"><summary>Felsökning</summary>
+    ${list.length ? `<ul class="auto-log-list">${list.map((x) => `<li><span>${esc(when(x.t))}</span>${esc(EN ? AUTO_LOG_EN[x.m] || x.m : x.m)}</li>`).join("")}</ul>` : `<p class="hint">Inget har hänt än. Här syns när telefonen väcker appen, när en resa startar och varför en förflyttning inte sparades.</p>`}
+    <p class="hint">${esc(st.watching ? "GPS:en är på just nu." : "GPS:en är av och väntar på att telefonen ska flytta sig.")}</p></details>`;
+}
+function workHoursHtml() {
+  if (!tripsOn()) return "";
+  const w = workHours();
+  const days = WORK_DAYS.filter(([d]) => w.days.includes(d)).map(([, l]) => l.toLowerCase());
+  const daysTxt = days.length === 5 && !w.days.includes(0) && !w.days.includes(6) ? "mån–fre" : days.join(", ");
+  return `<div class="auto-sub work-sub"><label class="ios-switch-row auto-row"><span><b>Arbetstider</b><small>${esc(w.on ? `Resor ${daysTxt} ${w.from}–${w.to} föreslås som Tjänst, övriga som Privat. Sparade platser går före.` : "Resor under arbetstid föreslås som Tjänst, övriga som Privat.")}</small></span>
+    <input type="checkbox" class="ios-switch" data-act="work-toggle"${w.on ? " checked" : ""} aria-label="Arbetstider"></label>
+    ${w.on ? `<div class="work-hours"><div class="day-chips" role="group" aria-label="Arbetsdagar">${WORK_DAYS.map(([d, l]) => `<button type="button" class="chip-btn" data-act="work-day" data-d="${d}" aria-pressed="${w.days.includes(d)}">${l}</button>`).join("")}</div>
+      <div class="row2"><label class="field"><span>Från</span><input type="time" id="wh-from" value="${esc(w.from)}"></label><label class="field"><span>Till</span><input type="time" id="wh-to" value="${esc(w.to)}"></label></div></div>` : ""}</div>`;
+}
+document.addEventListener("change", (ev) => {
+  if (ev.target.id !== "wh-from" && ev.target.id !== "wh-to") return;
+  const from = $("#wh-from")?.value || WORK_DEFAULT.from, to = $("#wh-to")?.value || WORK_DEFAULT.to;
+  if (hm(to) <= hm(from)) { showToast("Sluttiden ska vara efter starttiden."); return; }
+  saveMyInfo("workHours", { ...workHours(), from, to });
+  render();
+});
 function autoFix(title, text, btn, mode) {
   return `<div class="auto-fix"><b>${esc(title)}</b><p>${esc(text)}</p><button class="btn primary" type="button" data-act="auto-allow" data-mode="${mode}">${esc(btn)}</button></div>`;
 }
@@ -5712,8 +5856,7 @@ async function importAutoTrips() {
       if (t || !list.some((r) => r.id === nid)) applied.push(nid);
     }
     if (!list.length) { if (applied.length) { await tracker().clear({ ids: applied }); render(); } return; }
-    const c = car();
-    let odo = odoOf(c);
+    const odoBy = new Map();
     const done = [...applied];
     for (const r of list) {
       const id = autoId(r.id);
@@ -5728,6 +5871,12 @@ async function importAutoTrips() {
         done.push(r.id);
         continue;
       }
+      // Rätt bil: den som bilens Bluetooth eller CarPlay är kopplad till, annars den som är vald.
+      const byBt = carByBt(r.car);
+      if (myInfo().autoOnlyCars && !byBt) { done.push(r.id); continue; }
+      const c = byBt || car();
+      if (!odoBy.has(c.id)) odoBy.set(c.id, odoOf(c));
+      let odo = odoBy.get(c.id);
       const mil = Math.round(r.meters / 1000) / 10;
       const startLoc = { lat: r.startLat, lon: r.startLon }, endLoc = { lat: r.endLat, lon: r.endLon };
       const pFrom = placeAt(startLoc), pTo = placeAt(endLoc);
@@ -5739,12 +5888,14 @@ async function importAutoTrips() {
         carId: c.id, date: ymd(new Date(r.start)), odoStart, odoEnd, auto: true, odoEstimated: true, autoMeters: r.meters,
         startLoc, endLoc,
         from: pFrom?.name || null, to: pTo?.name || null, purpose: null, kind, driver: uid(),
-        suggestKind: kind ? null : kindFromPlaces(pFrom, pTo), reviewedAt: kind ? Date.now() : null,
+        suggestKind: kind ? null : kindFromPlaces(pFrom, pTo) || kindFromHours(r.start), reviewedAt: kind ? Date.now() : null,
+        suggestFrom: kind ? null : kindFromPlaces(pFrom, pTo) ? "places" : kindFromHours(r.start) ? "hours" : null,
+        path: typeof r.path === "string" && r.path.length < 60000 ? r.path : null, btName: r.car || null,
         startedAt: r.start, endedAt: r.end, createdBy: uid(), createdAt: Date.now(),
       });
       await setDoc(doc(col("trips"), id), data);
       S.trips = [...S.trips, { id, ...data }];
-      if (odoEnd != null) odo = odoEnd;
+      if (odoEnd != null) odoBy.set(c.id, odoEnd);
       done.push(r.id);
       // Adresserna fylls i efteråt, en i taget (OpenStreetMap vill inte ha för många frågor på en gång).
       // Sparade platser har redan sina namn.
@@ -5828,7 +5979,7 @@ function tripForm(t = {}, mode = "new") {
   // Mätarställningen läses av i bilen varje gång. Senast kända står som ledtext, så att man ser om något verkar fel.
   const odoStart = t.odoStart;
   const lastOdo = odoOf(c);
-  const kind = t.kind || prev?.kind || "tjanst";
+  const kind = t.kind || (!t.id ? kindFromHours(Date.now()) : null) || prev?.kind || "tjanst";
   const title = mode === "start" ? "Starta resa" : mode === "end" ? "Avsluta resan" : t.id ? "Ändra resa" : "Resa";
   openSheet(title, `
     <form class="form" data-form="trip" data-mode="${mode}"${t.gap ? ` data-gap="1"` : ""} data-start="${odoStart ?? ""}"${t.id ? ` data-id="${esc(t.id)}"` : ""} novalidate>
@@ -5854,13 +6005,17 @@ function tripForm(t = {}, mode = "new") {
       </div>
       <p class="err" id="form-err" hidden></p>
       <button class="btn primary block" type="submit">${mode === "start" ? "Starta resan" : mode === "end" ? "Avsluta och spara" : "Spara"}</button>
+      ${mode === "new" && t.id && t.odoEnd != null ? (() => {
+        const nx = nextTripOf(t);
+        return `<div class="trip-tools">${nx ? `<button class="btn ghost" type="button" data-act="trip-merge" data-id="${esc(t.id)}">${esc(`Slå ihop med nästa (${clock(tsMs(nx.startedAt))})`)}</button>` : ""}${tripMil(t) >= 0.2 ? `<button class="btn ghost" type="button" data-act="trip-split" data-id="${esc(t.id)}">Dela resan</button>` : ""}</div>`;
+      })() : ""}
       ${t.id ? `<button class="btn danger block" type="button" data-act="delete-trip" data-id="${esc(t.id)}" style="margin-top:10px">Ta bort resan</button>` : ""}
       ${mode === "start" ? `<p class="hint">Fyll i mätarställningen när du kommer fram, under Bilen eller i plusmenyn.</p>` : ""}
       ${mode === "start" && S.autoStatus?.enabled ? `<p class="hint">Den automatiska körjournalen är på. Den sparar ingen egen resa för samma sträcka, den här gäller.</p>` : ""}
     </form>`, { back: t.id && mode === "new" ? "trips" : null });
   if (mode === "end" && !window.matchMedia("(pointer: coarse)").matches) $("#tr-odoEnd")?.focus({ preventScroll: true });
   if (mode === "end") suggestTripDistance(t);
-  if (mode === "new" && t.id && tripEnds(t)) tripMap($("#tr-map-inner"), ...tripEnds(t));
+  if (mode === "new" && t.id && tripEnds(t)) tripMap($("#tr-map-inner"), ...tripEnds(t), decodePath(t.path));
   if (mode === "start" && !t.from) fillTripFrom(false);
 }
 
@@ -6088,6 +6243,124 @@ async function saveTrip(form) {
   if (mode === "start" && !data.startLoc) freshTripPosition().then((loc) => { if (loc) { updateDoc(doc(col("trips"), id), { startLoc: loc }).catch(() => {}); const t = S.trips.find((x) => x.id === id); if (t) t.startLoc = loc; } });
   if (mode === "end" && !data.endLoc) freshTripPosition().then((loc) => { if (loc) { updateDoc(doc(col("trips"), id), { endLoc: loc }).catch(() => {}); const t = S.trips.find((x) => x.id === id); if (t) t.endLoc = loc; } });
   showToast(mode === "start" ? "Resan är startad" : `${old && mode === "new" ? "Resan är ändrad" : "Resan är sparad"}: ${fmt(tripMil({ odoStart, odoEnd }) ?? 0, 1)} mil`);
+}
+
+// Nästa resa med samma bil som startar inom 45 minuter efter att den här slutade.
+function nextTripOf(t) {
+  const end = tsMs(t.endedAt || t.startedAt);
+  if (!end) return null;
+  return S.trips.filter((x) => x.id !== t.id && x.carId === t.carId && x.odoEnd != null && tsMs(x.startedAt) >= end - 60000 && tsMs(x.startedAt) - end <= 45 * 60000)
+    .sort((a, b) => tsMs(a.startedAt) - tsMs(b.startedAt))[0] || null;
+}
+async function mergeTrips(a, b) {
+  const ok = await confirmDialog({ title: "Slå ihop resorna?", lines: [`${[a.from, a.to].filter(Boolean).join(" → ") || "Resan"} och ${[b.from, b.to].filter(Boolean).join(" → ") || "nästa resa"} blir en resa på ${fmt((num(b.odoEnd) - num(a.odoStart)) || 0, 1)} mil.`], okLabel: "Slå ihop", warn: "" });
+  if (!ok) return;
+  const pa = decodePath(a.path), pb = decodePath(b.path);
+  const data = clean({
+    odoEnd: b.odoEnd, to: b.to || null, toLoc: b.toLoc || null, endLoc: b.endLoc || null, endedAt: b.endedAt || null,
+    purpose: [a.purpose, b.purpose].filter(Boolean).filter((v, i, l) => l.indexOf(v) === i).join(", ") || null,
+    autoMeters: a.autoMeters != null && b.autoMeters != null ? a.autoMeters + b.autoMeters : null,
+    path: pa.length && pb.length ? encodePath([...pa, ...pb]) : null,
+    odoEstimated: a.odoEstimated && b.odoEstimated ? true : null,
+    edits: [...(a.edits || []), { at: Date.now(), by: uid(), changes: [`ihopslagen med resan ${clock(tsMs(b.startedAt))}`] }].slice(-20),
+  });
+  const gone = ["to", "toLoc", "endLoc", "purpose", "autoMeters", "path", "odoEstimated"].filter((k) => !(k in data));
+  const local = { ...a, ...data }; for (const k of gone) delete local[k];
+  await updateDoc(doc(col("trips"), a.id), { ...data, ...Object.fromEntries(gone.map((k) => [k, deleteField()])) }).catch(onWriteError);
+  await deleteDoc(doc(col("trips"), b.id)).catch(onWriteError);
+  S.trips = S.trips.filter((x) => x.id !== b.id).map((x) => (x.id === a.id ? local : x));
+  closeSheet(); render();
+  showToast("Resorna är ihopslagna");
+}
+function splitSheet(t) {
+  const mid = Math.round(((num(t.odoStart) + num(t.odoEnd)) / 2) * 10) / 10;
+  openSheet("Dela resan", `<form class="form" data-form="trip-split" data-id="${esc(t.id)}" novalidate>
+    <p class="muted" style="margin-top:0">${esc(`Resan går från ${fmt(t.odoStart, 1)} till ${fmt(t.odoEnd, 1)} mil. Den delas i två där du stannade.`)}</p>
+    ${field("Mätare där du stannade (mil)", `<input name="odo" id="sp-odo" inputmode="decimal" required value="${esc(String(mid).replace(".", ","))}">`)}
+    ${field("Var stannade du?", `<input name="place" id="sp-place" placeholder="Till exempel Macken eller Kunden" autocomplete="off">`)}
+    <p class="err" id="form-err" hidden></p>
+    <button class="btn primary block" type="submit">Dela i två resor</button></form>`, { back: "edit-trip", backId: t.id });
+}
+async function saveSplit(form) {
+  const t = S.trips.find((x) => x.id === form.dataset.id);
+  if (!t) return closeSheet();
+  const fd = new FormData(form);
+  const odo = num(fd.get("odo")), place = String(fd.get("place") || "").trim() || null;
+  if (odo == null || odo <= num(t.odoStart) || odo >= num(t.odoEnd)) return formError(`Skriv en mätarställning mellan ${fmt(t.odoStart, 1)} och ${fmt(t.odoEnd, 1)}.`);
+  const f = (odo - num(t.odoStart)) / (num(t.odoEnd) - num(t.odoStart));
+  const a0 = tsMs(t.startedAt), b0 = tsMs(t.endedAt || t.startedAt);
+  const at = a0 && b0 ? Math.round(a0 + (b0 - a0) * f) : null;
+  // Vägen delas där sträckan når samma andel.
+  const pts = decodePath(t.path);
+  let p1 = [], p2 = [], cut = null;
+  if (pts.length >= 2) {
+    const total = pathLen(pts); let acc = 0, i = 1;
+    for (; i < pts.length; i++) { acc += distM({ lat: pts[i - 1][0], lon: pts[i - 1][1] }, { lat: pts[i][0], lon: pts[i][1] }); if (acc >= total * f) break; }
+    p1 = pts.slice(0, i + 1); p2 = pts.slice(i); cut = { lat: pts[Math.min(i, pts.length - 1)][0], lon: pts[Math.min(i, pts.length - 1)][1] };
+  }
+  const placeLocV = placeLoc(place) || (cut ? { lat: cut.lat, lon: cut.lon } : null);
+  const id2 = "t" + randomId(10);
+  const second = clean({
+    ...Object.fromEntries(Object.entries(t).filter(([k]) => !["id", "edits", "startLoc", "fromLoc", "from", "odoStart", "startedAt", "path", "autoMeters", "gapOk"].includes(k))),
+    from: place, fromLoc: placeLocV, startLoc: cut || null, odoStart: odo, startedAt: at || t.startedAt,
+    path: p2.length >= 2 ? encodePath(p2) : null, autoMeters: t.autoMeters != null ? Math.round(t.autoMeters * (1 - f)) : null,
+    edits: [{ at: Date.now(), by: uid(), changes: ["delad från en längre resa"] }], createdAt: Date.now(),
+  });
+  const first = clean({ odoEnd: odo, to: place, toLoc: placeLocV, endLoc: cut || null, endedAt: at || t.endedAt,
+    path: p1.length >= 2 ? encodePath(p1) : null, autoMeters: t.autoMeters != null ? Math.round(t.autoMeters * f) : null,
+    edits: [...(t.edits || []), { at: Date.now(), by: uid(), changes: [`delad vid ${fmt(odo, 1)} mil`] }].slice(-20) });
+  const gone = ["to", "toLoc", "endLoc", "path", "autoMeters"].filter((k) => !(k in first));
+  const local = { ...t, ...first }; for (const k of gone) delete local[k];
+  await updateDoc(doc(col("trips"), t.id), { ...first, ...Object.fromEntries(gone.map((k) => [k, deleteField()])) }).catch(onWriteError);
+  await setDoc(doc(col("trips"), id2), second).catch(onWriteError);
+  S.trips = [...S.trips.map((x) => (x.id === t.id ? local : x)), { id: id2, ...second }];
+  closeSheet(); render();
+  showToast("Resan är delad i två");
+}
+
+// Årsrapport: allt som Skatteverket brukar vilja se för ett år, som PDF.
+function tripYearPdf(year) {
+  const c = car();
+  const list = carTrips(c.id).filter((t) => (t.date || "").startsWith(String(year)) && t.odoEnd != null).sort((a, b) => (a.date || "").localeCompare(b.date || "") || tsMs(a.startedAt) - tsMs(b.startedAt));
+  const t = (x) => tr(String(x ?? "")).replace(/[–—]/g, "-").replace(/→/g, "->").replace(/›/g, ">");
+  const pdf = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+  const W = pdf.internal.pageSize.getWidth();
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(22); pdf.text(t(`Körjournal ${year}`), 14, 20);
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(12); pdf.text(t(`${carName(c)}${c.plate ? ` · ${c.plate}` : ""}${c.year ? ` · årsmodell ${c.year}` : ""}`), 14, 27);
+  pdf.setFontSize(9); pdf.setTextColor(110); pdf.text(t(`Utskriven ${fmtDate(todayStr())} · Bildagboken`), W - 14, 20, { align: "right" }); pdf.setTextColor(0);
+  pdf.setDrawColor(30); pdf.setLineWidth(0.6); pdf.line(14, 31, W - 14, 31);
+  const base = { margin: { left: 14, right: 14 }, styles: { font: "helvetica", fontSize: 9, cellPadding: 1.8, textColor: 20 }, headStyles: { fillColor: [35, 34, 33], textColor: 255, fontStyle: "bold" }, alternateRowStyles: { fillColor: [246, 243, 240] } };
+  const work = sumMil(list, "tjanst"), priv = sumMil(list, "privat");
+  const first = list[0], last = list.at(-1);
+  pdf.autoTable({ ...base, startY: 35, theme: "plain", columnStyles: { 0: { textColor: 110, cellWidth: 70 } }, body: [
+    ["Mätarställning vid årets första resa", first ? `${fmt(first.odoStart, 1)} mil (${fmtDateShort(first.date)})` : "-"],
+    ["Mätarställning vid årets sista resa", last ? `${fmt(last.odoEnd, 1)} mil (${fmtDateShort(last.date)})` : "-"],
+    ["Körda mil enligt mätaren", first && last ? `${fmt(num(last.odoEnd) - num(first.odoStart), 1)} mil` : "-"],
+    ["Tjänsteresor", `${fmt(work, 1)} mil`], ["Privata resor", `${fmt(priv, 1)} mil`],
+    ["Antal resor", String(list.length)],
+    ["Milersättning", `${fmtKr(work * MIL_RATE)} kr (${MIL_RATE} kr per mil)`],
+  ].map(([k, v]) => [t(k), t(v)]) });
+  let y = pdf.lastAutoTable.finalY + 8;
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(13); pdf.text(t("Per månad"), 14, y);
+  const months = MONTHS.map((m, i) => { const key = `${year}-${pad(i + 1)}`; const ml = list.filter((x) => x.date.startsWith(key)); return [m.replace(/^./, (x) => x.toUpperCase()), fmt(sumMil(ml, "tjanst"), 1), fmt(sumMil(ml, "privat"), 1), fmtKr(sumMil(ml, "tjanst") * MIL_RATE)]; });
+  pdf.autoTable({ ...base, startY: y + 3, head: [["Månad", "Tjänst (mil)", "Privat (mil)", "Ersättning (kr)"].map(t)], body: months.map((r) => r.map(t)), columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } } });
+  pdf.addPage();
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(16); pdf.text(t("Alla resor"), 14, 20);
+  pdf.autoTable({ ...base, startY: 25, styles: { ...base.styles, fontSize: 8 }, head: [["Datum", "Mätare start", "Mätare slut", "Mil", "Från - till", "Ärende", "Typ", "Förare"].map(t)],
+    body: list.map((x) => [x.date, fmt(x.odoStart, 1), fmt(x.odoEnd, 1), fmt(tripMil(x), 1), [x.from, x.to].filter(Boolean).join(" -> "), x.purpose || "", TRIP_KINDS[x.kind] || "Ej genomgången", memberName(x.driver)].map(t)),
+    columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } } });
+  const estimated = list.filter((x) => x.odoEstimated).length;
+  if (estimated) { const yy = pdf.lastAutoTable.finalY + 6; pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(110); pdf.text(t(`${estimated} resor är mätta med GPS. Där är mätarställningen beräknad från den senast avlästa och sträckan.`), 14, yy); pdf.setTextColor(0); }
+  return pdf.output("blob");
+}
+async function exportTripYear(year) {
+  const name = `Körjournal ${carName(car())} ${year}.pdf`;
+  if (pdfReady()) return sharePdf(tripYearPdf(year), name);
+  showToast("Gör i ordning PDF:en …");
+  try { await loadPdfLibs(); } catch { return showToast("PDF:en gick inte att göra just nu. Prova igen, eller ladda ner som kalkylark."); }
+  pendingPdf = { blob: tripYearPdf(year), name };
+  openSheet("Årsrapporten är klar", `<p class="muted">PDF:en är klar att dela. Välj Spara i Filer, Skriv ut eller skicka den direkt.</p>
+    <button class="btn primary block" type="button" data-act="pdf-share" style="margin-top:14px">${icon("print", 18)} Dela eller spara PDF</button>`);
 }
 
 function tripsSheet() {
@@ -6671,7 +6944,7 @@ function tripEnds(t) {
 }
 // Karta med start (grön) och mål (orange) och vägen mellan dem. Apple Maps om det går, annars OpenStreetMap.
 let tripMapObj = null;
-async function tripMap(inner, a, b) {
+async function tripMap(inner, a, b, path = []) {
   if (!inner) return;
   try { tripMapObj?.destroy?.(); } catch { /* redan borta */ }
   tripMapObj = null;
@@ -6692,11 +6965,19 @@ async function tripMap(inner, a, b) {
     ];
     map.showItems(pins, { animate: false, padding: new mk.Padding(40, 30, 40, 30) });
     if (distM(a, b) < 150) map.cameraDistance = 900;
-    // Vägen enligt Apple Kartor, som en linje mellan punkterna.
+    const lineStyle = new mk.Style({ strokeColor: "#E77026", lineWidth: 5, lineCap: "round", lineJoin: "round", strokeOpacity: 0.85 });
+    // Den väg som telefonen mätte under resan.
+    if (path.length >= 2 && mk.PolylineOverlay) {
+      const line = new mk.PolylineOverlay(path.map(([la, lo]) => new mk.Coordinate(la, lo)), { style: lineStyle });
+      map.addOverlay(line);
+      map.showItems([...pins, line], { animate: false, padding: new mk.Padding(40, 30, 40, 30) });
+      return;
+    }
+    // Annars vägen enligt Apple Kartor, som en linje mellan punkterna.
     new mk.Directions().route({ origin: pins[0].coordinate, destination: pins[1].coordinate, transportType: mk.Directions.Transport.Automobile }, (err, data) => {
       const line = data?.routes?.[0]?.polyline;
       if (err || !line || tripMapObj !== map) return;
-      line.style = new mk.Style({ strokeColor: "#E77026", lineWidth: 5, lineCap: "round", lineJoin: "round", strokeOpacity: 0.85 });
+      line.style = lineStyle;
       map.addOverlay(line);
       map.showItems([...pins, line], { animate: false, padding: new mk.Padding(40, 30, 40, 30) });
     });
@@ -8051,6 +8332,39 @@ const ACTIONS = {
       document.getElementById(x.input)?.setAttribute("aria-expanded", "false");
     });
   },
+  "work-toggle"(el) { saveMyInfo("workHours", { ...workHours(), on: el.checked }); render(); },
+  "work-day"(el) {
+    const d = Number(el.dataset.d), w = workHours();
+    const days = w.days.includes(d) ? w.days.filter((x) => x !== d) : [...w.days, d];
+    if (!days.length) return showToast("Välj minst en dag.");
+    saveMyInfo("workHours", { ...w, days }); render();
+  },
+  "bt-link"(el) {
+    const c = S.cars.find((x) => x.id === el.dataset.car), name = el.dataset.name;
+    if (!c || !name) return;
+    for (const x of S.cars) if ((x.btNames || []).includes(name) && x.id !== c.id) { x.btNames = x.btNames.filter((n) => n !== name); updateDoc(ref("cars", x.id), { btNames: x.btNames }).catch(onWriteError); }
+    c.btNames = [...new Set([...(c.btNames || []), name])];
+    updateDoc(ref("cars", c.id), { btNames: c.btNames }).catch(onWriteError);
+    render(); showToast(`${btLabel(name)} är kopplad till ${carName(c)}`);
+  },
+  "bt-unlink"(el) {
+    const c = S.cars.find((x) => x.id === el.dataset.car);
+    if (!c) return;
+    c.btNames = (c.btNames || []).filter((n) => n !== el.dataset.name);
+    updateDoc(ref("cars", c.id), { btNames: c.btNames }).catch(onWriteError);
+    render();
+  },
+  "bt-only"(el) { saveMyInfo("autoOnlyCars", el.checked); render(); },
+  "trip-merge"(el) { const t = S.trips.find((x) => x.id === el.dataset.id), nx = t && nextTripOf(t); if (nx) mergeTrips(t, nx); },
+  "trip-split"(el) { const t = S.trips.find((x) => x.id === el.dataset.id); if (t) splitSheet(t); },
+  "trip-year"() {
+    const y = new Date().getFullYear();
+    const years = [...new Set(carTrips().map((t) => Number((t.date || "").slice(0, 4))).filter(Boolean))].sort((a, b) => b - a);
+    if (years.length <= 1) return exportTripYear(years[0] || y);
+    openSheet("Årsrapport", `<p class="muted" style="margin-top:0">Välj år. Rapporten visar mätarställning, tjänste- och privatmil, milersättning per månad och alla resor.</p>
+      <div class="form">${years.map((yr) => `<button class="btn ${yr === (new Date().getMonth() < 3 ? y - 1 : y) ? "primary" : "ghost"} block" type="button" data-act="trip-year-go" data-y="${yr}">${yr}</button>`).join("")}</div>`);
+  },
+  "trip-year-go"(el) { closeSheet(); exportTripYear(Number(el.dataset.y)); },
   "trip-map-open"(el) {
     const t = S.trips.find((x) => x.id === el.dataset.id), ends = t && tripEnds(t);
     if (!ends) return;
@@ -8946,6 +9260,7 @@ async function onSubmit(ev) {
     if (kind === "todo") return saveTodo(form);
     if (kind === "rec-price") return saveRecPrice(form);
     if (kind === "trip") return saveTrip(form);
+    if (kind === "trip-split") return saveSplit(form);
     if (kind === "place") return savePlace(form);
     if (kind === "chat") { const i = $("#chat-in"); const q = i?.value || ""; if (i) i.value = ""; chatInputChanged(); return askCar(q); }
     if (kind === "doc") return await saveDoc(form);
