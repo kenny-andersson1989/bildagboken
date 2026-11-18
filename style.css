@@ -1961,3 +1961,9 @@ body.car-locked .fab { display: none; }
 .auto-fix p { margin: 4px 0 12px; color: var(--ink-2); font-size: 14px; }
 .auto-fix .btn { width: 100%; }
 .auto-ok { display: flex; gap: 8px; align-items: center; color: var(--sage); font-weight: 600; font-size: 14px; margin: 0 0 12px; }
+
+/* Förslag med ikon i "Lägg till del". */
+.suggest button.sg-ic { flex-direction: row; align-items: center; gap: 12px; }
+.sg-ic .sg-i { display: flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; border-radius: 9px; background: var(--track); color: var(--ink); }
+.sg-ic .sg-t { display: flex; flex-direction: column; gap: 1px; font-size: inherit; color: inherit; }
+.sg-ic .sg-t > span { font-size: 12.5px; color: var(--ink-3); }
