@@ -5814,6 +5814,9 @@ function tripForm(t = {}, mode = "new") {
   openSheet(title, `
     <form class="form" data-form="trip" data-mode="${mode}"${t.gap ? ` data-gap="1"` : ""} data-start="${odoStart ?? ""}"${t.id ? ` data-id="${esc(t.id)}"` : ""} novalidate>
       ${mode === "end" ? `<p class="muted" style="margin-top:0">${esc(`Startade ${clock(tsMs(t.startedAt))} vid ${fmt(t.odoStart, 1)} mil.`)}</p>` : ""}
+      ${mode === "new" && t.id && tripEnds(t) ? `<div class="bk-map trip-map" id="tr-map"><div class="bk-map-inner" id="tr-map-inner"></div>
+        <button class="bk-map-open" type="button" data-act="trip-map-open" data-id="${esc(t.id)}" aria-label="Visa resan i en kartapp"><span>${icon("pin", 14)} Öppna i kartan</span></button></div>
+        <div class="trip-ends"><span><i class="te-a"></i>${esc(t.from || "Start")}${t.startedAt ? ` · ${clock(tsMs(t.startedAt))}` : ""}</span><span><i class="te-b"></i>${esc(t.to || "Mål")}${t.endedAt ? ` · ${clock(tsMs(t.endedAt))}` : ""}</span></div>` : ""}
       ${t.edits?.length ? `<div class="hint" style="margin-top:0"><b>Ändrad i efterhand</b>${t.edits.slice(-5).reverse().map((e) => `<br>${esc(editLine(e))}`).join("")}</div>` : ""}
       ${mode === "end" ? "" : `<div class="row2">
         ${field("Datum", `<input type="date" name="date" id="tr-date" value="${esc(t.date || todayStr())}">`)}
@@ -5821,7 +5824,8 @@ function tripForm(t = {}, mode = "new") {
       </div>
       ${t.id ? "" : `<p class="hint" style="margin-top:-6px">Läs av mätaren i bilen${lastOdo != null ? esc(`. Senast kända är ${fmt(lastOdo, 1)} mil`) : ""}.</p>`}`}
       ${mode === "start" ? "" : field("Mätare vid slut (mil)", `<input name="odoEnd" id="tr-odoEnd" inputmode="decimal" required value="${t.odoEnd != null ? esc(String(t.odoEnd).replace(".", ",")) : ""}" placeholder="Läs av mätaren i bilen">`, `<span id="tr-dist">${t.odoEnd != null ? esc(`${fmt(tripMil(t), 1)} mil`) : "Mil med en decimal. 1,2 mil är 12 km."}</span>`)}
-      ${mode === "end" ? `<div id="tr-route" hidden></div>` : ""}
+      ${mode === "end" ? `<div id="tr-route" hidden></div><input type="hidden" name="endPos" id="tr-endPos">` : ""}
+      ${mode === "start" ? `<input type="hidden" name="startPos" id="tr-startPos">` : ""}
       ${field("Från", `<span class="geo-row"><input name="from" id="tr-from" value="${esc(t.from ?? (mode === "new" && !t.id ? prev?.to || "" : ""))}" placeholder="Ort, adress eller företag" autocomplete="off"><button class="geo-btn" type="button" data-act="trip-here" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span><span class="suggest" id="tr-from-suggest" role="listbox" hidden></span><input type="hidden" name="fromLoc" id="tr-fromLoc" value="${t.fromLoc ? esc(JSON.stringify(t.fromLoc)) : ""}">`)}
       ${field("Vart", `<input name="to" id="tr-to" value="${esc(t.to || "")}" placeholder="Ort, adress eller företag" autocomplete="off"><span class="suggest" id="tr-to-suggest" role="listbox" hidden></span><input type="hidden" name="toLoc" id="tr-toLoc" value="${t.toLoc ? esc(JSON.stringify(t.toLoc)) : ""}">`)}
       ${field("Ärende", `<input name="purpose" id="tr-purpose" value="${esc(t.purpose || "")}" list="tr-purpose-list" autocomplete="off">${list("tr-purpose-list", count("purpose"))}`)}
@@ -5836,6 +5840,7 @@ function tripForm(t = {}, mode = "new") {
     </form>`, { back: t.id && mode === "new" ? "trips" : null });
   if (mode === "end" && !window.matchMedia("(pointer: coarse)").matches) $("#tr-odoEnd")?.focus({ preventScroll: true });
   if (mode === "end") suggestTripDistance(t);
+  if (mode === "new" && t.id && tripEnds(t)) tripMap($("#tr-map-inner"), ...tripEnds(t));
   if (mode === "start" && !t.from) fillTripFrom(false);
 }
 
@@ -5887,7 +5892,10 @@ function savePlace(form) {
 async function fillTripFrom(manual) {
   const input = $("#tr-from");
   if (!input) return;
-  const loc = await tripPosition();
+  // När en resa startas: en ny GPS-position (inte en sparad), som blir resans startpunkt och ger adressen.
+  const start = $("#tr-startPos");
+  const loc = start ? await freshTripPosition() : await tripPosition();
+  if (loc && start && document.contains(start)) start.value = tripLocJson(loc);
   if (!loc) { if (manual) showToast("Kunde inte hitta din position. Skriv var du startar.", 5000); return; }
   const saved = placeAt(loc);
   const addr = saved?.name || await reverseAddress(loc.lat, loc.lon).catch(() => "");
@@ -5910,6 +5918,22 @@ function recentTripTargets(field = "tr-to") {
 
 // Var man är just nu, för körjournalen. Ger null om platsen inte går att få (tillåts inte, eller tar för lång tid).
 const tripPosition = () => currentPosition().then((p) => ({ lat: p.coords.latitude, lon: p.coords.longitude })).catch(() => null);
+// Vid start och slut av en resa: en ny GPS-position, aldrig en sparad. Lyssnar några sekunder och tar den
+// säkraste, så att punkten inte är var man var för en stund sedan (eller där resan startade).
+function freshTripPosition(maxWait = 12000, good = 25) {
+  return new Promise((resolve) => {
+    if (!("geolocation" in navigator)) return resolve(null);
+    let best = null, id = null;
+    const done = () => { if (id != null) navigator.geolocation.clearWatch(id); clearTimeout(timer); resolve(best); };
+    const timer = setTimeout(done, maxWait);
+    id = navigator.geolocation.watchPosition((p) => {
+      const acc = p.coords.accuracy ?? 9999;
+      if (!best || acc < best.acc) best = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(acc), at: p.timestamp || Date.now() };
+      if (acc <= good) done();
+    }, () => { if (!best) done(); }, { enableHighAccuracy: true, maximumAge: 0, timeout: maxWait });
+  });
+}
+const tripLocJson = (loc) => (loc ? JSON.stringify(loc) : "");
 
 // Förslag på mätarställning vid slut: körsträckan enligt Apple Kartor, från där resan startade till där man är nu
 // (eller till målet). Mätaren gäller alltid; förslaget går att trycka på för att fylla i.
@@ -5959,8 +5983,17 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) { ti
 
 async function suggestTripDistance(t) {
   const box = $("#tr-route");
-  if (!box || !t.startLoc || t.odoStart == null) return;
-  const end = (await tripPosition()) || t.toLoc;
+  if (!box) return;
+  if (!t.startLoc || t.odoStart == null) {
+    // Ingen startpunkt: spara ändå var resan slutade.
+    const here = await freshTripPosition(), pos = $("#tr-endPos");
+    if (here && pos && document.contains(pos)) pos.value = tripLocJson(here);
+    return;
+  }
+  const here = await freshTripPosition();
+  const pos = $("#tr-endPos");
+  if (here && pos && document.contains(pos)) pos.value = tripLocJson(here);
+  const end = here || t.toLoc;
   if (!end || !document.contains(box)) return;
   try {
     const mil = await routeMil(t.startLoc, end);
@@ -5980,6 +6013,7 @@ function tripChanges(a, b) {
 }
 const editLine = (e) => `${fmtDateShort(ymd(new Date(tsMs(e.at))))} av ${whoName(e.by).replace(/^Du$/, "dig")}${e.changes?.length ? `: ${e.changes.join(", ")}` : ""}`;
 
+const parsePos = (v) => { try { const p = JSON.parse(v || "null"); return p && Number.isFinite(p.lat) && Number.isFinite(p.lon) ? p : null; } catch { return null; } };
 async function saveTrip(form) {
   const c = car();
   const fd = new FormData(form);
@@ -6006,7 +6040,7 @@ async function saveTrip(form) {
     fromLoc: (() => { try { return JSON.parse(str("fromLoc") || "null"); } catch { return null; } })() || (str("from") === old?.from ? old?.fromLoc || null : null) || placeLoc(str("from")),
     to: str("to") || null, toLoc: (() => { try { return JSON.parse(str("toLoc") || "null"); } catch { return null; } })() || (str("to") === old?.to ? old?.toLoc || null : null) || placeLoc(str("to")),
     purpose: str("purpose") || null,
-    startLoc: old?.startLoc || null,
+    startLoc: (mode === "start" ? parsePos(str("startPos")) : null) || old?.startLoc || null,
     kind: str("kind") || "tjanst", driver: str("driver") || uid(),
     startedAt: old?.startedAt || Date.now(),
     endedAt: odoEnd != null ? old?.endedAt || Date.now() : null,
@@ -6014,7 +6048,8 @@ async function saveTrip(form) {
     // Ändringar i en avslutad resa sparas (vem och när), så att det syns om körjournalen har ändrats i efterhand.
     edits: old?.edits || null,
     // Automatiska resor behåller sina GPS-uppgifter. Ändras mätaren är den inte längre beräknad.
-    auto: old?.auto || undefined, autoMeters: old?.autoMeters ?? undefined, endLoc: old?.endLoc || undefined,
+    auto: old?.auto || undefined, autoMeters: old?.autoMeters ?? undefined,
+    endLoc: (mode === "end" ? parsePos(str("endPos")) : null) || old?.endLoc || undefined,
     odoEstimated: old?.odoEstimated ? odoStart === old.odoStart && odoEnd === old.odoEnd : undefined,
     reviewedAt: old?.auto && !old.kind ? Date.now() : old?.reviewedAt ?? undefined,
     gapOk: old?.gapOk || undefined, suggestKind: old?.suggestKind || undefined,
@@ -6029,7 +6064,9 @@ async function saveTrip(form) {
   S.trips = [...S.trips.filter((x) => x.id !== id), { id, ...data }];
   closeSheet(); render();
   // Var resan startade, för förslaget på sträcka när den avslutas. Hämtas i bakgrunden och sparas om det går.
-  if (mode === "start") tripPosition().then((loc) => { if (loc) updateDoc(doc(col("trips"), id), { startLoc: loc }).catch(() => {}); });
+  // Hann positionen inte komma medan rutan var öppen hämtas en ny nu.
+  if (mode === "start" && !data.startLoc) freshTripPosition().then((loc) => { if (loc) { updateDoc(doc(col("trips"), id), { startLoc: loc }).catch(() => {}); const t = S.trips.find((x) => x.id === id); if (t) t.startLoc = loc; } });
+  if (mode === "end" && !data.endLoc) freshTripPosition().then((loc) => { if (loc) { updateDoc(doc(col("trips"), id), { endLoc: loc }).catch(() => {}); const t = S.trips.find((x) => x.id === id); if (t) t.endLoc = loc; } });
   showToast(mode === "start" ? "Resan är startad" : `${old && mode === "new" ? "Resan är ändrad" : "Resan är sparad"}: ${fmt(tripMil({ odoStart, odoEnd }) ?? 0, 1)} mil`);
 }
 
@@ -6606,6 +6643,51 @@ async function showBookingMap() {
   box.hidden = false;
   return miniMap(inner, lat, lon, $("#bk-place")?.value || "");
 }
+// Start och mål för en resa: GPS-punkterna, annars de valda platserna.
+const okLoc = (l) => (l && Number.isFinite(l.lat) && Number.isFinite(l.lon) ? l : null);
+function tripEnds(t) {
+  const a = okLoc(t.startLoc) || okLoc(t.fromLoc), b = okLoc(t.endLoc) || okLoc(t.toLoc);
+  return a && b ? [a, b] : null;
+}
+// Karta med start (grön) och mål (orange) och vägen mellan dem. Apple Maps om det går, annars OpenStreetMap.
+let tripMapObj = null;
+async function tripMap(inner, a, b) {
+  if (!inner) return;
+  try { tripMapObj?.destroy?.(); } catch { /* redan borta */ }
+  tripMapObj = null;
+  try {
+    const mk = await loadMapKit();
+    if (!document.contains(inner)) return;
+    const dark = DARK_THEMES.includes(document.documentElement.dataset.theme) || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+    const map = tripMapObj = new mk.Map(inner, {
+      isScrollEnabled: false, isZoomEnabled: false, isRotationEnabled: false,
+      showsMapTypeControl: false, showsZoomControl: false, showsUserLocationControl: false,
+      showsCompass: mk.FeatureVisibility?.Hidden, showsScale: mk.FeatureVisibility?.Hidden,
+      colorScheme: dark ? mk.Map?.ColorSchemes?.Dark : mk.Map?.ColorSchemes?.Light,
+      padding: new mk.Padding(36, 28, 36, 28),
+    });
+    const pins = [
+      new mk.MarkerAnnotation(new mk.Coordinate(a.lat, a.lon), { title: "Start", glyphText: "A", color: "#2f9e5b" }),
+      new mk.MarkerAnnotation(new mk.Coordinate(b.lat, b.lon), { title: EN ? "End" : "Mål", glyphText: "B", color: "#E77026" }),
+    ];
+    map.showItems(pins, { animate: false, padding: new mk.Padding(40, 30, 40, 30) });
+    if (distM(a, b) < 150) map.cameraDistance = 900;
+    // Vägen enligt Apple Kartor, som en linje mellan punkterna.
+    new mk.Directions().route({ origin: pins[0].coordinate, destination: pins[1].coordinate, transportType: mk.Directions.Transport.Automobile }, (err, data) => {
+      const line = data?.routes?.[0]?.polyline;
+      if (err || !line || tripMapObj !== map) return;
+      line.style = new mk.Style({ strokeColor: "#E77026", lineWidth: 5, lineCap: "round", lineJoin: "round", strokeOpacity: 0.85 });
+      map.addOverlay(line);
+      map.showItems([...pins, line], { animate: false, padding: new mk.Padding(40, 30, 40, 30) });
+    });
+  } catch (err) {
+    console.warn("Apple-kartan kunde inte visas", err);
+    const pad = Math.max(0.004, Math.abs(a.lat - b.lat) * 0.25, Math.abs(a.lon - b.lon) * 0.25);
+    const [w, e] = [Math.min(a.lon, b.lon) - pad, Math.max(a.lon, b.lon) + pad], [so, n] = [Math.min(a.lat, b.lat) - pad, Math.max(a.lat, b.lat) + pad];
+    inner.innerHTML = `<iframe title="Karta" loading="lazy" referrerpolicy="no-referrer" src="https://www.openstreetmap.org/export/embed.html?bbox=${w},${so},${e},${n}&layer=mapnik&marker=${b.lat},${b.lon}"></iframe>`;
+  }
+}
+
 // Liten karta med en nål. Apple Maps om det går, annars OpenStreetMap.
 async function miniMap(inner, lat, lon, title = "") {
   try { bookingMap?.destroy?.(); } catch { /* redan borta */ }
@@ -7948,6 +8030,14 @@ const ACTIONS = {
       const b = document.getElementById(x.box); if (b) b.hidden = true;
       document.getElementById(x.input)?.setAttribute("aria-expanded", "false");
     });
+  },
+  "trip-map-open"(el) {
+    const t = S.trips.find((x) => x.id === el.dataset.id), ends = t && tripEnds(t);
+    if (!ends) return;
+    const [a, b] = ends.map((l) => `${l.lat},${l.lon}`);
+    mapChoiceDialog("Resan i kartan", [t.from, t.to].filter(Boolean).join(" → "),
+      `https://maps.apple.com/directions?${new URLSearchParams({ source: a, destination: b, mode: "driving" })}`,
+      `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(a)}&destination=${encodeURIComponent(b)}&travelmode=driving`);
   },
   "map-open"() {
     openMapChooser({ name: $("#bk-place")?.value.trim(), addr: $("#bk-addr")?.value.trim(), lat: num($("#bk-lat")?.value), lon: num($("#bk-lon")?.value), pid: $("#bk-pid")?.value || "" });

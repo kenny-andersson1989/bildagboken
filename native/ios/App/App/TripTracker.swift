@@ -3,7 +3,9 @@
 // Så fungerar det:
 // 1. När funktionen är påslagen bevakar iOS "betydande platsändringar" (ungefär 500 meter). Det drar nästan
 //    inget batteri, och iOS väcker appen i bakgrunden när telefonen har flyttat sig.
+//    Där bilen parkerades bevakas också ett område på 150 meter, så att appen väcks direkt när bilen kör iväg.
 // 2. Då slås noggrann GPS på en stund. Går det fortare än 18 km/h räknas det som en resa, och vägen mäts.
+//    Resan räknas från där bilen stod parkerad, inte från där GPS:en hann vakna, så att början inte försvinner.
 // 3. När bilen har stått still i fyra minuter är resan slut. Den sparas i telefonen och GPS:en stängs av.
 // 4. Webbappen hämtar de sparade resorna (TripTracker.trips) och lägger in dem i körjournalen.
 // 5. När en resa är klar kommer en notis med knapparna Tjänst och Privat. Det man trycker på sparas här och
@@ -25,6 +27,8 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     private let kindsKey = "autoTrips.kinds"    // resans id → "tjanst" eller "privat", valt i notisen
     private let placesKey = "autoTrips.places"  // sparade platser från webbappen: name, lat, lon
     private let langKey = "autoTrips.lang"
+    private let parkedKey = "autoTrips.parked"  // där senaste resan slutade: lat, lon, time
+    private let parkedRegion = "bildagboken.parked"
     static let category = "AUTO_TRIP_DONE"
 
     private let driveSpeed: CLLocationSpeed = 5      // m/s, ungefär 18 km/h
@@ -89,6 +93,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     func disable() {
         defaults.set(false, forKey: enabledKey)
         manager.stopMonitoringSignificantLocationChanges()
+        for r in manager.monitoredRegions where r.identifier == parkedRegion { manager.stopMonitoring(for: r) }
         stopWatching()
         resetTrip()
     }
@@ -96,6 +101,27 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     private func startMonitoring() {
         guard CLLocationManager.significantLocationChangeMonitoringAvailable() else { return }
         manager.startMonitoringSignificantLocationChanges()
+        if let p = parked { watchParked(p) }
+    }
+
+    // Där bilen står parkerad. Används som resans start, och ett område runt den väcker appen när bilen kör iväg.
+    private var parked: CLLocation? {
+        guard let d = defaults.dictionary(forKey: parkedKey), let lat = d["lat"] as? Double, let lon = d["lon"] as? Double,
+              let t = d["time"] as? Double else { return nil }
+        return CLLocation(coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon), altitude: 0,
+                          horizontalAccuracy: (d["acc"] as? Double) ?? 20, verticalAccuracy: -1, timestamp: Date(timeIntervalSince1970: t))
+    }
+    private func setParked(_ loc: CLLocation) {
+        defaults.set(["lat": loc.coordinate.latitude, "lon": loc.coordinate.longitude, "acc": loc.horizontalAccuracy,
+                      "time": loc.timestamp.timeIntervalSince1970], forKey: parkedKey)
+        watchParked(loc)
+    }
+    private func watchParked(_ loc: CLLocation) {
+        guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
+        let region = CLCircularRegion(center: loc.coordinate, radius: 150, identifier: parkedRegion)
+        region.notifyOnExit = true
+        region.notifyOnEntry = false
+        manager.startMonitoring(for: region)
     }
 
     private func startWatching() {
@@ -133,6 +159,12 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         for loc in locations { handle(loc) }
     }
 
+    // Telefonen har lämnat parkeringen: titta noga direkt, i stället för att vänta på nästa platsändring.
+    func locationManager(_ m: CLLocationManager, didExitRegion region: CLRegion) {
+        guard enabled, region.identifier == parkedRegion else { return }
+        startWatching()
+    }
+
     func locationManager(_ m: CLLocationManager, didFailWithError error: Error) {
         // Tillfälliga fel (ingen GPS-signal) ignoreras. Nästa position kommer när det går.
     }
@@ -151,6 +183,18 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
                 startTime = now
                 startLoc = lastLoc ?? loc
                 meters = lastLoc.map { loc.distance(from: $0) } ?? 0
+                // GPS:en vaknar oftast en bit in i resan. Står bilen parkerad i närheten (inom 3 km) och har
+                // den stått där sedan förra resan, räknas resan därifrån och sträckan dit läggs till.
+                if let p = parked, let first = startLoc, p.timestamp < now {
+                    let gap = first.distance(from: p)
+                    if gap > 40, gap < 3000 {
+                        meters += gap * 1.15 // vägen är sällan rak; ungefär 15 % längre än fågelvägen
+                        startLoc = p
+                        startTime = min(watchStarted, now)
+                    } else if gap <= 40 {
+                        startLoc = p
+                    }
+                }
                 lastMove = now
             } else if now.timeIntervalSince(watchStarted) > giveUpAfter {
                 stopWatching()
@@ -171,7 +215,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     }
 
     private func finishTrip(end: CLLocation) {
-        defer { resetTrip(); stopWatching() }
+        defer { resetTrip(); stopWatching(); setParked(end) }
         guard let start = startTime, let from = startLoc, meters >= minMeters else { return }
         let trip: [String: Any] = [
             "id": UUID().uuidString,
