@@ -5685,6 +5685,15 @@ async function refreshAutoStatus() {
 }
 // Hämtar resorna som telefonen har mätt och lägger in dem i körjournalen, en gång var.
 const autoId = (nid) => "a" + String(nid).replace(/[^A-Za-z0-9]/g, "").slice(0, 24);
+// En resa man har startat själv (pågående eller avslutad) som till största delen täcker samma tid som en GPS-resa.
+function manualTripAt(start, end) {
+  const len = Math.max(60000, end - start);
+  return S.trips.find((t) => {
+    if (t.auto || !t.startedAt || (t.driver || t.createdBy) !== uid()) return false;
+    const a = tsMs(t.startedAt), b = t.odoEnd == null ? Date.now() : tsMs(t.endedAt || t.startedAt);
+    return Math.min(b, end) - Math.max(a, start) >= len * 0.4;
+  }) || null;
+}
 async function importAutoTrips() {
   if (importAutoTrips.busy || !autoAvailable() || !S.loaded.entries) return;
   importAutoTrips.busy = true;
@@ -5709,6 +5718,16 @@ async function importAutoTrips() {
     for (const r of list) {
       const id = autoId(r.id);
       if (S.trips.some((t) => t.id === id)) { done.push(r.id); continue; }
+      // Samma sträcka som en resa man har startat själv: ingen ny resa. GPS-punkterna läggs i den resan
+      // om den saknar dem, och mätarställningen man läste av gäller.
+      const own = manualTripAt(r.start, r.end);
+      if (own) {
+        const add = clean({ startLoc: okLoc(own.startLoc) ? undefined : { lat: r.startLat, lon: r.startLon }, endLoc: okLoc(own.endLoc) || own.odoEnd == null ? undefined : { lat: r.endLat, lon: r.endLon }, autoMeters: r.meters });
+        Object.assign(own, add);
+        await updateDoc(doc(col("trips"), own.id), add).catch(() => {});
+        done.push(r.id);
+        continue;
+      }
       const mil = Math.round(r.meters / 1000) / 10;
       const startLoc = { lat: r.startLat, lon: r.startLon }, endLoc = { lat: r.endLat, lon: r.endLon };
       const pFrom = placeAt(startLoc), pTo = placeAt(endLoc);
@@ -5837,6 +5856,7 @@ function tripForm(t = {}, mode = "new") {
       <button class="btn primary block" type="submit">${mode === "start" ? "Starta resan" : mode === "end" ? "Avsluta och spara" : "Spara"}</button>
       ${t.id ? `<button class="btn danger block" type="button" data-act="delete-trip" data-id="${esc(t.id)}" style="margin-top:10px">Ta bort resan</button>` : ""}
       ${mode === "start" ? `<p class="hint">Fyll i mätarställningen när du kommer fram, under Bilen eller i plusmenyn.</p>` : ""}
+      ${mode === "start" && S.autoStatus?.enabled ? `<p class="hint">Den automatiska körjournalen är på. Den sparar ingen egen resa för samma sträcka, den här gäller.</p>` : ""}
     </form>`, { back: t.id && mode === "new" ? "trips" : null });
   if (mode === "end" && !window.matchMedia("(pointer: coarse)").matches) $("#tr-odoEnd")?.focus({ preventScroll: true });
   if (mode === "end") suggestTripDistance(t);
