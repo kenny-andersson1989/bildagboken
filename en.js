@@ -1736,6 +1736,8 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 mil eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Vid (.+) mil · ([a-zåäö]{3}) (\d{4})$/, (m, a, mo, y) => `At ${a} mil · ${({ maj: "May", okt: "Oct" })[mo] || mo[0].toUpperCase() + mo.slice(1)} ${y}`],
+  [/^Senast ([a-zåäö]{3}) (\d{4})$/, (m, mo, y) => `By ${({ maj: "May", okt: "Oct" })[mo] || mo[0].toUpperCase() + mo.slice(1)} ${y}`],
   [/^Annat som har gjorts \((\d+)\)$/, "Other work done ($1)"],
   [/^Visa fler \((\d+)\)$/, "Show more ($1)"],
   [/^Nästa (\d+)$/, "Next $1"],

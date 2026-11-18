@@ -1973,8 +1973,9 @@ body.car-locked .fab { display: none; }
 .pager-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--accent-soft); color: var(--accent-text); display: grid; place-items: center; cursor: pointer; padding: 0; }
 .pager-btn:disabled { opacity: .35; cursor: default; }
 /* Underhåll: lika höga rader, så att pilarna inte flyttar sig */
-.maint-rows > .dl { height: 100px; box-sizing: border-box; overflow: hidden; }
-.maint-rows > .dl .dl-s { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.maint-rows > .dl { height: 78px; box-sizing: border-box; overflow: hidden; padding: 8px 0; }
+.maint-rows > .dl .dl-s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.maint-rows > .dl .wear { margin-top: 6px; }
 .maint-rows > .maint-pad { visibility: hidden; }
 /* Försenat: i orange temat är accentfärgen redan en varningsfärg. I gröna, blå och lila teman blir försenat rött,
    annars ser ett försenat byte ut som något bra. */
