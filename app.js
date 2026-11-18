@@ -4716,10 +4716,11 @@ const forecastText = (f) => (f.d <= today0() ? "Redan nu" : `Runt ${MONTHS[f.d.g
 
 // Bläddra tio i taget: pil vänster, "11–20 av 34", pil höger.
 const PAGE_SIZE = 10;
-function pager(act, page, total) {
-  const pages = Math.ceil(total / PAGE_SIZE);
+const MAINT_PAGE = 5;
+function pager(act, page, total, size = PAGE_SIZE) {
+  const pages = Math.ceil(total / size);
   if (pages < 2) return "";
-  const from = page * PAGE_SIZE + 1, to = Math.min(total, from + PAGE_SIZE - 1);
+  const from = page * size + 1, to = Math.min(total, from + size - 1);
   return `<div class="pager"><button class="pager-btn" type="button" data-act="${act}" data-d="-1" aria-label="Föregående"${page <= 0 ? " disabled" : ""}>${icon("back", 18)}</button>
     <span>${esc(`${from}–${to} av ${total}`)}</span>
     <button class="pager-btn" type="button" data-act="${act}" data-d="1" aria-label="Nästa"${page >= pages - 1 ? " disabled" : ""}>${icon("next", 18)}</button></div>`;
@@ -4787,26 +4788,16 @@ function viewCar() {
     <!--card:maint--><div class="card" id="underhall" style="scroll-margin-top:16px">
       <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
       ${(() => {
-        // Det som behöver bytas först överst: försenat, sedan närmast i tid eller mil. Okänt sist.
-        // Fem syns, sedan tio i taget med pilar.
-        const all = st.filter((s) => s.item.mil || s.item.months || s.lastDate).sort((a, b) => daysToDue(a, c) - daysToDue(b, c));
-        if (!all.length) return `<div class="rows"><p class="muted">Inga punkter. Lägg till under Ändra.</p></div>`;
-        const per = 10, pages = Math.ceil(all.length / per), page = Math.min(S.maintPage || 0, pages - 1);
-        const shown = S.maintOpen ? all.slice(page * per, page * per + per) : all.slice(0, 5);
-        const row = (s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon(partIcon(s.item.name, s.item.id), 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`;
-        const nav = !S.maintOpen
-          ? (all.length > 5 ? `<button class="link" type="button" data-act="maint-more" style="margin-top:10px">${esc(`Visa fler (${all.length - 5})`)}</button>` : "")
-          : `${pager("maint-page", page, all.length)}<button class="link" type="button" data-act="maint-less" style="margin-top:6px">Visa färre</button>`;
-        return `<div class="rows">${shown.map(row).join("")}</div>${nav}`;
-      })()}
-      ${(() => {
+        // En lista: underhållspunkterna först, det som behöver bytas först överst (försenat, sedan närmast
+        // i tid eller mil, okänt sist). Sedan annat som har gjorts, senast först. Fem åt gången med pilar.
+        const items = st.filter((s) => s.item.mil || s.item.months || s.lastDate).sort((a, b) => daysToDue(a, c) - daysToDue(b, c));
         const extras = extraParts(c);
-        if (!extras.length) return "";
-        const rows = extras.map((x) => `<button class="dl as-btn" type="button" data-act="open-part" data-id="${esc(x.key)}"><div class="dl-ic">${icon(partIcon(x.name), 20)}</div><div><div class="dl-t">${esc(x.name)}</div><div class="dl-s">${esc(`senast ${(WORK_ACTIONS[x.lastAction] || "Bytt").toLowerCase()} ${fmtDateShort(x.entries[0].date)}${x.entries.length > 1 ? ` · ${x.entries.length} gånger` : ""}`)}</div></div><span></span></button>`);
-        const pg = Math.min(S.partsPage || 0, Math.ceil(extras.length / PAGE_SIZE) - 1);
-        const shownRows = rows.slice(pg * PAGE_SIZE, pg * PAGE_SIZE + PAGE_SIZE).join("");
-        return `${S.partsAll ? `<p class="label" style="margin:14px 0 2px">Annat som har gjorts</p><div class="rows">${shownRows}</div>${pager("parts-page", pg, extras.length)}` : ""}
-          <button class="link" type="button" data-act="toggle-parts" style="margin-top:10px">${S.partsAll ? "Visa färre" : `Annat som har gjorts (${extras.length})`}</button>`;
+        const row = (s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon(partIcon(s.item.name, s.item.id), 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`;
+        const extraRow = (x) => `<button class="dl as-btn" type="button" data-act="open-part" data-id="${esc(x.key)}"><div class="dl-ic">${icon(partIcon(x.name), 20)}</div><div><div class="dl-t">${esc(x.name)}</div><div class="dl-s">${esc(`senast ${(WORK_ACTIONS[x.lastAction] || "Bytt").toLowerCase()} ${fmtDateShort(x.entries[0].date)}${x.entries.length > 1 ? ` · ${x.entries.length} gånger` : ""}`)}</div></div><span></span></button>`;
+        const all = [...items.map(row), ...extras.map(extraRow)];
+        if (!all.length) return `<div class="rows"><p class="muted">Inga punkter. Lägg till under Ändra.</p></div>`;
+        const pages = Math.ceil(all.length / MAINT_PAGE), page = Math.min(S.maintPage || 0, pages - 1);
+        return `<div class="rows">${all.slice(page * MAINT_PAGE, page * MAINT_PAGE + MAINT_PAGE).join("")}</div>${pager("maint-page", page, all.length, MAINT_PAGE)}`;
       })()}
       <p class="hint" style="margin-top:10px">Intervallen är vanliga riktvärden. Kontrollera mot bilens servicebok.</p>
     </div>
@@ -8575,10 +8566,6 @@ const ACTIONS = {
     sb.hidden = false; if (ob) ob.hidden = true;
     $("#w-search")?.focus();
   },
-  "toggle-parts"() { S.partsAll = !S.partsAll; S.partsPage = 0; render(); },
-  "parts-page"(el) { S.partsPage = Math.max(0, (S.partsPage || 0) + Number(el.dataset.d)); render(); },
-  "maint-more"() { S.maintOpen = true; S.maintPage = 0; render(); },
-  "maint-less"() { S.maintOpen = false; S.maintPage = 0; render(); document.getElementById("underhall")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
   "maint-page"(el) { S.maintPage = Math.max(0, (S.maintPage || 0) + Number(el.dataset.d)); render(); },
   "open-part"(el) { partSheet(el.dataset.id); },
   "log-part"(el) { entryForm("service", { parts: [el.dataset.id] }, { back: "open-part", backId: normWord(el.dataset.id) }); },
