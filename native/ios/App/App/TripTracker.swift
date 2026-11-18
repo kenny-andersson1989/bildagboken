@@ -30,6 +30,8 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     private let parkedKey = "autoTrips.parked"  // där senaste resan slutade: lat, lon, time
     private let parkedRegion = "bildagboken.parked"
     static let category = "AUTO_TRIP_DONE"
+    static let manualKey = "autoTrips.manualSince"  // starttid (ms) för en resa man har startat själv i appen
+    static let manualEndKey = "autoTrips.manualEnded"  // när den resan avslutades (ms)
 
     private let driveSpeed: CLLocationSpeed = 5      // m/s, ungefär 18 km/h
     private let stopAfter: TimeInterval = 240         // stilla så här länge = resan är slut
@@ -229,6 +231,10 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         list.append(trip)
         if list.count > 300 { list.removeFirst(list.count - 300) }
         defaults.set(list, forKey: tripsKey)
+        // Pågår en resa som man har startat själv sparas GPS-punkterna till den, men ingen notis skickas.
+        // Även om den nyss avslutades: bilen står ofta still några minuter innan GPS-resan räknas som slut.
+        if let since = defaults.object(forKey: TripTracker.manualKey) as? Double, since <= lastMove.timeIntervalSince1970 * 1000 { return }
+        if let ended = defaults.object(forKey: TripTracker.manualEndKey) as? Double, ended >= start.timeIntervalSince1970 * 1000 { return }
         notify(trip)
     }
 
@@ -483,10 +489,16 @@ public class TripActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     @objc func sync(_ call: CAPPluginCall) {
-        guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
         let t = call.getObject("trip")
         let id = t?["id"] as? String
         let startMs = (t?["start"] as? Double) ?? (t?["start"] as? NSNumber)?.doubleValue
+        // En resa man har startat själv: den automatiska körjournalen skickar då ingen notis om samma resa.
+        if id != nil, let ms = startMs { UserDefaults.standard.set(ms, forKey: TripTracker.manualKey) }
+        else if UserDefaults.standard.object(forKey: TripTracker.manualKey) != nil {
+            UserDefaults.standard.removeObject(forKey: TripTracker.manualKey)
+            UserDefaults.standard.set(Date().timeIntervalSince1970 * 1000, forKey: TripTracker.manualEndKey)
+        }
+        guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
         let state = TripActivityAttributes.ContentState(
             from: t?["from"] as? String ?? "", to: t?["to"] as? String ?? "", kind: t?["kind"] as? String ?? "tjanst")
         let car = t?["car"] as? String ?? ""
