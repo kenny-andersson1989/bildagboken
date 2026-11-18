@@ -170,6 +170,7 @@ function partIcon(name, id) {
 }
 // Delar i katalogen som passar det man skrivit: namn som börjar med texten först, sedan namn som innehåller den,
 // sedan delar där ett annat ord för delen passar (skriver man "belägg" föreslås Bromsklotsar).
+const PART_SIDES = { fram: ["Vänster fram", "Höger fram"], bak: ["Vänster bak", "Höger bak"] };
 function catalogMatches(q) {
   const t = normWord(q);
   if (t.length < 2) return [];
@@ -885,7 +886,7 @@ const NO_POSITION = ["olja", "luftfilter", "kupefilter", "bromsvatska", "kamrem"
 // Menyn "Var på bilen" visas bara för delar som sitter på flera ställen. Appen känner igen dem på namnet.
 // Allt annat (AC, batteri, vätskor, filter och liknande) får en liten länk för att ange det ändå.
 const POS_FRONTBACK = /torkar|lamp|lykt|strålkastar|blinker/i;
-const POS_CORNERS = /broms(?!vätsk)|belägg|skiv|bromsok|däck|hjul|fälg|stötdämp|dämpare|fjäder|länkarm|bussning|drivknut|drivaxel|spindel|styrled|kulled|krängning/i;
+const POS_CORNERS = /broms(?!vätsk|huvud|servo|olja)|belägg|skiv|bromsok|däck|hjul|fälg|stötdämp|dämpare|fjäder|länkarm|bussning|drivknut|drivaxel|spindel|styrled|kulled|krängning/i;
 function posKind(itemId, name) {
   if (itemId && NO_POSITION.includes(itemId)) return null;
   if (itemId === "torkare" || POS_FRONTBACK.test(name || "")) return "fb";
@@ -6861,14 +6862,15 @@ function workSuggest(q) {
   const exact = known.some((x) => x.key === t) || (itemHit && normWord(itemHit.name) === t) || present.has(t);
   const itemThere = itemHit && present.has(`item:${itemHit.id}`);
   // Vanliga delar ur katalogen som inte redan är använda, tillagda eller samma som en underhållspunkt.
-  const taken = new Set([...present, ...known.map((x) => x.key), ...extraParts(c).map((x) => x.key), ...(c.items || []).map((i) => normWord(i.name))]);
-  const common = catalogMatches(q).filter((x) => !taken.has(normWord(x.name)) && !(c.items || []).some((i) => nameMatchesItem(x.name, i))).slice(0, Math.max(0, 6 - known.length));
+  // Delar med sida (Bromsbelägg fram) visas även om delen redan används, eftersom sidan läggs till på samma rad.
+  const taken = new Set([...known.map((x) => x.key), ...extraParts(c).map((x) => x.key), ...(c.items || []).map((i) => normWord(i.name))]);
+  const common = catalogMatches(q).filter((x) => (x.side || (!taken.has(normWord(x.name)) && !present.has(normWord(x.name)))) && !(c.items || []).some((i) => nameMatchesItem(x.name, i))).slice(0, Math.max(0, 6 - known.length));
   const exactAll = exact || common.some((x) => normWord(x.name) === t);
   const sug = (ic, title, sub, attrs) => `<button type="button" class="sg-ic" data-act="w-add" ${attrs}><span class="sg-i">${icon(ic, 18)}</span><span class="sg-t"><b>${title}</b><span>${sub}</span></span></button>`;
   box.innerHTML = [
     ...known.map((x) => sug(partIcon(x.name), esc(x.name), "Använd förut", `data-name="${esc(x.name)}"`)),
     itemHit && !itemThere ? sug(partIcon(itemHit.name, itemHit.id), esc(itemHit.name), "Underhållspunkt", `data-item="${esc(itemHit.id)}" data-name="${esc(itemHit.name)}"`) : "",
-    ...common.map((x) => sug(x.icon, esc(x.name), "Vanlig del", `data-name="${esc(x.name)}"`)),
+    ...common.map((x) => sug(x.icon, esc(x.name), "Vanlig del", `data-name="${esc(x.add || x.name)}"${x.side ? ` data-sides="${esc(PART_SIDES[x.side].join("|"))}"` : ""}`)),
     itemThere ? `<p class="hint">${esc(itemHit.name)} finns redan i listan ovanför.</p>` : "",
     !exactAll ? sug(partIcon(q), `Lägg till ”${esc(q.trim())}”`, "Ny del", `data-name="${esc(q.trim().replace(/^./, (x) => x.toUpperCase()))}"`) : "",
   ].join("");
@@ -8519,10 +8521,20 @@ const ACTIONS = {
     if (!list) return;
     const itemId = el.dataset.item || null;
     const key = itemId ? `item:${itemId}` : normWord(el.dataset.name);
+    // Ett förslag med sida (Bromsbelägg fram) väljer den sidan. Finns raden redan läggs sidan till där.
+    const sides = (el.dataset.sides || "").split("|").filter(Boolean);
     let row = list.querySelector(`.work-row[data-key="${CSS.escape(key)}"]`);
     if (!row) {
-      list.insertAdjacentHTML("beforeend", workRowHtml({ key, itemId, name: el.dataset.name }, { action: "bytt" }));
+      list.insertAdjacentHTML("beforeend", workRowHtml({ key, itemId, name: el.dataset.name }, { action: "bytt", sides }));
       row = list.lastElementChild;
+    } else if (sides.length) {
+      const sel = row.querySelector(".w-pos");
+      if (sel) {
+        const all = [...new Set([...sel.value.split("|").filter(Boolean), ...sides])];
+        sel.innerHTML = posOptions(itemId, all, posKind(itemId, el.dataset.name) || "corners");
+        sel.hidden = false;
+        row.querySelector(".w-posbtn")?.remove();
+      }
     }
     row.scrollIntoView({ block: "nearest" });
     const s = $("#w-search"); if (s) s.value = "";
