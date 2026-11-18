@@ -1972,3 +1972,19 @@ body.car-locked .fab { display: none; }
 .pager span { font-size: 14px; color: var(--ink-2); min-width: 92px; text-align: center; font-variant-numeric: tabular-nums; }
 .pager-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--accent-soft); color: var(--accent-text); display: grid; place-items: center; cursor: pointer; padding: 0; }
 .pager-btn:disabled { opacity: .35; cursor: default; }
+/* Underhåll: lika höga rader, så att pilarna inte flyttar sig */
+.maint-rows > .dl { height: 100px; box-sizing: border-box; overflow: hidden; }
+.maint-rows > .dl .dl-s { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.maint-rows > .maint-pad { visibility: hidden; }
+/* Försenat: i orange temat är accentfärgen redan en varningsfärg. I gröna, blå och lila teman blir försenat rött,
+   annars ser ett försenat byte ut som något bra. */
+:root[data-theme="gron"], :root[data-theme="hav"], :root[data-theme="lila"] { --late: #C8432B; --late-soft: rgba(200, 67, 43, .13); --late-text: #A8361F; }
+:root[data-theme="gron-dark"], :root[data-theme="hav-dark"], :root[data-theme="natt"] { --late: #F07A62; --late-soft: rgba(240, 122, 98, .16); --late-text: #FF9A85; }
+.pill.urgent { background: var(--late-soft, var(--accent-soft)); color: var(--late-text, var(--accent-text)); }
+.wear.urgent i { background: var(--late, var(--accent)); }
+.koll-head.urgent { color: var(--late-text, var(--accent-text)); }
+.koll-row.urgent { background: var(--late-soft, var(--accent-soft)); }
+.koll-row.urgent .koll-tile { background: var(--late, var(--accent)); border-color: var(--late, var(--accent)); color: #fff; }
+.koll-row.urgent .koll-tile b, .koll-row.urgent .koll-tile small { color: #fff; }
+.maint-rows > .dl > div { min-width: 0; }
+.maint-rows > .dl .dl-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
