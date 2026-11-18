@@ -2,6 +2,17 @@
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
   // Delkatalogen (parts.js)
+  "Inre styrled": "Inner tie rod",
+  "Stötdämpare fram": "Shock absorbers front",
+  "Stötdämpare bak": "Shock absorbers rear",
+  "Fjäder fram": "Springs front",
+  "Fjäder bak": "Springs rear",
+  "Fjäderbenslagring": "Strut top mount",
+  "Krängningshämmarstag": "Sway bar link",
+  "Krängningshämmarbussning": "Sway bar bushing",
+  "Hjulnav": "Wheel hub",
+  "Bussningar": "Bushings",
+  "Servopump": "Power steering pump",
   "Bromsbelägg fram": "Brake pads front",
   "Bromsbelägg bak": "Brake pads rear",
   "Bromsbelägg": "Brake pads",
