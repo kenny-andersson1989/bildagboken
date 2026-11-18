@@ -14,6 +14,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import { MAPKIT_TOKEN } from "./maps-config.js";
 import { CAR_MODELS } from "./car-models.js";
 import { PARTS } from "./parts.js";
+import { PART_INFO } from "./parts-info.js";
 
 const VERSION = "2.8";
 
@@ -163,6 +164,15 @@ const PART_WORDS = [
   ["torkarblad", "p-torkare"], ["batteri", "p-batteri"], ["klimatanläggning", "p-klimat"],
   ...PARTS.flatMap((x) => [x.name, ...(x.alias || [])].map((w) => [w, x.icon])),
 ].map(([w, ic]) => [normWord(w), ic]).sort((a, b) => b[0].length - a[0].length);
+// "Bra att veta" för en del i delkatalogen: delens eget namn, annars den del vars ord finns i namnet
+// (längst ord först, så "Bromsskivor fram vänster" hittar Bromsskivor fram).
+const PART_INFO_WORDS = PARTS.flatMap((p) => [p.name, ...(p.alias || [])].map((w) => [normWord(w), p.name])).sort((a, b) => b[0].length - a[0].length);
+function partInfo(name) {
+  if (!name) return null;
+  const exact = PART_INFO[name] || PART_INFO[Object.keys(PART_INFO).find((k) => normWord(k) === normWord(name))];
+  const hit = exact || PART_INFO[PART_INFO_WORDS.find(([w]) => w && normWord(name).includes(w))?.[1]];
+  return hit ? [hit[EN ? 1 : 0]] : null;
+}
 function partIcon(name, id) {
   if (id && PART_ICON_IDS[id]) return PART_ICON_IDS[id];
   const t = normWord(name);
@@ -7395,7 +7405,7 @@ function itemSheet(id) {
   const touch = history[0];
   const touchAction = touch ? workOf(touch, c).find((w) => workIsItem(w, item))?.action || "bytt" : null;
   const otherWork = touch && !anyWork && !st.check && touchAction !== "bytt" && (!st.lastDate || touch.date > st.lastDate);
-  const info = ITEM_INFO[item.id]?.[EN ? "en" : "sv"];
+  const info = ITEM_INFO[item.id]?.[EN ? "en" : "sv"] || partInfo(item.name);
   openSheet(item.name, `
     <dl class="detail-list">
       <div><dt>Intervall</dt><dd>${esc(interval || "–")}</dd></div>
@@ -7505,6 +7515,7 @@ function partSheet(key) {
       <div><dt>Senast</dt><dd>${esc(`${WORK_ACTIONS[x.lastAction] || "Bytt"} ${fmtDate(x.entries[0].date)}`)}</dd></div>
       <div><dt>Antal gånger</dt><dd>${x.entries.length}</dd></div>
     </dl>
+    ${(() => { const info = partInfo(x.name); return info ? `<details class="more item-info" style="margin-top:16px"><summary>Bra att veta</summary><ul data-notr>${info.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></details>` : ""; })()}
     <h3 class="section-t" style="margin-top:20px">I loggen</h3>
     <div class="rows" style="margin-top:6px">${x.entries.map((e) => entryRow(e, `part:${key}`)).join("")}</div>
     <div class="form" style="margin-top:18px">
