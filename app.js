@@ -146,7 +146,52 @@ const daysText = (d) => {
   return m >= 18 ? `${fmt(m / 12, 1)} år` : `${m} mån`;
 };
 // I Glenns teman används symbolerna i pixelstil (px-), annars de vanliga (i-).
-const icon = (name, size = 22) => `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#${document.documentElement.dataset.garage ? "px" : "i"}-${name}"/></svg>`;
+// Saknas en pixelvariant (till exempel delarnas ikoner) används pixelskiftnyckeln.
+const icon = (name, size = 22) => {
+  const px = document.documentElement.dataset.garage && (document.getElementById(`px-${name}`) ? name : "wrench");
+  return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#${px ? `px-${px}` : `i-${name}`}"/></svg>`;
+};
+
+// Ikon för en underhållspunkt eller en del. Först punktens id, sedan ord i namnet.
+// Ordningen spelar roll: de mer specifika orden står före de allmänna (till exempel "filter").
+const PART_ICON_IDS = { olja: "olja", luftfilter: "luftfilter", kupefilter: "kupefilter", tandstift: "tandstift", bromsvatska: "bromsvatska", torkare: "torkare", ac: "ac", batteri: "batteri", kamrem: "rem" };
+const PART_ICON_WORDS = [
+  [/motorolja|oljefilter|oljebyte|^olja/, "olja"],
+  [/luftfilter/, "luftfilter"],
+  [/kupefilter|pollenfilter/, "kupefilter"],
+  [/tändstift/, "tandstift"],
+  [/bromsvätska|bromsolja/, "bromsvatska"],
+  [/bromsklots|bromsbelägg/, "bromsklotsar"],
+  [/bromsskiv/, "bromsskiva"],
+  [/\babs\b/, "abs"],
+  [/spolarvätska|spolar/, "spolarvatska"],
+  [/torkar/, "torkare"],
+  [/klimat/, "klimat"],
+  [/^ac\b|ac-|luftkonditionering/, "ac"],
+  [/batteri/, "batteri"],
+  [/rem\b|remmen|remsats/, "rem"],
+  [/fjäder|fjädrar/, "fjader"],
+  [/länkarm|bärarm|triangelarm/, "lankarm"],
+  [/hjullager/, "hjullager"],
+  [/lager/, "rullager"],
+  [/generator/, "generator"],
+  [/ledningsmatta|kabelstam|kablage/, "ledningsmatta"],
+  [/stötfångare/, "stotfangare"],
+  [/hjulskifte|däckbyte|däckskifte/, "hjulskifte"],
+  [/hjulinställning|hjulvinkel/, "hjulinstallning"],
+  [/parkering/, "parking"],
+  [/lack/, "lack"],
+  [/filter/, "filter"],
+  [/krankhammare|motor/, "motor"],
+];
+function partIcon(name, id) {
+  if (id && PART_ICON_IDS[id]) return `p-${PART_ICON_IDS[id]}`;
+  const t = normWord(name);
+  if (/stötfångare/.test(t) && /hölje|kåpa/.test(t)) return "p-holje";
+  const hit = PART_ICON_WORDS.find(([re]) => re.test(t));
+  if (!hit) return "wrench";
+  return hit[1] === "parking" ? "parking" : `p-${hit[1]}`;
+}
 // Symbolerna som står direkt i index.html (menyn) byts när temat byts.
 function swapIcons(root = document) {
   const px = !!document.documentElement.dataset.garage;
@@ -3947,7 +3992,7 @@ function viewOverview() {
     parts.push(`<article class="card">
       <h2>Underhåll</h2>
       <div class="rows">${top.map((x) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(x.item.id)}">
-        <span class="dl-ic">${icon("wrench", 20)}</span>
+        <span class="dl-ic">${icon(partIcon(x.item.name, x.item.id), 20)}</span>
         <span><span class="dl-t">${esc(x.item.name)}</span><span class="dl-s">${esc(itemSubText(x))}</span>${wearBar(x)}</span>
         <span class="pill ${x.level}">${esc(x.label)}</span></button>`).join("")}</div>
       ${known.length > 3 ? `<button class="link" type="button" data-act="toggle-maint" style="margin-top:10px">${S.maintAll ? "Visa färre" : `Visa ${known.length - 3} till`}</button>` : ""}
@@ -4742,11 +4787,11 @@ function viewCar() {
     <!--card:slap-->${trailerCard(c)}
     <!--card:maint--><div class="card" id="underhall" style="scroll-margin-top:16px">
       <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
-      <div class="rows">${st.filter((s) => s.item.mil || s.item.months || s.lastDate).map((s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
+      <div class="rows">${st.filter((s) => s.item.mil || s.item.months || s.lastDate).map((s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon(partIcon(s.item.name, s.item.id), 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
       ${(() => {
         const extras = extraParts(c);
         if (!extras.length) return "";
-        const rows = extras.map((x) => `<button class="dl as-btn" type="button" data-act="open-part" data-id="${esc(x.key)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(x.name)}</div><div class="dl-s">${esc(`senast ${(WORK_ACTIONS[x.lastAction] || "Bytt").toLowerCase()} ${fmtDateShort(x.entries[0].date)}${x.entries.length > 1 ? ` · ${x.entries.length} gånger` : ""}`)}</div></div><span></span></button>`).join("");
+        const rows = extras.map((x) => `<button class="dl as-btn" type="button" data-act="open-part" data-id="${esc(x.key)}"><div class="dl-ic">${icon(partIcon(x.name), 20)}</div><div><div class="dl-t">${esc(x.name)}</div><div class="dl-s">${esc(`senast ${(WORK_ACTIONS[x.lastAction] || "Bytt").toLowerCase()} ${fmtDateShort(x.entries[0].date)}${x.entries.length > 1 ? ` · ${x.entries.length} gånger` : ""}`)}</div></div><span></span></button>`).join("");
         return `${S.partsAll ? `<p class="label" style="margin:14px 0 2px">Annat som har gjorts</p><div class="rows">${rows}</div>` : ""}
           <button class="link" type="button" data-act="toggle-parts" style="margin-top:10px">${S.partsAll ? "Visa färre" : `Visa ${extras.length} till`}</button>`;
       })()}
