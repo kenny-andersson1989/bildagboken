@@ -4714,6 +4714,8 @@ function itemForecast(s, c) {
 }
 const forecastText = (f) => (f.d <= today0() ? "Redan nu" : `Runt ${MONTHS[f.d.getMonth()]} ${f.d.getFullYear()}`);
 
+// Kortare rad i listan: "Vid 23 120 mil · sep 2027" i stället för "Vid 23 120 mil eller senast september 2027".
+const shortSub = (t) => String(t).replace(/ eller senast /, " · ").replace(/\b(januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)\b/g, (m) => (MONTHS_SHORT[MONTHS.indexOf(m)] || m).toLowerCase());
 // Bläddra tio i taget: pil vänster, "11–20 av 34", pil höger.
 const PAGE_SIZE = 10;
 const MAINT_PAGE = 5;
@@ -4792,7 +4794,7 @@ function viewCar() {
         // i tid eller mil, okänt sist). Sedan annat som har gjorts, senast först. Fem åt gången med pilar.
         const items = st.filter((s) => s.item.mil || s.item.months || s.lastDate).sort((a, b) => daysToDue(a, c) - daysToDue(b, c));
         const extras = extraParts(c);
-        const row = (s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon(partIcon(s.item.name, s.item.id), 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`;
+        const row = (s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon(partIcon(s.item.name, s.item.id), 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(shortSub(itemSubText(s)))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`;
         const extraRow = (x) => `<button class="dl as-btn" type="button" data-act="open-part" data-id="${esc(x.key)}"><div class="dl-ic">${icon(partIcon(x.name), 20)}</div><div><div class="dl-t">${esc(x.name)}</div><div class="dl-s">${esc(`senast ${(WORK_ACTIONS[x.lastAction] || "Bytt").toLowerCase()} ${fmtDateShort(x.entries[0].date)}${x.entries.length > 1 ? ` · ${x.entries.length} gånger` : ""}`)}</div></div><span></span></button>`;
         const all = [...items.map(row), ...extras.map(extraRow)];
         if (!all.length) return `<div class="rows"><p class="muted">Inga punkter. Lägg till under Ändra.</p></div>`;
