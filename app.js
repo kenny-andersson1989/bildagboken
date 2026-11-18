@@ -4742,7 +4742,22 @@ function viewCar() {
     <!--card:slap-->${trailerCard(c)}
     <!--card:maint--><div class="card" id="underhall" style="scroll-margin-top:16px">
       <h2>Underhåll <button class="link" type="button" data-act="edit-items">Ändra</button></h2>
-      <div class="rows">${st.filter((s) => s.item.mil || s.item.months || s.lastDate).map((s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`).join("") || `<p class="muted">Inga punkter. Lägg till under Ändra.</p>`}</div>
+      ${(() => {
+        // Det som behöver bytas först överst: försenat, sedan närmast i tid eller mil. Okänt sist.
+        // Fem syns, sedan tio i taget med pilar.
+        const all = st.filter((s) => s.item.mil || s.item.months || s.lastDate).sort((a, b) => daysToDue(a, c) - daysToDue(b, c));
+        if (!all.length) return `<div class="rows"><p class="muted">Inga punkter. Lägg till under Ändra.</p></div>`;
+        const per = 10, pages = Math.ceil(all.length / per), page = Math.min(S.maintPage || 0, pages - 1);
+        const shown = S.maintOpen ? all.slice(page * per, page * per + per) : all.slice(0, 5);
+        const row = (s) => `<button class="dl as-btn" type="button" data-act="edit-item" data-id="${esc(s.item.id)}"><div class="dl-ic">${icon("wrench", 20)}</div><div><div class="dl-t">${esc(s.item.name)}</div><div class="dl-s">${esc(itemSubText(s))}</div>${wearBar(s)}</div><span class="pill ${s.unknown ? "none" : s.level}">${esc(s.noInterval ? "Inget intervall" : s.unknown ? "Okänt" : s.label)}</span></button>`;
+        const nav = !S.maintOpen
+          ? (all.length > 5 ? `<button class="link" type="button" data-act="maint-more" style="margin-top:10px">${esc(`Visa fler (${all.length - 5})`)}</button>` : "")
+          : `<div class="pg-pages maint-pages">${page > 0 ? `<button class="link" type="button" data-act="maint-page" data-d="-1">${icon("back", 14)} Föregående</button>` : "<span></span>"}
+              ${pages > 1 ? `<span class="hint">${esc(`${page * per + 1}–${Math.min(all.length, page * per + per)} av ${all.length}`)}</span>` : "<span></span>"}
+              ${page < pages - 1 ? `<button class="link" type="button" data-act="maint-page" data-d="1">${esc(`Nästa ${Math.min(per, all.length - (page + 1) * per)}`)} ${icon("next", 14)}</button>` : "<span></span>"}</div>
+             <button class="link" type="button" data-act="maint-less" style="margin-top:6px">Visa färre</button>`;
+        return `<div class="rows">${shown.map(row).join("")}</div>${nav}`;
+      })()}
       ${(() => {
         const extras = extraParts(c);
         if (!extras.length) return "";
@@ -8501,6 +8516,9 @@ const ACTIONS = {
     $("#w-search")?.focus();
   },
   "toggle-parts"() { S.partsAll = !S.partsAll; render(); },
+  "maint-more"() { S.maintOpen = true; S.maintPage = 0; render(); },
+  "maint-less"() { S.maintOpen = false; S.maintPage = 0; render(); document.getElementById("underhall")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
+  "maint-page"(el) { S.maintPage = Math.max(0, (S.maintPage || 0) + Number(el.dataset.d)); render(); document.getElementById("underhall")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
   "open-part"(el) { partSheet(el.dataset.id); },
   "log-part"(el) { entryForm("service", { parts: [el.dataset.id] }, { back: "open-part", backId: normWord(el.dataset.id) }); },
   "part-to-item"(el) {
