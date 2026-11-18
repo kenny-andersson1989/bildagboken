@@ -2,6 +2,11 @@
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
   // Delkatalogen (parts.js)
+  "Avgasrör": "Exhaust pipe",
+  "Partikelfilter (DPF)": "Particulate filter (DPF)",
+  "EGR-kylare": "EGR cooler",
+  "Bränsleinsprutare": "Fuel injector",
+  "Bränsletrycksregulator": "Fuel pressure regulator",
   "Motorfäste": "Engine mount",
   "Växellådsfäste": "Gearbox mount",
   "Drivknut": "CV joint",
