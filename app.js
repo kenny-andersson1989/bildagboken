@@ -50,7 +50,14 @@ if (NATIVE && window.Capacitor?.isPluginAvailable?.("App")) {
     if (seen !== r.url) openLink(r.url);
   }).catch(() => {});
 }
-const LANG = (() => { try { return localStorage.getItem("bildagboken.lang") === "en" ? "en" : "sv"; } catch { return "sv"; } })();
+// Språket: det man själv har valt, annars telefonens språk (svenska om telefonen är på svenska, annars engelska).
+const LANG = (() => {
+  let saved = null;
+  try { saved = localStorage.getItem("bildagboken.lang"); } catch { /* inget sparat */ }
+  if (saved === "en" || saved === "sv") return saved;
+  const first = String((navigator.languages && navigator.languages[0]) || navigator.language || "sv").toLowerCase();
+  return first.startsWith("sv") ? "sv" : "en";
+})();
 let EN = null, EN_RULES = [];
 if (LANG === "en") {
   try { ({ EN, EN_RULES } = await import("./en.js")); } catch (e) { console.error("Kunde inte ladda engelska", e); }
@@ -2296,6 +2303,7 @@ function renderLogin(error = "") {
   // Välkomstsidan: logotyp, rubrik, tre fördelar och inloggning längst ner.
   setScreen("login", `
     <section class="login-a">
+      <div class="seg seg-sm la-lang" role="group" aria-label="Språk">${[["sv", "Svenska"], ["en", "English"]].map(([k, l]) => `<button type="button" data-act="lang" data-v="${k}" aria-pressed="${LANG === k}" data-notr>${l}</button>`).join("")}</div>
       <h1 class="la-brand"><img class="logo-l" src="icons/logo.svg?v=6" alt="Bildagboken" width="936" height="200"><img class="logo-d" src="icons/logo-dark.svg?v=6" alt="" aria-hidden="true" width="936" height="200"></h1>
       <h2 class="la-title">Håll koll på bilen, tillsammans.</h2>
       <p class="la-sub">Bildagboken samlar allt om er bil på ett ställe, och alla ni som delar bilen ser samma sak.</p>

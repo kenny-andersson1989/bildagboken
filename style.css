@@ -2077,3 +2077,6 @@ body.car-locked .fab { display: none; }
 .types-grid > button.w3 { grid-column: span 6; flex-direction: row; justify-content: center; }
 .email-links { display: flex; justify-content: center; margin-top: 4px; }
 .verify .hint { margin-top: 10px; }
+/* Språkval överst på första sidan */
+.la-lang { align-self: flex-end; margin: 0 0 4px; }
+.la-lang button { padding: 6px 10px; font-size: 12.5px; }
