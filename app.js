@@ -2285,6 +2285,8 @@ function render() {
   document.body.classList.toggle("car-locked", locked);
   const fn = locked ? viewLocked : views[S.view] || viewOverview;
   setScreen("view-" + S.view, fn(), { showNav: true, keepForm: true });
+  // Första gången i Resor i iPhone-appen: välj hur resor ska startas.
+  if (S.view === "resor" && !locked && autoAvailable() && !pref.get("tripGuide") && sheet.hidden) setTimeout(() => { if (sheet.hidden && S.view === "resor") tripGuideSheet(); }, 400);
   // Antal nya aviseringar även i sidomenyn på datorn.
   const n = unseenFromOthers().length;
   const bell = nav.querySelector('[data-go="aviseringar"]');
@@ -5835,9 +5837,9 @@ function viewTrips() {
   const old = open && Date.now() - tsMs(open.startedAt) >= 4 * 36e5;
   return `${subHeader(`Körjournal · ${carName(c)}`, "Resor")}
     <article class="card rz-hero">${open
-      ? `<div class="rz-live"><span class="k${old ? " old" : ""}">${old ? "Glömde du avsluta?" : "Resa pågår"}</span><span class="big" data-trip-bar>${esc(tripBarText(open))}</span>
+      ? `<div class="rz-live${open.pausedAt ? " paused" : ""}"><span class="k${old ? " old" : ""}">${open.pausedAt ? "Pausad" : old ? "Glömde du avsluta?" : "Resa pågår"}</span><span class="big" data-trip-bar>${esc(tripBarText(open))}</span>
           <span class="s">${esc([open.to ? `Mot ${open.to}` : "", `Startade ${clock(tsMs(open.startedAt))} vid ${fmtKm(open.odoStart)}`].filter(Boolean).join(" · "))}</span>
-          <div class="row"><button class="rz-stop" type="button" data-act="start-trip"><span class="tb-sq"></span> Avsluta</button>${open.to ? `<button class="rz-ghost" type="button" data-act="trip-nav">Vägbeskrivning</button>` : ""}</div></div>`
+          <div class="row"><button class="rz-stop" type="button" data-act="start-trip"><span class="tb-sq"></span> Avsluta</button><button class="rz-ghost" type="button" data-act="trip-pause">${open.pausedAt ? "Fortsätt" : "Pausa"}</button>${open.to ? `<button class="rz-ghost" type="button" data-act="trip-nav">Vägbeskrivning</button>` : ""}</div></div>`
       : `<button class="rz-start" type="button" data-act="trip-start-now">${icon("gauge", 24)} Starta resa</button><button class="link rz-link" type="button" data-act="new-trip">Logga en resa i efterhand</button>`}</article>
     ${review.length ? `<article class="card"><h2>${esc(`${review.length} ${review.length === 1 ? "resa" : "resor"} att gå igenom`)}</h2><div class="rows">${review.map((t) => `<div class="swipe-wrap"><span class="sw-bg sw-work">Tjänst</span><span class="sw-bg sw-priv">Privat</span><div class="dl swipe-row" data-id="${esc(t.id)}"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.from, t.to].filter(Boolean).join(" → ") || "Resa")}</div><div class="dl-s">${esc(`${fmtDateShort(t.date)} ${clock(tsMs(t.startedAt))}–${clock(tsMs(t.endedAt))} · ${fmtKm(tripMil(t))} · GPS`)}</div>
       ${reviewBtns(t)}</div></div></div>`).join("")}</div>
@@ -5964,14 +5966,14 @@ function autoTripsHtml() {
     ? st.driving ? `Kör nu${st.meters ? ` · ${fmt(st.meters / 1000, 1)} km` : ""}` : "Känner av när bilen körs och mäter vägen, även när appen är stängd."
     : "Känner av när bilen körs och mäter vägen, även när appen är stängd. Du väljer tjänst eller privat efteråt.")}</small></span>
     <input type="checkbox" class="ios-switch" data-act="auto-toggle"${on ? " checked" : ""} aria-label="Automatisk körjournal"></label>`;
-  if (!on) return sw;
+  if (!on) return `${sw}<button class="link tg-link" type="button" data-act="trip-guide">Hur ska resor startas?</button>`;
   // Det som saknas för att resorna ska mätas i bakgrunden, med en knapp som rättar det.
   let fix = "";
   if (st.auth === "denied") fix = autoFix("Appen får inte använda platsen", "Utan platsen kan resorna inte mätas. Tryck nedan och välj Plats → Alltid.", "Öppna inställningar", "settings");
   else if (st.auth !== "always") fix = autoFix("Platsen behöver vara på Alltid", "Nu mäts resor bara när appen är öppen. Med Alltid mäts de även när telefonen ligger i fickan.", "Tillåt Alltid", "always");
   else if (st.precise === false) fix = autoFix("Exakt plats är avstängd", "Då blir sträckorna fel. Tryck nedan och slå på Exakt plats under Plats.", "Öppna inställningar", "settings");
   const ok = !fix ? `<div class="auto-ok">${icon("check", 16)} Resorna mäts i bakgrunden</div>` : "";
-  return `${sw}${fix}${ok}${btHtml(st)}${autoLogHtml(st)}`;
+  return `${sw}${fix}${ok}<button class="link tg-link" type="button" data-act="trip-guide">Hur ska resor startas?</button>${btHtml(st)}${autoLogHtml(st)}`;
 }
 
 // Bilens Bluetooth eller CarPlay: kopplade bilar, förslag att koppla den som telefonen är ansluten till nu,
@@ -6034,6 +6036,23 @@ document.addEventListener("change", (ev) => {
   saveMyInfo("workHours", { ...workHours(), from, to });
   render();
 });
+// Hur ska resor startas? Automatiskt med GPS, eller när man själv trycker eller ansluter till bilen.
+function tripGuideSheet(choice = S.tripGuideChoice || (S.autoStatus?.enabled ? "auto" : "")) {
+  S.tripGuideChoice = choice;
+  const opt = (k, ic, title, text) => `<button class="tg-opt${choice === k ? " on" : ""}" type="button" data-act="trip-guide-pick" data-v="${k}" aria-pressed="${choice === k}">
+      <span class="tg-ic">${icon(ic, 26)}</span><span><b>${esc(title)}</b><small>${esc(text)}</small></span><span class="tg-radio" aria-hidden="true">${choice === k ? icon("tick", 14) : ""}</span></button>`;
+  openSheet("Hur ska resor startas?", `<p class="muted" style="margin-top:0">Du kan ändra det när som helst under Resor → Inställningar.</p>
+    ${opt("auto", "route", "Automatiskt", "Appen känner av när bilen körs och mäter vägen, även när appen är stängd.")}
+    ${opt("manual", "hand", "När jag trycker eller ansluter", "Starta med ett tryck, eller automatiskt när telefonen ansluts till bilens Bluetooth eller CarPlay. Ingen GPS i bakgrunden annars.")}
+    <ul class="tg-notes">
+      <li>${icon("hand", 16)}<span>Du kan alltid starta en resa själv, vad du än väljer.</span></li>
+      <li>${icon("lock", 16)}<span>Start, mål och vägen sparas i er körjournal och syns bara för ert hushåll.</span></li>
+      <li>${icon("alert", 16)}<span>Håll blicken på vägen. Appen sköter sig själv medan du kör.</span></li>
+    </ul>
+    ${choice === "manual" ? `<details class="more" open><summary>Starta när telefonen ansluts till bilen</summary>
+      <ol class="steps"><li>Öppna appen <b>Genvägar</b> → <b>Automation</b> → <b>+</b>.</li><li>Välj <b>Bluetooth</b> eller <b>CarPlay</b>, välj bilen och <b>Kör omedelbart</b>.</li><li>Lägg till åtgärden <b>Bilen är ansluten</b> från Bildagboken.</li></ol></details>` : ""}
+    <button class="btn primary block" type="button" data-act="trip-guide-done"${choice ? "" : " disabled"} style="margin-top:14px">Fortsätt</button>`);
+}
 function autoFix(title, text, btn, mode) {
   return `<div class="auto-fix"><b>${esc(title)}</b><p>${esc(text)}</p><button class="btn primary" type="button" data-act="auto-allow" data-mode="${mode}">${esc(btn)}</button></div>`;
 }
@@ -6148,9 +6167,18 @@ function reviewSheet() {
 // Raden för pågående resa (som i Spotify): syns ovanför menyn i hela appen så länge en resa pågår.
 // Efter fyra timmar frågar den om man glömde avsluta. Tid och ungefärlig sträcka uppdateras av tickTrip().
 const hmm = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 60)}:${pad(m % 60)}`; };
-function tripBarText(o) {
+// Hur länge en resa har pågått, utan pauserna. Pågår en paus räknas den inte heller.
+const tripElapsed = (o) => Math.max(0, (o.pausedAt ? tsMs(o.pausedAt) : Date.now()) - tsMs(o.startedAt) - (o.pausedMs || 0));
+// Sträckan hittills: telefonens GPS (iPhone-appen mäter under en egen resa), annars kartans väg från start.
+function tripSoFarMil(o) {
+  const st = S.autoStatus;
+  if (st?.manualId === o.id && st.manualMeters > 0) return { mil: st.manualMeters / 10000, gps: true };
   const est = S.tripEst?.id === o.id ? S.tripEst.mil : null;
-  return `${hmm(Date.now() - tsMs(o.startedAt))}${est != null ? ` · ca ${fmtKm(est)}` : ""}`;
+  return est != null ? { mil: est, gps: false } : null;
+}
+function tripBarText(o) {
+  const d = tripSoFarMil(o);
+  return `${hmm(tripElapsed(o))}${d ? ` · ${d.gps ? "" : "ca "}${fmtKm(d.mil)}` : ""}`;
 }
 function renderTripBar() {
   const o = S.user && S.hid && S.loaded.entries && tripsOn() && S.view !== "resor" ? openTrip() : null;
@@ -6177,7 +6205,8 @@ function updateLiveActivity() {
   if (!NATIVE || ANDROID || !S.user || !S.hid || !S.loaded.entries) return;
   const o = tripsOn() ? S.trips.find((t) => t.odoEnd == null && !t.auto && (t.driver || t.createdBy) === uid()) : null;
   const c = o && S.cars.find((x) => x.id === o.carId);
-  const trip = o ? { id: o.id, start: tsMs(o.startedAt), from: o.from || "", to: o.to || "", car: c ? carName(c) : "", kind: o.kind === "privat" ? "privat" : "tjanst", lang: EN ? "en" : "sv" } : null;
+  const trip = o ? { id: o.id, start: tsMs(o.startedAt), from: o.from || "", to: o.to || "", car: c ? carName(c) : "", kind: o.kind === "privat" ? "privat" : "tjanst", lang: EN ? "en" : "sv",
+    paused: !!o.pausedAt, since: tsMs(o.startedAt) + (o.pausedMs || 0), elapsed: Math.round(tripElapsed(o) / 1000) } : null;
   const key = JSON.stringify(trip);
   if (key === liveSent) return;
   liveSent = key;
@@ -6346,7 +6375,9 @@ async function routeMil(from, to) {
 const durText = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} tim ${m % 60} min`; };
 function tripLiveText(o) {
   const est = S.tripEst?.id === o.id ? S.tripEst.mil : null;
-  return [`Pågått ${durText(Date.now() - tsMs(o.startedAt))}`, est != null ? `ca ${fmtKm(est)} från start` : ""].filter(Boolean).join(" · ");
+  const d = tripSoFarMil(o);
+  void est;
+  return [o.pausedAt ? `Pausad efter ${durText(tripElapsed(o))}` : `Pågått ${durText(tripElapsed(o))}`, d ? `${d.gps ? "" : "ca "}${fmtKm(d.mil)}${d.gps ? "" : " från start"}` : ""].filter(Boolean).join(" · ");
 }
 async function updateTripEstimate() {
   const o = tripsOn() && openTrip();
@@ -6362,6 +6393,13 @@ async function updateTripEstimate() {
   } finally { updateTripEstimate.busy = false; }
   tickTrip();
 }
+async function refreshManualMeters() {
+  const o = tripsOn() && openTrip();
+  if (!o || !autoAvailable() || document.hidden) return;
+  try { const st = await tracker().status(); if (st) S.autoStatus = { ...(S.autoStatus || {}), ...st }; } catch { /* äldre version av appen */ }
+  tickTrip();
+}
+setInterval(refreshManualMeters, 15000);
 function tickTrip() {
   const o = tripsOn() && openTrip();
   if (!o) return;
@@ -6374,6 +6412,15 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) { ti
 
 async function suggestTripDistance(t) {
   const box = $("#tr-route");
+  // Mätt med telefonens GPS under resan: det säkraste förslaget.
+  const g = tripSoFarMil(t);
+  if (box && g?.gps && t.odoStart != null) {
+    box.innerHTML = `<p class="hint">${icon("pin", 14)} ${esc(`Enligt GPS ${fmtKm(g.mil)}, alltså runt ${fmtKm(t.odoStart + g.mil)} på mätaren.`)}</p>`;
+    box.hidden = false;
+    const pos = await freshTripPosition(), el = $("#tr-endPos");
+    if (pos && el && document.contains(el)) el.value = tripLocJson(pos);
+    return;
+  }
   if (!box) return;
   if (!t.startLoc || t.odoStart == null) {
     // Ingen startpunkt: spara ändå var resan slutade.
@@ -6441,6 +6488,8 @@ async function saveTrip(form) {
     // Automatiska resor behåller sina GPS-uppgifter. Ändras mätaren är den inte längre beräknad.
     auto: old?.auto || undefined, autoMeters: old?.autoMeters ?? undefined,
     endLoc: (mode === "end" ? parsePos(str("endPos")) : null) || old?.endLoc || undefined,
+    gpsMeters: mode === "end" && S.autoStatus?.manualId === old?.id && S.autoStatus.manualMeters > 0 ? Math.round(S.autoStatus.manualMeters) : old?.gpsMeters ?? undefined,
+    pausedMs: (old?.pausedAt ? (old.pausedMs || 0) + (Date.now() - tsMs(old.pausedAt)) : old?.pausedMs) || undefined,
     odoEstimated: old?.odoEstimated ? odoStart === old.odoStart && odoEnd === old.odoEnd : undefined,
     reviewedAt: old?.auto && !old.kind ? Date.now() : old?.reviewedAt ?? undefined,
     gapOk: old?.gapOk || undefined, suggestKind: old?.suggestKind || undefined,
@@ -8995,6 +9044,18 @@ const ACTIONS = {
     render();
     if (!sheet.hidden) reviewSheet();
   },
+  "trip-guide-pick"(el) { tripGuideSheet(el.dataset.v); },
+  async "trip-guide-done"() {
+    const v = S.tripGuideChoice;
+    if (!v) return;
+    pref.set("tripGuide", v);
+    closeSheet();
+    const on = !!S.autoStatus?.enabled;
+    if (v === "auto" && !on) await ACTIONS["auto-on"]();
+    else if (v === "manual" && on) { try { S.autoStatus = await tracker().disable(); } catch { /* finns inte */ } render(); showToast("Resor startas när du trycker eller ansluter till bilen."); }
+    else render();
+  },
+  "trip-guide"() { S.tripGuideChoice = null; tripGuideSheet(); },
   async "auto-on"() {
     try { S.autoStatus = await tracker().enable(); } catch { return showToast("Den automatiska körjournalen finns i iPhone-appen från version 1.2."); }
     render();
@@ -9084,6 +9145,17 @@ const ACTIONS = {
     updateDoc(doc(col("trips"), b.id), { gapOk: true }).catch(onWriteError);
     render();
     showToast("Luckan är markerad som okej");
+  },
+  "trip-pause"() {
+    const o = openTrip();
+    if (!o) return;
+    const now = Date.now();
+    const upd = o.pausedAt ? { pausedAt: null, pausedMs: (o.pausedMs || 0) + (now - tsMs(o.pausedAt)) } : { pausedAt: now };
+    Object.assign(o, upd);
+    updateDoc(doc(col("trips"), o.id), upd).catch(onWriteError);
+    liveSent = null; updateLiveActivity();
+    render();
+    showToast(upd.pausedAt ? "Resan är pausad. Tiden och sträckan räknas inte förrän du fortsätter." : "Resan fortsätter");
   },
   "trip-nav"() {
     const t = openTrip();

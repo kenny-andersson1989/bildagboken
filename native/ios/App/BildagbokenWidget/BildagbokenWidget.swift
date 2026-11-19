@@ -197,7 +197,11 @@ struct TripActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var from: String
         var to: String
-        var kind: String   // "tjanst" eller "privat"
+        var kind: String   // "tjanst", "privat" eller "" för en automatisk resa
+        var km: Double     // körd sträcka enligt GPS
+        var paused: Bool
+        var since: Date?   // klockan räknar härifrån (starttiden plus pauserna)
+        var elapsed: Double // sekunder, visas när resan är pausad
     }
     var tripId: String
     var start: Date
@@ -206,13 +210,39 @@ struct TripActivityAttributes: ActivityAttributes {
 }
 
 // Klockan räknar uppåt från starttiden. iOS uppdaterar den själv varje sekund, även när appen är stängd.
-private func tripClock(_ start: Date) -> some View {
-    Text(timerInterval: start...Date.distantFuture, countsDown: false)
-        .monospacedDigit()
+// Pausad resa: klockan står still på tiden hittills.
+@ViewBuilder
+private func tripClock(_ c: ActivityViewContext<TripActivityAttributes>) -> some View {
+    if c.state.paused {
+        Text(elapsedText(c.state.elapsed)).monospacedDigit()
+    } else {
+        Text(timerInterval: (c.state.since ?? c.attributes.start)...Date.distantFuture, countsDown: false)
+            .monospacedDigit()
+    }
+}
+
+private func elapsedText(_ secs: Double) -> String {
+    let t = max(0, Int(secs)), h = t / 3600, m = (t % 3600) / 60, s = t % 60
+    return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+}
+
+// Sträckan: "12,4 km" (en decimal under 100 km).
+private func kmText(_ km: Double, en: Bool) -> String {
+    guard km >= 0.1 else { return "" }
+    let nf = NumberFormatter()
+    nf.locale = Locale(identifier: en ? "en_US" : "sv_SE")
+    nf.minimumFractionDigits = 0
+    nf.maximumFractionDigits = km < 100 ? 1 : 0
+    return (nf.string(from: NSNumber(value: km)) ?? "") + " km"
 }
 
 private func kindText(_ kind: String, en: Bool) -> String {
-    kind == "privat" ? (en ? "Private" : "Privat") : (en ? "Business" : "Tjänsteresa")
+    if kind.isEmpty { return en ? "Automatic trip" : "Automatisk resa" }
+    return kind == "privat" ? (en ? "Private" : "Privat") : (en ? "Business" : "Tjänsteresa")
+}
+
+private func subText(_ c: ActivityViewContext<TripActivityAttributes>, en: Bool) -> String {
+    [c.attributes.car, kindText(c.state.kind, en: en)].filter { !$0.isEmpty }.joined(separator: " · ")
 }
 
 private func routeText(_ s: TripActivityAttributes.ContentState, en: Bool) -> String {
@@ -247,18 +277,21 @@ struct TripLockScreenView: View {
             }
             .frame(width: 42, height: 42)
             VStack(alignment: .leading, spacing: 2) {
-                Text(en ? "Trip in progress" : "Resa pågår").font(.caption.weight(.semibold)).foregroundColor(orange)
+                Text(context.state.paused ? (en ? "Paused" : "Pausad") : (en ? "Trip in progress" : "Resa pågår")).font(.caption.weight(.semibold)).foregroundColor(orange)
                 Text(routeText(context.state, en: en)).font(.subheadline.weight(.semibold)).lineLimit(1)
-                Text([context.attributes.car, kindText(context.state.kind, en: en)].filter { !$0.isEmpty }.joined(separator: " · "))
+                Text(subText(context, en: en))
                     .font(.caption).foregroundColor(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 8) {
-                tripClock(context.attributes.start)
+            VStack(alignment: .trailing, spacing: 6) {
+                tripClock(context)
                     .font(.title2.weight(.bold))
                     .multilineTextAlignment(.trailing)
                     .frame(width: 96, alignment: .trailing)
-                endButton(en: en)
+                if !kmText(context.state.km, en: en).isEmpty {
+                    Text(kmText(context.state.km, en: en)).font(.subheadline.weight(.semibold)).monospacedDigit()
+                }
+                if context.attributes.tripId != "auto" { endButton(en: en) }
             }
         }
         .padding(16)
@@ -279,7 +312,7 @@ struct TripLiveActivity: Widget {
                         .font(.subheadline.weight(.semibold)).foregroundColor(orange)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    tripClock(context.attributes.start)
+                    tripClock(context)
                         .font(.title3.weight(.bold))
                         .multilineTextAlignment(.trailing)
                         .frame(width: 90, alignment: .trailing)
@@ -288,17 +321,17 @@ struct TripLiveActivity: Widget {
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(routeText(context.state, en: en)).font(.subheadline.weight(.semibold)).lineLimit(1)
-                            Text([context.attributes.car, kindText(context.state.kind, en: en)].filter { !$0.isEmpty }.joined(separator: " · "))
+                            Text([subText(context, en: en), kmText(context.state.km, en: en)].filter { !$0.isEmpty }.joined(separator: " · "))
                                 .font(.caption).foregroundColor(.secondary).lineLimit(1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        endButton(en: en)
+                        if context.attributes.tripId != "auto" { endButton(en: en) }
                     }
                 }
             } compactLeading: {
                 Image(systemName: "car.fill").foregroundColor(orange)
             } compactTrailing: {
-                tripClock(context.attributes.start)
+                tripClock(context)
                     .font(.caption.weight(.semibold))
                     .multilineTextAlignment(.trailing)
                     .frame(maxWidth: 52)
