@@ -117,6 +117,74 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     }
     private var quickStop = false
 
+    // MARK: - Egen resa (Starta resa i appen): GPS mäter sträckan medan resan pågår, även i bakgrunden.
+    private let manualMetersKey = "autoTrips.manualMeters"
+    private(set) var manualId: String?
+    private var manualPaused = false
+    private var manualLast: CLLocation?
+    private var lastActivityPush = Date.distantPast
+    var manualMeters: Double {
+        get { defaults.double(forKey: manualMetersKey) }
+        set { defaults.set(newValue, forKey: manualMetersKey) }
+    }
+    func manualStart(id: String, paused: Bool) {
+        if manualId != id {
+            if defaults.string(forKey: "autoTrips.manualId") != id { manualMeters = 0 }
+            defaults.set(id, forKey: "autoTrips.manualId")
+            manualId = id
+            manualLast = nil
+            log("Egen resa: GPS mäter sträckan")
+        }
+        manualPaused = paused
+        if paused { manualLast = nil }
+        manager.startUpdatingLocation()
+    }
+    func manualStop() {
+        guard manualId != nil else { return }
+        manualId = nil
+        manualLast = nil
+        defaults.removeObject(forKey: "autoTrips.manualId")
+        if !watching { manager.stopUpdatingLocation() }
+    }
+    private func manualHandle(_ loc: CLLocation) {
+        guard !manualPaused, loc.horizontalAccuracy >= 0, loc.horizontalAccuracy <= 50 else { return }
+        if let prev = manualLast {
+            let d = loc.distance(from: prev)
+            // Små hopp när bilen står still är GPS-brus.
+            if d >= 15 || loc.speed > 1.5 { manualMeters += d; manualLast = loc }
+        } else { manualLast = loc }
+        pushActivityKm(manualMeters, auto: false)
+    }
+
+    // Sträckan i rutan på låsskärmen och i Dynamic Island, högst var 15:e sekund.
+    private func pushActivityKm(_ meters: Double, auto: Bool) {
+        guard #available(iOS 16.2, *), Date().timeIntervalSince(lastActivityPush) > 15 else { return }
+        lastActivityPush = Date()
+        let km = (meters / 100).rounded() / 10
+        Task { @MainActor in
+            for a in Activity<TripActivityAttributes>.activities where (a.attributes.tripId == "auto") == auto {
+                var st = a.content.state
+                guard st.km != km else { continue }
+                st.km = km
+                await a.update(ActivityContent(state: st, staleDate: nil))
+            }
+        }
+    }
+    // Automatisk resa: en ruta på låsskärmen medan den pågår (om iOS tillåter det just då), borta när den är klar.
+    private func startAutoActivity() {
+        guard #available(iOS 16.2, *), manualId == nil, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard Activity<TripActivityAttributes>.activities.isEmpty else { return }
+        let attrs = TripActivityAttributes(tripId: "auto", start: startTime ?? Date(), car: carName ?? "", lang: en ? "en" : "sv")
+        let st = TripActivityAttributes.ContentState(from: "", to: "", kind: "", km: (meters / 100).rounded() / 10, paused: false, since: nil, elapsed: 0)
+        _ = try? Activity.request(attributes: attrs, content: ActivityContent(state: st, staleDate: nil), pushType: nil)
+    }
+    private func endAutoActivity() {
+        guard #available(iOS 16.2, *) else { return }
+        Task { @MainActor in
+            for a in Activity<TripActivityAttributes>.activities where a.attributes.tripId == "auto" { await a.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
     func enable() {
         defaults.set(true, forKey: enabledKey)
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
@@ -175,7 +243,8 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     private func stopWatching() {
         guard watching else { return }
         watching = false
-        manager.stopUpdatingLocation()
+        // Pågår en egen resa fortsätter GPS:en, den behövs för sträckan.
+        if manualId == nil { manager.stopUpdatingLocation() }
     }
 
     private func resetTrip() {
@@ -199,8 +268,10 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     }
 
     func locationManager(_ m: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard enabled else { return }
-        for loc in locations { handle(loc) }
+        for loc in locations {
+            if manualId != nil { manualHandle(loc) }
+            if enabled { handle(loc) }
+        }
     }
 
     // Telefonen har lämnat parkeringen: titta noga direkt, i stället för att vänta på nästa platsändring.
@@ -251,6 +322,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
                 path = [startLoc?.coordinate ?? loc.coordinate, loc.coordinate]
                 checkCar(force: true)
                 log("Resa startad")
+                startAutoActivity()
             } else if now.timeIntervalSince(watchStarted) > (carConnected ? 900 : giveUpAfter) {
                 log("Ingen bilresa, GPS av")
                 stopWatching()
@@ -273,6 +345,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         }
         if speed > 1.5 { lastMove = now }
         checkCar(force: false)
+        if manualId == nil { pushActivityKm(meters, auto: true) }
         if now.timeIntervalSince(lastMove) > (quickStop ? 45 : stopAfter) { finishTrip(end: lastLoc ?? loc) }
     }
 
@@ -302,7 +375,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     }
 
     private func finishTrip(end: CLLocation) {
-        defer { resetTrip(); stopWatching(); setParked(end) }
+        defer { resetTrip(); stopWatching(); setParked(end); endAutoActivity() }
         guard let start = startTime, let from = startLoc, meters >= minMeters else {
             log("Kort förflyttning, sparas inte (\(Int(meters)) m)")
             return
@@ -469,6 +542,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
             r["meters"] = meters.rounded()
         }
         r["watching"] = watching
+        if let id = manualId ?? defaults.string(forKey: "autoTrips.manualId") { r["manualId"] = id; r["manualMeters"] = manualMeters.rounded() }
         r["log"] = defaults.array(forKey: logKey) as? [[String: Any]] ?? []
         if let name = currentCarRoute() { r["carNow"] = name }
         return r
@@ -574,7 +648,11 @@ struct TripActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var from: String
         var to: String
-        var kind: String   // "tjanst" eller "privat"
+        var kind: String   // "tjanst", "privat" eller "" för en automatisk resa
+        var km: Double     // körd sträcka enligt GPS
+        var paused: Bool
+        var since: Date?   // klockan räknar härifrån (starttiden plus pauserna)
+        var elapsed: Double // sekunder, visas när resan är pausad
     }
     var tripId: String
     var start: Date
@@ -602,14 +680,25 @@ public class TripActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             UserDefaults.standard.removeObject(forKey: TripTracker.manualKey)
             UserDefaults.standard.set(Date().timeIntervalSince1970 * 1000, forKey: TripTracker.manualEndKey)
         }
+        let paused = (t?["paused"] as? Bool) ?? false
+        let sinceMs = (t?["since"] as? Double) ?? (t?["since"] as? NSNumber)?.doubleValue
+        let elapsed = (t?["elapsed"] as? Double) ?? (t?["elapsed"] as? NSNumber)?.doubleValue ?? 0
+        // Egen resa: GPS mäter sträckan medan den pågår (pausad: ingen mätning).
+        DispatchQueue.main.async {
+            if let id = id { TripTracker.shared.manualStart(id: id, paused: paused) } else { TripTracker.shared.manualStop() }
+        }
         guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
         let state = TripActivityAttributes.ContentState(
-            from: t?["from"] as? String ?? "", to: t?["to"] as? String ?? "", kind: t?["kind"] as? String ?? "tjanst")
+            from: t?["from"] as? String ?? "", to: t?["to"] as? String ?? "", kind: t?["kind"] as? String ?? "tjanst",
+            km: (TripTracker.shared.manualMeters / 100).rounded() / 10, paused: paused,
+            since: sinceMs.map { Date(timeIntervalSince1970: $0 / 1000) }, elapsed: elapsed)
         let car = t?["car"] as? String ?? ""
         let lang = t?["lang"] as? String ?? "sv"
         Task { @MainActor in
             var kept = false
             for a in Activity<TripActivityAttributes>.activities {
+                // Den automatiska resans ruta sköts av TripTracker, så länge ingen egen resa pågår.
+                if a.attributes.tripId == "auto" && id == nil { continue }
                 if let id = id, a.attributes.tripId == id, !kept {
                     kept = true
                     await a.update(ActivityContent(state: state, staleDate: nil))

@@ -2093,3 +2093,21 @@ body.car-locked .fab { display: none; }
 .ob-found { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--accent-soft); color: var(--ink); margin: -6px 0 14px; font-size: 14.5px; }
 .ob-found svg { color: var(--accent-text); flex: none; }
 .ob-code.bad, .ob-code.bad:focus { border-color: #e5484d !important; box-shadow: 0 0 0 3px rgba(229, 72, 77, .25) !important; }
+
+/* Hur ska resor startas? */
+.tg-opt { display: flex; gap: 14px; align-items: flex-start; width: 100%; text-align: left; padding: 16px; margin-bottom: 10px; border-radius: 20px; border: 1.5px solid var(--line); background: var(--input); color: var(--ink); font: inherit; cursor: pointer; }
+.tg-opt.on { border-color: var(--accent); background: var(--accent-soft); }
+.tg-opt .tg-ic { flex: none; width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); }
+.tg-opt b { display: block; font-size: 16.5px; margin-bottom: 3px; }
+.tg-opt small { display: block; color: var(--ink-2); font-size: 14px; line-height: 1.4; }
+.tg-radio { flex: none; margin-left: auto; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--ink-3, var(--ink-2)); display: grid; place-items: center; color: #fff; }
+.tg-opt.on .tg-radio { background: var(--accent); border-color: var(--accent); }
+.tg-notes { list-style: none; padding: 0; margin: 14px 0 6px; display: grid; gap: 10px; color: var(--ink-2); font-size: 14px; }
+.tg-notes li { display: flex; gap: 10px; align-items: flex-start; }
+.tg-notes svg { flex: none; margin-top: 2px; }
+.tg-link { display: block; margin: -4px 0 12px; }
+.rz-live.paused .big { opacity: .55; }
+.rz-live .row button { white-space: nowrap; padding-left: 10px; padding-right: 10px; min-width: 0; }
+.rz-hero > *, .rz-live { min-width: 0; }
+.rz-live .row { flex-wrap: wrap; }
+.rz-live .row [data-act="trip-nav"] { flex-basis: 100%; }
