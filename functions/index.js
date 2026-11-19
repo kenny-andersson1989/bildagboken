@@ -199,8 +199,8 @@ exports.morgonpaminnelser = onSchedule({ schedule: "every day 08:00", timeZone: 
 });
 
 const LOGGED = {
-  sv: { tank: "loggade en tankning", matare: "uppdaterade mätarställningen", service: "loggade en service", eget: "loggade ett eget jobb", dack: "loggade något om däcken", tvatt: "loggade en tvätt", parkering: "loggade en parkering", kostnad: "loggade en kostnad" },
-  en: { tank: "logged a fill-up", matare: "updated the odometer", service: "logged a service", eget: "logged an own job", dack: "logged something about the tyres", tvatt: "logged a car wash", parkering: "logged parking", kostnad: "logged a cost" },
+  sv: { tank: "loggade en tankning", matare: "uppdaterade mätarställningen", service: "loggade en service", eget: "loggade ett eget jobb", dack: "loggade något om däcken", tvatt: "loggade en tvätt", parkering: "loggade en parkering", kostnad: "loggade en kostnad", laddning: "loggade en laddning", skada: "loggade en skada", anteckning: "skrev en anteckning" },
+  en: { tank: "logged a fill-up", matare: "updated the odometer", service: "logged a service", eget: "logged an own job", dack: "logged something about the tyres", tvatt: "logged a car wash", parkering: "logged parking", kostnad: "logged a cost", laddning: "logged a charge", skada: "logged damage", anteckning: "wrote a note" },
 };
 
 exports.nyLogg = onDocumentCreated("households/{hid}/entries/{eid}", async (event) => {
