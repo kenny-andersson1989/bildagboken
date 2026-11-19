@@ -284,9 +284,13 @@ const DOC_SCHEMA = {
   },
 };
 
+// Konton med e-post och lösenord måste ha bekräftat adressen. Apple och Google är redan bekräftade.
+const verifiedUser = (req) => req.auth?.token?.firebase?.sign_in_provider !== "password" || req.auth?.token?.email_verified === true;
+
 exports.lasDokument = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: "512MiB", maxInstances: 2 }, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
+  if (!verifiedUser(req)) throw new HttpsError("permission-denied", "Bekräfta din e-post först.");
   const { hid, image, mediaType = "image/jpeg", formType = "" } = req.data || {};
   if (typeof hid !== "string" || typeof image !== "string" || image.length > 8e6) throw new HttpsError("invalid-argument", "Bilden saknas eller är för stor.");
   if (!/^image\/(jpeg|png|webp)$/.test(mediaType)) throw new HttpsError("invalid-argument", "Fel bildformat.");
@@ -378,6 +382,7 @@ const CHAT_SYSTEM = [
 exports.fragaBilen = onCall({ secrets: [ANTHROPIC_API_KEY, APPLE_MAPS_KEY], timeoutSeconds: 120, memory: "512MiB", maxInstances: 3 }, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
+  if (!verifiedUser(req)) throw new HttpsError("permission-denied", "Bekräfta din e-post först.");
   const { hid, context, messages } = req.data || {};
   if (typeof hid !== "string" || typeof context !== "string" || context.length > 300000) throw new HttpsError("invalid-argument", "Bilens uppgifter saknas eller är för stora.");
   if (!Array.isArray(messages) || !messages.length || messages.length > 20) throw new HttpsError("invalid-argument", "Frågan saknas.");
@@ -703,6 +708,7 @@ function spoken(t) {
 exports.glennPratar = onCall({ timeoutSeconds: 60, memory: "256MiB", maxInstances: 3 }, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
+  if (!verifiedUser(req)) throw new HttpsError("permission-denied", "Bekräfta din e-post först.");
   // Väckning: appen anropar när man ställer en fråga, så att rösten är redo när svaret kommer.
   if (req.data?.warm) { googleToken().then(pickVoice).catch(() => {}); return { ok: true }; }
   const { hid } = req.data || {};
@@ -1058,6 +1064,7 @@ const regInflight = new Map();
 exports.hamtaFordon = onCall({ secrets: [REGNR_USERNAME], timeoutSeconds: 30, memory: "256MiB", maxInstances: 3 }, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
+  if (!verifiedUser(req)) throw new HttpsError("permission-denied", "Bekräfta din e-post först.");
   const { hid } = req.data || {};
   const plate = String(req.data?.plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (!/^[A-Z]{3}[0-9]{2}[A-Z0-9]$/.test(plate) && !/^[A-Z0-9]{2,7}$/.test(plate)) throw new HttpsError("invalid-argument", "Registreringsnumret ser fel ut.");

@@ -2076,3 +2076,4 @@ body.car-locked .fab { display: none; }
 .types-grid > button.w2 { grid-column: span 3; }
 .types-grid > button.w3 { grid-column: span 6; flex-direction: row; justify-content: center; }
 .email-links { display: flex; justify-content: space-between; margin-top: 6px; }
+.verify .hint { margin-top: 10px; }

@@ -2,8 +2,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Inloggad. Konton med e-post och lösenord måste ha bekräftat adressen (länken i mejlet).
+    // Apple och Google har redan bekräftat sina adresser.
     function signedIn() {
-      return request.auth != null;
+      return request.auth != null
+        && (request.auth.token.firebase.sign_in_provider != 'password' || request.auth.token.email_verified == true);
     }
     // Appens ägare: får läsa allt för översikten och support, men inte ändra något.
     function isAdmin() {
