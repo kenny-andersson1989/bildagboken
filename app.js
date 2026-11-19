@@ -4,7 +4,8 @@ import {
   getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   linkWithPopup, linkWithRedirect, onAuthStateChanged, signOut, reauthenticateWithPopup, deleteUser,
   signInWithCredential, linkWithCredential, reauthenticateWithCredential,
-  signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, EmailAuthProvider, updateProfile
+  signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, EmailAuthProvider, updateProfile,
+  sendEmailVerification, reload
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
@@ -8283,6 +8284,23 @@ async function copyText(text) {
 const ACTIONS = {
   // Inloggning med e-post och lösenord: logga in, skapa konto eller få ett mejl för att byta lösenord.
   "email-login"(el) { emailSheet(el?.dataset?.mode || "login"); },
+  async "verify-check"() {
+    const u = auth.currentUser;
+    if (!u) return renderLogin();
+    try { await reload(u); } catch { /* ingen kontakt, försök igen */ }
+    if (!auth.currentUser?.emailVerified) return renderVerify("Adressen är inte bekräftad än. Tryck på länken i mejlet först.");
+    // En ny token, så att servern ser att adressen är bekräftad.
+    try { await auth.currentUser.getIdToken(true); } catch { /* används ändå, servern ser det vid nästa token */ }
+    S.user = auth.currentUser;
+    loadHousehold();
+  },
+  async "verify-resend"() {
+    const u = auth.currentUser;
+    if (!u) return renderLogin();
+    auth.languageCode = LANG === "en" ? "en" : "sv";
+    try { await sendEmailVerification(u, { url: location.origin + location.pathname }); showToast("Ett nytt mejl är skickat.", 5000); }
+    catch (e) { showToast(e?.code === "auth/too-many-requests" ? "Vänta en stund innan du skickar igen." : "Mejlet gick inte att skicka. Försök igen.", 5000); }
+  },
   async "email-reset"() {
     const email = $("#em-email")?.value.trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || "")) return formError("Skriv din e-postadress först.");
@@ -9427,6 +9445,29 @@ function linkedProviders() {
   return Object.keys(PROVIDER_IDS).filter((k) => ids.includes(PROVIDER_IDS[k]));
 }
 
+// Tillbaka i appen efter att ha tryckt på länken i mejlet: kolla direkt, utan att man behöver trycka.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || !needsVerify(auth.currentUser) || !document.querySelector(".login-a.verify")) return;
+  reload(auth.currentUser).then(() => { if (auth.currentUser?.emailVerified) ACTIONS["verify-check"](); }).catch(() => {});
+});
+// Ett konto med e-post och lösenord som inte har tryckt på länken i bekräftelsemejlet än.
+const needsVerify = (u) => !!u && !u.emailVerified && u.providerData.length > 0 && u.providerData.every((x) => x.providerId === "password");
+function renderVerify(note = "") {
+  const email = auth.currentUser?.email || "";
+  setScreen("login", `
+    <section class="login-a verify">
+      <h1 class="la-brand"><img class="logo-l" src="icons/logo.svg?v=6" alt="Bildagboken" width="936" height="200"><img class="logo-d" src="icons/logo-dark.svg?v=6" alt="" aria-hidden="true" width="936" height="200"></h1>
+      <h2 class="la-title">Bekräfta din e-post</h2>
+      <p class="la-sub">${esc(`Vi har skickat ett mejl till ${email}. Tryck på länken i mejlet, och kom sedan tillbaka hit.`)}</p>
+      <p class="hint">Hittar du inte mejlet? Titta i skräpposten. Det kommer från noreply@bildagboken-3f931.firebaseapp.com.</p>
+      <div class="la-btns">
+        <button class="btn primary block" type="button" data-act="verify-check">Jag har bekräftat</button>
+        <button class="btn ghost block" type="button" data-act="verify-resend">Skicka igen</button>
+        <button class="btn ghost block" type="button" data-act="logout">Logga ut</button>
+        ${note ? `<p class="err">${esc(note)}</p>` : ""}
+      </div>
+    </section>`);
+}
 function emailSheet(mode = "login") {
   const create = mode === "create";
   openSheet(create ? "Skapa konto med e-post" : "Logga in med e-post", `<form class="form" data-form="email-auth" data-mode="${mode}" novalidate>
@@ -9457,8 +9498,11 @@ async function saveEmailAuth(form) {
   const btn = form.querySelector('button[type="submit"]'); if (btn) btn.disabled = true;
   try {
     if (mode === "create") {
+      auth.languageCode = LANG === "en" ? "en" : "sv";
       const cred = await createUserWithEmailAndPassword(auth, email, pw);
       await updateProfile(cred.user, { displayName: name }).catch(() => {});
+      await sendEmailVerification(cred.user, { url: location.origin + location.pathname }).catch(() => {});
+      renderVerify();
     } else await signInWithEmailAndPassword(auth, email, pw);
     closeSheet();
   } catch (e) { if (btn) btn.disabled = false; formError(emailError(e)); }
@@ -10255,6 +10299,8 @@ onAuthStateChanged(auth, (user) => {
   const changed = (user?.uid || null) !== (S.user?.uid || null);
   S.user = user;
   if (!user) { cleanup(); renderLogin(); return; }
+  // E-postkonton kommer in först när adressen är bekräftad.
+  if (needsVerify(user)) { renderVerify(); return; }
   if (changed || !S.hid) loadHousehold();
 });
 
