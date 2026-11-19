@@ -98,6 +98,13 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const nf = [0, 1, 2].map((d) => new Intl.NumberFormat("sv-SE", { minimumFractionDigits: d, maximumFractionDigits: d }));
 const fmt = (n, d = 0) => (n == null || Number.isNaN(n) ? "–" : nf[d].format(n));
+// Sträckor sparas i mil (som från början), men visas och fylls i som kilometer: 1 mil = 10 km.
+const KM_PER_MIL = 10;
+const kmOf = (mil) => (mil == null || Number.isNaN(Number(mil)) ? null : Math.round(Number(mil) * KM_PER_MIL));
+const fmtKm = (mil) => `${fmt(kmOf(mil))} km`;
+const milOf = (km) => (km == null ? null : Math.round((km / KM_PER_MIL) * 1000) / 1000);
+// Sparad text från förr (Glenns brev) med "142 mil": visas som "1 420 km".
+const milTextToKm = (t) => String(t || "").replace(/(\d[\d\s\u00a0\u202f]*) mil\b/g, (m, n) => `${fmt(Math.round(Number(n.replace(/\D/g, "")) * KM_PER_MIL))} km`).replace(/(\d[\d,]*) mil\b/g, (m, n) => `${n} km`);
 // Belopp i kronor: med ören bara när beloppet har ören (612,50 kr men 600 kr).
 const fmtKr = (n) => fmt(n, n != null && Math.round(n * 100) % 100 !== 0 ? 2 : 0);
 const num = (v) => {
@@ -374,7 +381,7 @@ const GENERIC_TIPS = [
   // Förbränningsmotor
   { sev: "mid", fit: (c) => !isElectric(c), when: winter, title: "Motorvärmaren", text: "Med motorvärmare på en timme före start slits motorn mindre och bilen drar mindre bränsle. Koppla in den när det är under noll." },
   { sev: "low", fit: (c) => !isElectric(c), title: "Oljenivån", text: "Dra oljestickan med jämna mellanrum, till exempel varannan tankning. Äldre motorer kan dra lite olja." },
-  { sev: "low", fit: (c) => !isElectric(c) && !profileFor(c) && (odoOf(c) ?? 0) >= 8000, title: "Kamrem eller kamkedja", text: "Ta reda på vilket er motor har. En kamrem byts ofta vid 10 000 till 20 000 mil eller efter ett antal år, och går den av kan motorn förstöras. Lägg in den under Underhåll." },
+  { sev: "low", fit: (c) => !isElectric(c) && !profileFor(c) && (odoOf(c) ?? 0) >= 8000, title: "Kamrem eller kamkedja", text: "Ta reda på vilket er motor har. En kamrem byts ofta vid 100 000 till 200 000 km eller efter ett antal år, och går den av kan motorn förstöras. Lägg in den under Underhåll." },
   { sev: "low", fit: (c) => !isElectric(c) && (carAge(c) ?? 0) >= 6, title: "Kylarvätskan", text: "Kylarvätskan tappar sitt skydd med åren. Byt den ungefär vart femte år och kolla nivån i behållaren när motorn är kall." },
   // Ålder och mätarställning
   { sev: "mid", fit: (c) => (carAge(c) ?? 0) >= 10, when: (m) => m >= 9 || m <= 4, title: "Rostskydd", text: "Vägsalt äter på underredet. Spola underredet efter saltade vägar och rostskyddsbehandla bilen vart annat eller vart tredje år." },
@@ -975,7 +982,7 @@ function extraParts(c) {
   return list.sort((a, b) => (b.entries[0].date || "").localeCompare(a.entries[0].date || ""));
 }
 function entryDetail(e, c = car()) {
-  if (e.type === "brev") return String((EN && e.textEn) || e.text || "").split(/(?<=\.)\s/)[0];
+  if (e.type === "brev") return milTextToKm((EN && e.textEn) || e.text || "").split(/(?<=\.)\s/)[0];
   const unit = /kWh/.test(e.fuel || "") ? "kWh" : "l";
   switch (e.type) {
     case "tank": {
@@ -1019,7 +1026,7 @@ function activityText(e) {
   const kr = e.amount != null ? ` för ${fmtKr(e.amount)} kr` : "";
   switch (e.type) {
     case "tank": return `${n} tankade${e.liters != null ? ` ${fmt(e.liters, 1)} ${unit} ${e.fuel || ""}`.trimEnd() : e.fuel ? ` ${e.fuel}` : ""}${kr}`;
-    case "matare": return `${n} uppdaterade mätarställningen till ${fmt(e.odometer)} mil`;
+    case "matare": return `${n} uppdaterade mätarställningen till ${fmtKm(e.odometer)}`;
     case "service": return `${n} loggade service${e.workshop ? ` hos ${e.workshop}` : ""}${kr}`;
     case "eget": return e.title ? `${n} ${e.title.replace(/^./, (x) => x.toLowerCase())}${kr}` : `${n} loggade ett eget jobb${kr}`;
     case "dack": return `${n} ${TIRE_ACTIVITY[e.tireAction] || "loggade något om däcken"}${kr}`;
@@ -1071,8 +1078,8 @@ function itemStatus(item, c, ents) {
   else if (frac < 0.12 || (remMil != null && remMil < 300) || (remDays != null && remDays < 45)) level = "soon";
   // Kvar till nästa byte, eller hur mycket det har gått över.
   const label = frac < 0
-    ? (by === "mil" ? `${fmt(-remMil)} mil över` : `${daysText(-remDays)} över`)
-    : by === "mil" ? `${fmt(remMil)} mil kvar` : `${daysText(remDays)} kvar`;
+    ? (by === "mil" ? `${fmtKm(-remMil)} över` : `${daysText(-remDays)} över`)
+    : by === "mil" ? `${fmtKm(remMil)} kvar` : `${daysText(remDays)} kvar`;
   const dueMil = item.mil && lastMil != null ? lastMil + item.mil : null;
   return { item, last, lastDate, lastMil, remMil, remDays, dueDate, dueMil, frac, by, level, label };
 }
@@ -1375,12 +1382,12 @@ function claudePrompt(c) {
   const ents = carEntries();
   const lastService = ents.find((e) => e.type === "service");
   const lines = [];
-  lines.push(`Jag har en ${[c.make, c.model, c.engine].filter(Boolean).join(" ")}${c.fuel ? ` (${c.fuel.toLowerCase()})` : ""}${c.year ? ` från ${c.year}` : ""}. Mätarställning: ${fmt(odoOf(c))} mil.`);
-  if (lastService) lines.push(`Senaste service: ${fmtDate(lastService.date)}${lastService.odometer != null ? ` vid ${fmt(lastService.odometer)} mil` : ""}: ${entryDetail(lastService, c) || "inga detaljer"}.`);
+  lines.push(`Jag har en ${[c.make, c.model, c.engine].filter(Boolean).join(" ")}${c.fuel ? ` (${c.fuel.toLowerCase()})` : ""}${c.year ? ` från ${c.year}` : ""}. Mätarställning: ${fmtKm(odoOf(c))}.`);
+  if (lastService) lines.push(`Senaste service: ${fmtDate(lastService.date)}${lastService.odometer != null ? ` vid ${fmtKm(lastService.odometer)}` : ""}: ${entryDetail(lastService, c) || "inga detaljer"}.`);
   const known = st.filter((s) => !s.unknown);
   if (known.length) {
     lines.push("Underhåll enligt min logg:");
-    for (const s of known) lines.push(`- ${s.item.name}: senast ${s.lastDate ? fmtDate(s.lastDate) : "okänt datum"}${s.lastMil != null ? `, vid ${fmt(s.lastMil)} mil` : ""}.`);
+    for (const s of known) lines.push(`- ${s.item.name}: senast ${s.lastDate ? fmtDate(s.lastDate) : "okänt datum"}${s.lastMil != null ? `, vid ${fmtKm(s.lastMil)}` : ""}.`);
   }
   const unknown = st.filter((s) => s.unknown).map((s) => s.item.name.toLowerCase());
   if (unknown.length) lines.push(`Jag vet inte när detta gjordes senast: ${unknown.join(", ")}.`);
@@ -1401,7 +1408,7 @@ function carContext(c) {
   L.push(`Dagens datum: ${todayStr()}.`, "", "# Bilen");
   const facts = [["Bil", carName(c)], ["Årsmodell", c.year], ["Drivmedel", c.fuel], ["Registreringsnummer", c.plate], ["Färg", c.color],
     ["Kaross", c.bodyStyle], ["Antal säten", c.seats], ["I trafik första gången", c.firstReg], ["Koldioxid", c.co2 && `${c.co2} g/km`],
-    ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : null], ["Sista dag för besiktning", c.besiktning],
+    ["Mätarställning", odoOf(c) != null ? `${fmtKm(odoOf(c))}` : null], ["Sista dag för besiktning", c.besiktning],
     ["Försäkring", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${c.forsakringDatum}` : ""].filter(Boolean).join(", ")],
     ["Fordonsskatt betalas", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : null]];
   for (const [k, x] of facts) if (v(x)) L.push(`${k}: ${x}`);
@@ -1416,8 +1423,8 @@ function carContext(c) {
 
   L.push("", "# Underhåll");
   for (const s of allItemStatus(c)) {
-    const iv = [s.item.mil ? `var ${fmt(s.item.mil)} mil` : "", s.item.months ? `var ${s.item.months} månad${s.item.months === 1 ? "" : "er"}` : ""].filter(Boolean).join(" eller ");
-    L.push(`- ${s.item.name}${iv ? ` (${iv})` : ""}: ${s.unknown && !s.lastDate ? "senaste byte okänt" : `senast ${s.lastDate || "okänt datum"}${s.lastMil != null ? ` vid ${fmt(s.lastMil)} mil` : ""}`}${s.label ? `. Status: ${s.label}` : ""}`);
+    const iv = [s.item.mil ? `var ${fmtKm(s.item.mil)}` : "", s.item.months ? `var ${s.item.months} månad${s.item.months === 1 ? "" : "er"}` : ""].filter(Boolean).join(" eller ");
+    L.push(`- ${s.item.name}${iv ? ` (${iv})` : ""}: ${s.unknown && !s.lastDate ? "senaste byte okänt" : `senast ${s.lastDate || "okänt datum"}${s.lastMil != null ? ` vid ${fmtKm(s.lastMil)}` : ""}`}${s.label ? `. Status: ${s.label}` : ""}`);
   }
   const dl = deadlines(c);
   if (dl.length) { L.push("", "# Datum att hålla koll på"); for (const d of dl) L.push(`- ${d.title}: ${d.date instanceof Date ? ymd(d.date) : d.date || ""}${d.sub ? ` (${d.sub})` : ""}`); }
@@ -1438,7 +1445,7 @@ function carContext(c) {
       for (const e of paid) cats[catOf(e)] = (cats[catOf(e)] || 0) + e.amount;
       const odos = ye.filter((e) => e.odometer != null).map((e) => e.odometer);
       const driven = odos.length >= 2 ? Math.max(...odos) - Math.min(...odos) : null;
-      L.push(`${y}: totalt ${fmt(Math.round(total))} kr${driven ? `, körsträcka ungefär ${fmt(driven)} mil, ${fmt(total / driven, 1)} kr per mil` : ""}. ${Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([k, x]) => `${k} ${fmt(Math.round(x))} kr`).join(", ")}.`);
+      L.push(`${y}: totalt ${fmt(Math.round(total))} kr${driven ? `, körsträcka ungefär ${fmtKm(driven)}, ${fmt(total / driven / KM_PER_MIL, 2)} kr per km` : ""}. ${Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([k, x]) => `${k} ${fmt(Math.round(x))} kr`).join(", ")}.`);
     }
     // Förbrukning: tankad mängd delad med sträckan sedan förra tankningen, per år.
     const tanks = ents.filter((e) => e.type === "tank" && e.odometer != null && e.liters > 0).sort((a, b) => a.odometer - b.odometer);
@@ -1454,15 +1461,15 @@ function carContext(c) {
     if (fy.length) {
       const unit = /kWh/.test(tanks[0]?.fuel || "") ? "kWh" : "liter";
       L.push("", "# Förbrukning (uträknad av appen från tankningarna)");
-      for (const y of fy) L.push(`${y}: ungefär ${fmt(per[y].l / per[y].mil, 2)} ${unit} per mil (${per[y].n} tankningar)`);
+      for (const y of fy) L.push(`${y}: ungefär ${fmt((per[y].l / per[y].mil) * 10, 1)} ${unit} per 100 km (${per[y].n} tankningar)`);
     }
   }
   // Körjournalen per månad, det senaste året.
   const trips = carTrips(c.id).filter((t) => t.date && tripMil(t) != null);
   if (trips.length) {
-    L.push("", "# Körjournal per månad (mil)");
+    L.push("", "# Körjournal per månad (km)");
     const months = [...new Set(trips.map((t) => t.date.slice(0, 7)))].sort().reverse().slice(0, 12);
-    for (const m of months) { const mt = trips.filter((t) => t.date.startsWith(m)); L.push(`${m}: tjänst ${fmt(sumMil(mt, "tjanst"), 1)}, privat ${fmt(sumMil(mt, "privat"), 1)}`); }
+    for (const m of months) { const mt = trips.filter((t) => t.date.startsWith(m)); L.push(`${m}: tjänst ${fmtKm(sumMil(mt, "tjanst"))}, privat ${fmtKm(sumMil(mt, "privat"))}`); }
   }
 
   // Sparade platser och resorna (vart och när), så att Glenn kan svara på frågor om körningen.
@@ -1477,13 +1484,13 @@ function carContext(c) {
     const top = Object.entries(goals).sort((a, b) => b[1] - a[1]).slice(0, 8);
     if (top.length) L.push("", "# Vanligaste målen i körjournalen", ...top.map(([k, n]) => `- ${k}: ${n} resor`));
     L.push("", "# Resor (nyast först, högst 150)");
-    for (const t of tripList.slice(0, 150)) L.push([t.date, [t.from, t.to].filter(Boolean).join(" → ") || "okänd sträcka", tripMil(t) != null ? `${fmt(tripMil(t), 1)} mil` : "", t.kind ? TRIP_KINDS[t.kind] : "ej genomgången", t.purpose || "", t.driver ? `förare ${memberName(t.driver)}` : ""].filter(Boolean).join(" | "));
+    for (const t of tripList.slice(0, 150)) L.push([t.date, [t.from, t.to].filter(Boolean).join(" → ") || "okänd sträcka", tripMil(t) != null ? `${fmtKm(tripMil(t))}` : "", t.kind ? TRIP_KINDS[t.kind] : "ej genomgången", t.purpose || "", t.driver ? `förare ${memberName(t.driver)}` : ""].filter(Boolean).join(" | "));
   }
 
   // Hela loggen, nyast först (högst 500 rader).
   L.push("", "# Loggen (nyast först)");
   for (const e of sortEntries([...ents]).slice(0, 500)) {
-    const bits = [e.date, entryTitle(e), e.amount > 0 ? `${fmtKr(e.amount)} kr` : "", e.odometer != null ? `${fmt(e.odometer)} mil` : "", entryDetail(e, c), e.note || "", e.createdBy ? `av ${memberName(e.createdBy)}` : ""];
+    const bits = [e.date, entryTitle(e), e.amount > 0 ? `${fmtKr(e.amount)} kr` : "", e.odometer != null ? `${fmtKm(e.odometer)}` : "", entryDetail(e, c), e.note || "", e.createdBy ? `av ${memberName(e.createdBy)}` : ""];
     L.push(bits.filter(Boolean).join(" | "));
   }
   return L.join("\n").slice(0, 280000);
@@ -1810,7 +1817,7 @@ const speakBtn = () => `<button class="cb-speak${speakOn() ? " on" : ""}" type="
 function tankCardHtml(m, i) {
   const a = m.action;
   if (!a || a.type !== "tank") return "";
-  const sum = [`${fmtKr(a.amount)} kr`, a.station, a.full ? "Full tank" : "Inte full tank", fmtDateShort(a.date), a.odometer ? `${fmt(a.odometer)} mil` : ""].filter(Boolean).join(" · ");
+  const sum = [`${fmtKr(a.amount)} kr`, a.station, a.full ? "Full tank" : "Inte full tank", fmtDateShort(a.date), a.odometer ? `${fmtKm(a.odometer)}` : ""].filter(Boolean).join(" · ");
   return `<div class="glenn-card${m.actionDone === "saved" ? " done" : ""}"><div class="gc-t">${icon("fuel", 18)} Tankning</div><div class="gc-s">${esc(sum)}</div>
     ${m.actionDone === "saved" ? `<div class="gc-ok">${icon("check", 16)} Sparad</div>` : `<div class="review-btns"><button class="btn-soft" type="button" data-act="glenn-save" data-i="${i}">Spara</button><button class="link" type="button" data-act="glenn-edit" data-i="${i}">Ändra</button></div>`}</div>`;
 }
@@ -2527,7 +2534,7 @@ function tireSheet(kind) {
     ["Lufttryck", t.pressureFront != null || t.pressureRear != null ? `${t.pressureFront != null ? fmt(t.pressureFront, 1) : "–"} bar fram, ${t.pressureRear != null ? fmt(t.pressureRear, 1) : "–"} bar bak` : ""],
     kind === "vinter" ? ["Dubbade", t.studded ? "Ja" : "Nej"] : null,
     kind === "vinter" && !t.studded ? ["Alptopp/snöflinga", t.alpine === true ? "Ja" : t.alpine === false ? "Nej, bara M+S" : "Vet inte"] : null,
-    ["Har rullat", mil != null && mil > 0 ? `cirka ${fmt(mil)} mil` : ""],
+    ["Har rullat", mil != null && mil > 0 ? `cirka ${fmtKm(mil)}` : ""],
   ].filter((r) => r && r[1]);
   const other = kind === "vinter" ? "sommar" : "vinter";
   const hist = carEntries().filter((e) => e.type === "dack" && (e.tireKind === kind || e.tireAction === `till_${kind}` || e.tireAction === `till_${other}`))
@@ -2596,7 +2603,7 @@ function tireHealth(c, kind) {
   const mil = tireMil(c, kind);
   if (mil != null && mil > 0) {
     const lvl = mil >= TIRE_MIL_WARN ? "warn" : "ok";
-    parts.push({ lvl, f: 1 - mil / 5000, why: lvl === "warn" ? `${set} har rullat omkring ${fmt(mil)} mil. Mät mönsterdjupet.` : `cirka ${fmt(mil)} mil` });
+    parts.push({ lvl, f: 1 - mil / 5000, why: lvl === "warn" ? `${set} har rullat omkring ${fmtKm(mil)}. Mät mönsterdjupet.` : `cirka ${fmtKm(mil)}` });
   }
   if (!parts.length) return null;
   const rank = { ok: 0, warn: 1, bad: 2 };
@@ -2670,7 +2677,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       <small id="cf-vin-info">${esc(c.vin ? vinInfo(c.vin) : "Står längst ner i vindrutan på förarsidan och i registreringsbeviset. Tryck på kameran för att läsa av det.")}</small></label>
     ${isNew ? "" : `<label class="check"><input type="checkbox" name="vinShare" id="cf-vinShare"${c.vinShare ? " checked" : ""}> Visa chassinumret i serviceboken som delas med en köpare</label>`}
     ${isNew
-      ? inp("odometer", "Mätarställning (mil)", "", 'inputmode="numeric"') + `
+      ? inp("odometer", "Mätarställning (km)", "", 'inputmode="numeric"') + `
         <div class="field">
           <span id="cf-bes-label">Senast besiktad</span>
           <input type="month" name="lastInspection" id="cf-lastInspection" max="${todayStr().slice(0, 7)}" placeholder="ÅÅÅÅ-MM">
@@ -2678,7 +2685,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
           <small id="cf-bes-out">Månaden räcker, den står i besiktningsprotokollet. Då föreslår appen när nästa besiktning senast ska vara gjord.</small>
         </div>`
       : `<div class="field"><span>Mätarställning</span>
-          <div class="odo-row"><b>${odoOf(c) != null ? `${fmt(odoOf(c))} mil` : "Inte angiven"}</b>
+          <div class="odo-row"><b>${odoOf(c) != null ? `${fmtKm(odoOf(c))}` : "Inte angiven"}</b>
           <button class="btn-soft" type="button" data-act="odo-from-car">Uppdatera</button></div>
           <small>Hämtas från loggen. Har någon skrivit fel, ändra eller ta bort den posten i loggen.</small></div>`}`;
   parts.more = `
@@ -3300,22 +3307,25 @@ function installCard() {
   </article>`;
 }
 
-// Kom igång: tre steg som gör appen användbar direkt. Försvinner när allt är gjort eller när man döljer det.
+// Kom igång: de steg som gör appen användbar direkt, med en kort förklaring av hur man gör.
+// Försvinner när allt är gjort eller när man döljer det. Bjuda in någon har ett eget kort (inviteCard).
 function startCard(c) {
   if (!c || pref.get("startHidden." + S.hid)) return "";
-  const alone = (S.house?.members || []).length < 2;
+  const ents = S.entries.filter((e) => e.carId === c.id && !e.deletedAt);
   const steps = [
-    { done: odoOf(c) != null, title: "Fyll i mätarställningen", sub: "Då räknar appen ut när service och däck behövs.", act: "new-entry", type: "matare" },
-    { done: !!(c.besiktning || c.forsakringDatum), title: "Lägg in besiktning och försäkring", sub: "Ni får en påminnelse i god tid.", act: "edit-car", section: "dates" },
-    { done: !alone, title: "Bjud in någon", sub: "Den du delar bilen med ser och loggar samma sak.", act: "copy-invite" },
+    { done: odoOf(c) != null, title: "Fyll i mätarställningen", sub: "Läs av mätaren i bilen. Då räknar appen ut när service och däck behövs.", act: "new-entry", type: "matare" },
+    { done: ents.some((e) => e.type !== "matare" && e.type !== "brev" && !e.fromBase), title: "Gör din första logg", sub: "Tryck på + längst ner och välj till exempel Tankning. Fota kvittot, så fylls beloppet i åt dig.", act: "new-entry" },
+    { done: (c.items || []).some((i) => i.baseDate) || ents.some((e) => e.type === "service" || e.type === "eget"), title: "Kolla underhållet", sub: "Under Bilen ser du när olja, filter och annat ska bytas. Fyll i när det byttes senast.", act: "go-view", id: "bilen" },
+    { done: !!(c.besiktning || c.forsakringDatum), title: "Lägg in besiktning och försäkring", sub: "Då får ni en påminnelse i god tid.", act: "edit-car", section: "dates" },
+    ...(pushSupported() ? [{ done: pushOn(), title: "Slå på notiser", sub: "Så att påminnelserna om besiktning, service och däckbyte kommer fram.", act: "push-on" }] : []),
   ];
   const left = steps.filter((x) => !x.done).length;
   if (!left) return "";
   return `<article class="card start-card">
-    <h2><span>Kom igång <span class="muted" style="font-weight:500;font-size:13px;margin-left:4px">${3 - left} av 3</span></span> <button class="link" type="button" data-act="hide-start">Dölj</button></h2>
+    <h2><span>Kom igång <span class="muted" style="font-weight:500;font-size:13px;margin-left:4px">${steps.length - left} av ${steps.length}</span></span> <button class="link" type="button" data-act="hide-start">Dölj</button></h2>
     <div class="rows">${steps.map((x, i) => x.done
       ? `<div class="dl start-step done"><span class="step-n" aria-hidden="true">✓</span><span><span class="dl-t">${esc(x.title)}</span><span class="dl-s">Klart</span></span></div>`
-      : `<button class="dl as-btn start-step" type="button" data-act="${x.act}"${x.type ? ` data-type="${x.type}"` : ""}${x.section ? ` data-section="${x.section}"` : ""}>
+      : `<button class="dl as-btn start-step" type="button" data-act="${x.act}"${x.type ? ` data-type="${x.type}"` : ""}${x.section ? ` data-section="${x.section}"` : ""}${x.id ? ` data-id="${x.id}"` : ""}>
           <span class="step-n" aria-hidden="true">${i + 1}</span><span><span class="dl-t">${esc(x.title)}</span><span class="dl-s">${esc(x.sub)}</span></span><span class="dl-v">›</span></button>`).join("")}</div>
   </article>`;
 }
@@ -3324,7 +3334,7 @@ function inviteCard() {
   if (!S.house || (S.house.members || []).length > 1) return "";
   return `<article class="card">
     <h2>Dela bilen med någon</h2>
-    <p class="muted">Bjud in någon till ${esc(S.house.name || "hushållet")}. Alla ni som delar ser och loggar samma sak. Den du bjuder in loggar in med Apple eller Google och skriver in koden:</p>
+    <p class="muted">Bjud in någon till ${esc(S.house.name || "hushållet")}. Alla ni som delar ser och loggar samma sak. Den du bjuder in loggar in med Apple, Google eller e-post och skriver in koden:</p>
     <p class="code" style="margin:10px 0">${esc(S.house.inviteCode)}</p>
     <button class="btn-soft" type="button" data-act="copy-invite">Kopiera inbjudningslänk</button>
   </article>`;
@@ -3516,9 +3526,9 @@ function serviceBookData(c, { share = false } = {}) {
   const st = allItemStatus(c).filter((x) => !x.unknown || x.lastDate);
   return {
     car: carName(c), plate: c.plate ? String(c.plate).toUpperCase() : "", made: todayStr(),
-    facts: [["Registreringsnummer", c.plate ? String(c.plate).toUpperCase() : ""], ["Chassinummer", c.vin && (!share || c.vinShare) ? c.vin : ""], ["Årsmodell", c.year ? String(c.year) : ""], ["Motor", c.engine], ["Drivmedel", c.fuel], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", c.besiktning ? fmtDate(c.besiktning) : ""]].filter(([, v]) => v),
-    items: st.map((x) => [x.item.name, intervalText(x.item).replace(/^var /, ""), x.lastDate ? `${fmtDate(x.lastDate)}${x.lastMil != null ? `, ${fmt(x.lastMil)} mil` : ""}` : "–", x.unknown ? "–" : dueText(x) || "–"]),
-    rows: ents.map((e) => [fmtDate(e.date), e.odometer != null ? `${fmt(e.odometer)} mil` : "–", what(e), e.note || "", e.workshop || e.place || "", e.amount != null ? `${fmtKr(e.amount)} kr` : ""]),
+    facts: [["Registreringsnummer", c.plate ? String(c.plate).toUpperCase() : ""], ["Chassinummer", c.vin && (!share || c.vinShare) ? c.vin : ""], ["Årsmodell", c.year ? String(c.year) : ""], ["Motor", c.engine], ["Drivmedel", c.fuel], ["Färg", c.color], ["Mätarställning", odoOf(c) != null ? `${fmtKm(odoOf(c))}` : ""], ["Sista dag för besiktning", c.besiktning ? fmtDate(c.besiktning) : ""]].filter(([, v]) => v),
+    items: st.map((x) => [x.item.name, intervalText(x.item).replace(/^var /, ""), x.lastDate ? `${fmtDate(x.lastDate)}${x.lastMil != null ? `, ${fmtKm(x.lastMil)}` : ""}` : "–", x.unknown ? "–" : dueText(x) || "–"]),
+    rows: ents.map((e) => [fmtDate(e.date), e.odometer != null ? `${fmtKm(e.odometer)}` : "–", what(e), e.note || "", e.workshop || e.place || "", e.amount != null ? `${fmtKr(e.amount)} kr` : ""]),
     total: `${fmtKr(ents.reduce((a, e) => a + (e.amount || 0), 0))} kr`,
   };
 }
@@ -3875,7 +3885,7 @@ async function aiReadDocument(file) {
   const set = (id, v) => { const x = document.getElementById(id); if (!x || v == null || v === "") return false; x.value = v; x.classList.add("from-receipt"); x.dispatchEvent(new Event("input", { bubbles: true })); x.dispatchEvent(new Event("change", { bubbles: true })); return true; };
   if (d.amount != null && set("ef-amount", String(d.amount).replace(".", ","))) filled.push(`${fmtKr(d.amount)} kr`);
   if (d.date && d.date <= todayStr() && set("ef-date", d.date)) filled.push(fmtDateShort(d.date));
-  if (d.odometerMil != null && set("ef-odometer", String(Math.round(d.odometerMil)))) filled.push(`${fmt(d.odometerMil)} mil`);
+  if (d.odometerMil != null && set("ef-odometer", String(kmOf(d.odometerMil)))) filled.push(`${fmtKm(d.odometerMil)}`);
   if (d.place) {
     const id = ["ef-workshop", "ef-station", "ef-place"].find((x) => document.getElementById(x));
     if (id && set(id, d.place)) filled.push(d.place);
@@ -3978,9 +3988,9 @@ function viewOverview() {
       <input type="file" accept="image/*" id="hero-photo" class="vh" aria-label="${c.photoId ? "Byt bild på bilen" : "Lägg till ett foto på er bil"}">
     </label>
     <div class="hero-tiles">
-      <button class="hero-tile odo-tile" type="button" data-act="new-entry" data-type="matare" aria-label="Mätarställning ${odoOf(c) != null ? fmt(odoOf(c)) : "saknas"} mil. Tryck för att uppdatera.">
+      <button class="hero-tile odo-tile" type="button" data-act="new-entry" data-type="matare" aria-label="Mätarställning ${odoOf(c) != null ? fmtKm(odoOf(c)) : "saknas"}. Tryck för att uppdatera.">
         <span class="label">Mätarställning</span>
-        <span class="odo-num">${odoOf(c) != null ? fmt(odoOf(c)) : "–"}<span>mil</span></span>
+        <span class="odo-num">${odoOf(c) != null ? fmt(kmOf(odoOf(c))) : "–"}<span>km</span></span>
         ${odoAgeHtml(c).replace("</span>", " ›</span>")}
       </button>
       ${fuelGauge(c)}
@@ -4011,7 +4021,7 @@ function viewOverview() {
   if (!known.length && st.length) {
     parts.push(ps?.noOdo
       ? `<article class="card"><h2>Underhåll</h2>
-        <p class="muted">Fyll i bilens mätarställning, så räknar appen ut hur många mil det är kvar till nästa byte.</p>
+        <p class="muted">Fyll i bilens mätarställning, så räknar appen ut hur många km det är kvar till nästa byte.</p>
         <div class="ask"><button class="btn-soft" type="button" data-act="new-entry" data-type="matare">Fyll i mätarställning</button></div></article>`
       : `<article class="card"><h2>Underhåll</h2>
         <p class="muted">Ange när olja, filter och liknande byttes senast, så räknar appen ut när det är dags igen.</p>
@@ -4336,13 +4346,13 @@ function odoReminder(c) {
   const real = est.length ? realOdoEntry(c.id) : null;
   if (est.length && real?.date && -daysUntil(parseDate(real.date)) >= 30) {
     const since = est.filter((t) => (t.date || "") >= real.date);
-    if (since.length) return [{ icon: "gauge", title: "Läs av mätaren", sub: `GPS-resorna har räknat fram ${fmt(since.reduce((a, t) => a + (tripMil(t) || 0), 0), 1)} mil sedan ${fmtDateShort(real.date)}. Med en riktig mätarställning stämmer körjournalen.`, level: "soon", label: "Läs av", act: "new-entry", type: "matare", always: true, days: 0 }];
+    if (since.length) return [{ icon: "gauge", title: "Läs av mätaren", sub: `GPS-resorna har räknat fram ${fmtKm(since.reduce((a, t) => a + (tripMil(t) || 0), 0))} sedan ${fmtDateShort(real.date)}. Med en riktig mätarställning stämmer körjournalen.`, level: "soon", label: "Läs av", act: "new-entry", type: "matare", always: true, days: 0 }];
   }
   const last = latestOdoEntry(c.id);
   if (!last?.date) return [];
   const ago = -daysUntil(parseDate(last.date));
   if (ago < 30) return [];
-  return [{ icon: "gauge", title: "Dags att uppdatera mätarställningen", sub: `Senast ${fmtDateShort(last.date)}, ${fmt(last.odometer)} mil`, level: "soon", label: "Uppdatera", act: "new-entry", type: "matare", always: true, days: 0 }];
+  return [{ icon: "gauge", title: "Dags att uppdatera mätarställningen", sub: `Senast ${fmtDateShort(last.date)}, ${fmtKm(last.odometer)}`, level: "soon", label: "Uppdatera", act: "new-entry", type: "matare", always: true, days: 0 }];
 }
 
 function odoAgeHtml(c) {
@@ -4462,7 +4472,7 @@ function logTile(dateStr, urgent = false) {
 // Glenns månadsbrev, som det kom i notisen, med Glenn bredvid.
 function letterSheet(e) {
   const c = S.cars.find((x) => x.id === e.carId);
-  const text = (EN && e.textEn) || e.text || "";
+  const text = milTextToKm((EN && e.textEn) || e.text || "");
   openSheet(entryTitle(e), `<div class="letter">
       <img class="letter-glenn" src="${glennSrc("base")}" alt="" width="64" height="64">
       <div class="letter-body">${text.split(/(?<=\.)\s+/).map((p) => `<p>${esc(p)}</p>`).join("")}<p class="letter-sign">/Glenn</p></div>
@@ -4475,13 +4485,13 @@ function entryRow(e, fromCat = null) {
   const mine = e.createdBy === uid() || e.type === "brev";
   const d = entryDetail(e);
   // Namnet syns bara när någon annan har loggat.
-  const extra = [e.odometer != null && e.type !== "matare" ? `${fmt(e.odometer)} mil` : "", photosOf(e).length > 1 ? `${photosOf(e).length} bilder` : photosOf(e).length ? "bild" : ""].filter(Boolean).join(" · ");
+  const extra = [e.odometer != null && e.type !== "matare" ? `${fmtKm(e.odometer)}` : "", photosOf(e).length > 1 ? `${photosOf(e).length} bilder` : photosOf(e).length ? "bild" : ""].filter(Boolean).join(" · ");
   const sub = [d, extra].filter(Boolean).join(" · ");
   return `<button class="entry log-row" type="button" data-act="open-entry" data-id="${esc(e.id)}"${fromCat ? ` data-cat="${esc(fromCat)}"` : ""}>
     ${logTile(e.date)}
     ${e.type === "brev" ? `<span class="dl-ic brev-ic"><img src="${glennSrc("base")}" alt="" width="36" height="36"></span>` : `<span class="dl-ic">${icon(entryIcon(e), 20)}</span>`}
     <span><span class="t">${esc(entryTitle(e))}</span>${sub || !mine ? `<span class="d">${mine ? "" : `<span class="who">${esc(whoName(e.createdBy))}</span> `}${esc(sub)}</span>` : ""}</span>
-    <span class="amt">${e.amount != null ? `${fmtKr(e.amount)} kr` : e.type === "matare" && e.odometer != null ? `${fmt(e.odometer)} mil` : ""}</span>
+    <span class="amt">${e.amount != null ? `${fmtKr(e.amount)} kr` : e.type === "matare" && e.odometer != null ? `${fmtKm(e.odometer)}` : ""}</span>
   </button>`;
 }
 
@@ -4492,7 +4502,7 @@ function entryMatches(e, q) {
   const hay = [
     TYPE[e.type]?.label, entryTitle(e), entryDetail(e, c), e.note, e.workshop, e.station, e.place, e.category, e.fuel,
     ["service", "eget"].includes(e.type) ? workOf(e, c).map(workText).join(" ") : "", whoName(e.createdBy), memberName(e.createdBy),
-    e.amount != null ? `${Math.round(e.amount)} ${fmt(e.amount)} kr` : "", e.odometer != null ? `${e.odometer} ${fmt(e.odometer)} mil` : "",
+    e.amount != null ? `${Math.round(e.amount)} ${fmt(e.amount)} kr` : "", e.odometer != null ? `${e.odometer} ${fmtKm(e.odometer)}` : "",
     fmtDate(e.date), e.date,
   ].filter(Boolean).join(" ").toLowerCase();
   return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w.replace(/\s/g, "")) || hay.replace(/\s/g, "").includes(w));
@@ -4593,7 +4603,7 @@ function tripLogRow(t) {
   return `<button class="entry log-row" type="button" data-act="edit-trip" data-id="${esc(t.id)}">
     ${logTile(t.date)}<span class="dl-ic">${icon("route", 20)}</span>
     <span><span class="t">${esc([t.from, t.to].filter(Boolean).join(" → ") || t.purpose || "Resa")}</span><span class="d">${esc([t.kind ? TRIP_KINDS[t.kind] : "Ej genomgången", t.purpose, t.auto ? "GPS" : ""].filter(Boolean).join(" · "))}</span></span>
-    <span class="amt">${mil != null ? esc(`${fmt(mil, 1)} mil`) : ""}</span></button>`;
+    <span class="amt">${mil != null ? esc(`${fmtKm(mil)}`) : ""}</span></button>`;
 }
 // Antal poster per typ, för knapparna (period och "bara mina" räknas in).
 function logCounts() {
@@ -4808,10 +4818,10 @@ function viewEconomy() {
       <div class="eco" style="margin-top:12px">
         <div class="stat"><div class="label">Totalt ${year}</div><div class="n">${fmtKr(yearTotal)} <small>kr</small></div>${delta(yearTotal, prevTotal)}</div>
         <div class="stat"><div class="label">Snitt per månad</div><div class="n">${yearTotal ? fmt(Math.round(yearAvg)) : "–"} <small>kr</small></div></div>
-        <div class="stat"><div class="label">Kostnad per mil</div><div class="n">${driven && yearTotal ? fmt(yearTotal / driven, 2) : "–"} <small>kr</small></div>${driven && prevDriven && prevTotal ? delta(yearTotal / driven, prevTotal / prevDriven) : ""}</div>
-        <div class="stat"><div class="label">Körsträcka</div><div class="n">${driven != null ? fmt(driven) : "–"} <small>mil</small></div>${delta(driven, prevDriven)}</div>
+        <div class="stat"><div class="label">Kostnad per km</div><div class="n">${driven && yearTotal ? fmt(yearTotal / driven / KM_PER_MIL, 2) : "–"} <small>kr</small></div>${driven && prevDriven && prevTotal ? delta(yearTotal / driven, prevTotal / prevDriven) : ""}</div>
+        <div class="stat"><div class="label">Körsträcka</div><div class="n">${driven != null ? fmt(kmOf(driven)) : "–"} <small>km</small></div>${delta(driven, prevDriven)}</div>
       </div>
-      <p class="hint" style="margin-top:10px">Tryck på en stapel för att se den månaden. Kostnad per mil räknas på körsträckan mellan årets loggade mätarställningar.</p>
+      <p class="hint" style="margin-top:10px">Tryck på en stapel för att se den månaden. Kostnad per km räknas på körsträckan mellan årets loggade mätarställningar.</p>
     </div>
     <!--card:rec-->${(c.recurring || []).length ? `<div class="card"><h2>Återkommande kostnader</h2><div class="rows">${c.recurring.map((r) => {
       const ended = r.end && r.end <= todayStr();
@@ -4891,7 +4901,7 @@ function pager(act, page, total, size = PAGE_SIZE) {
 // Intervallet i text: "var 2 000 mil eller 1 år". Hela år skrivs i år, annars i månader.
 function monthsText(m) { return m % 12 === 0 ? `${m / 12} år` : `${m} mån`; }
 function intervalText(item) {
-  const t = [item.mil ? `${fmt(item.mil)} mil` : "", item.months ? monthsText(item.months) : ""].filter(Boolean).join(" eller ");
+  const t = [item.mil ? `${fmtKm(item.mil)}` : "", item.months ? monthsText(item.months) : ""].filter(Boolean).join(" eller ");
   return t ? `var ${t}` : "inget intervall";
 }
 // Raden under en underhållspunkt, samma på Översikt och Bilen: nästa gräns om den är känd, annars intervallet.
@@ -4904,7 +4914,7 @@ function itemSubText(s) {
 
 // Nästa gräns i text: "Vid 23 700 mil eller senast juli 2027".
 function dueText(s) {
-  return [s.dueMil != null ? `Vid ${fmt(s.dueMil)} mil` : "", s.dueDate ? `senast ${MONTHS[s.dueDate.getMonth()]} ${s.dueDate.getFullYear()}` : ""]
+  return [s.dueMil != null ? `Vid ${fmtKm(s.dueMil)}` : "", s.dueDate ? `senast ${MONTHS[s.dueDate.getMonth()]} ${s.dueDate.getFullYear()}` : ""]
     .filter(Boolean).join(" eller ").replace(/^s/, "S");
 }
 
@@ -4942,7 +4952,7 @@ function viewCar() {
     <!--card:upp--><div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,more,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
         ${c.vin ? `<div><dt>Chassinummer</dt><dd class="vin-dd"><span data-notr>${esc(c.vin)}</span><button class="link" type="button" data-act="copy-vin">Kopiera</button></dd></div>` : ""}
-        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Kaross", [c.bodyStyle, c.seats ? `${c.seats} säten` : ""].filter(Boolean).join(", ")], ["Växellåda", c.gearbox], ["I trafik sedan", c.firstReg ? fmtDate(c.firstReg) : ""], ["Koldioxid", c.co2 ? `${c.co2} g/km` : ""], ["Tankvolym", c.tankVolume ? `${fmt(c.tankVolume)} liter` : ""], ["Mätarställning", odoOf(c) != null ? `${fmt(odoOf(c))} mil` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkringsbolag", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
+        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Kaross", [c.bodyStyle, c.seats ? `${c.seats} säten` : ""].filter(Boolean).join(", ")], ["Växellåda", c.gearbox], ["I trafik sedan", c.firstReg ? fmtDate(c.firstReg) : ""], ["Koldioxid", c.co2 ? `${c.co2} g/km` : ""], ["Tankvolym", c.tankVolume ? `${fmt(c.tankVolume)} liter` : ""], ["Mätarställning", odoOf(c) != null ? `${fmtKm(odoOf(c))}` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkringsbolag", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>
@@ -5777,26 +5787,26 @@ function viewTrips() {
   const review = toReview(c.id).sort((a, b) => tsMs(b.startedAt) - tsMs(a.startedAt));
   const recent = list.filter((t) => !(t.auto && !t.kind) && t !== open).slice(0, 5);
   const gaps = tripGaps(c.id);
-  const row = (t) => `<button class="dl as-btn" type="button" data-act="edit-trip" data-id="${esc(t.id)}"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.purpose, t.from && t.to ? `${t.from.split(",")[0]} → ${t.to}` : t.to].filter(Boolean).join(", ") || (t.kind === "privat" ? "Privat resa" : "Tjänsteresa"))}</div><div class="dl-s">${esc([fmtDateShort(t.date), t.kind ? TRIP_KINDS[t.kind] : "Ej genomgången", t.auto ? "GPS" : ""].filter(Boolean).join(" · "))}</div></div><span class="dl-v">${esc(tripMil(t) != null ? `${fmt(tripMil(t), 1)} mil` : "")}</span></button>`;
+  const row = (t) => `<button class="dl as-btn" type="button" data-act="edit-trip" data-id="${esc(t.id)}"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.purpose, t.from && t.to ? `${t.from.split(",")[0]} → ${t.to}` : t.to].filter(Boolean).join(", ") || (t.kind === "privat" ? "Privat resa" : "Tjänsteresa"))}</div><div class="dl-s">${esc([fmtDateShort(t.date), t.kind ? TRIP_KINDS[t.kind] : "Ej genomgången", t.auto ? "GPS" : ""].filter(Boolean).join(" · "))}</div></div><span class="dl-v">${esc(tripMil(t) != null ? `${fmtKm(tripMil(t))}` : "")}</span></button>`;
   const old = open && Date.now() - tsMs(open.startedAt) >= 4 * 36e5;
   return `${subHeader(`Körjournal · ${carName(c)}`, "Resor")}
     <article class="card rz-hero">${open
       ? `<div class="rz-live"><span class="k${old ? " old" : ""}">${old ? "Glömde du avsluta?" : "Resa pågår"}</span><span class="big" data-trip-bar>${esc(tripBarText(open))}</span>
-          <span class="s">${esc([open.to ? `Mot ${open.to}` : "", `Startade ${clock(tsMs(open.startedAt))} vid ${fmt(open.odoStart, 1)} mil`].filter(Boolean).join(" · "))}</span>
+          <span class="s">${esc([open.to ? `Mot ${open.to}` : "", `Startade ${clock(tsMs(open.startedAt))} vid ${fmtKm(open.odoStart)}`].filter(Boolean).join(" · "))}</span>
           <div class="row"><button class="rz-stop" type="button" data-act="start-trip"><span class="tb-sq"></span> Avsluta</button>${open.to ? `<button class="rz-ghost" type="button" data-act="trip-nav">Vägbeskrivning</button>` : ""}</div></div>`
       : `<button class="rz-start" type="button" data-act="trip-start-now">${icon("gauge", 24)} Starta resa</button><button class="link rz-link" type="button" data-act="new-trip">Logga en resa i efterhand</button>`}</article>
-    ${review.length ? `<article class="card"><h2>${esc(`${review.length} ${review.length === 1 ? "resa" : "resor"} att gå igenom`)}</h2><div class="rows">${review.map((t) => `<div class="swipe-wrap"><span class="sw-bg sw-work">Tjänst</span><span class="sw-bg sw-priv">Privat</span><div class="dl swipe-row" data-id="${esc(t.id)}"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.from, t.to].filter(Boolean).join(" → ") || "Resa")}</div><div class="dl-s">${esc(`${fmtDateShort(t.date)} ${clock(tsMs(t.startedAt))}–${clock(tsMs(t.endedAt))} · ${fmt(tripMil(t), 1)} mil · GPS`)}</div>
+    ${review.length ? `<article class="card"><h2>${esc(`${review.length} ${review.length === 1 ? "resa" : "resor"} att gå igenom`)}</h2><div class="rows">${review.map((t) => `<div class="swipe-wrap"><span class="sw-bg sw-work">Tjänst</span><span class="sw-bg sw-priv">Privat</span><div class="dl swipe-row" data-id="${esc(t.id)}"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.from, t.to].filter(Boolean).join(" → ") || "Resa")}</div><div class="dl-s">${esc(`${fmtDateShort(t.date)} ${clock(tsMs(t.startedAt))}–${clock(tsMs(t.endedAt))} · ${fmtKm(tripMil(t))} · GPS`)}</div>
       ${reviewBtns(t)}</div></div></div>`).join("")}</div>
       <p class="hint" style="margin-top:8px">Svep åt höger för Tjänst och åt vänster för Privat.</p></article>` : ""}
     ${gaps.length ? `<article class="card gap-card"><h2>${esc(gaps.length === 1 ? "En lucka i körjournalen" : `${gaps.length} luckor i körjournalen`)}</h2>
       <p class="muted" style="margin-top:0">Mätaren har gått längre mellan resorna än det som är loggat.</p>
-      <div class="rows">${gaps.slice(0, 3).map((g) => `<div class="dl"><div class="dl-ic">${icon("gauge", 20)}</div><div><div class="dl-t">${esc(gapText(g))}</div><div class="dl-s">${esc(`Mätaren ${fmt(num(g.a.odoEnd), 1)} → ${fmt(num(g.b.odoStart), 1)} mil`)}</div>
+      <div class="rows">${gaps.slice(0, 3).map((g) => `<div class="dl"><div class="dl-ic">${icon("gauge", 20)}</div><div><div class="dl-t">${esc(gapText(g))}</div><div class="dl-s">${esc(`Mätaren ${fmt(num(g.a.odoEnd), 1)} → ${fmtKm(num(g.b.odoStart))}`)}</div>
         <div class="review-btns"><button class="btn-soft" type="button" data-act="gap-add" data-a="${esc(g.a.id)}" data-b="${esc(g.b.id)}">Lägg till resa</button><button class="link" type="button" data-act="gap-ok" data-b="${esc(g.b.id)}">Det stämmer</button></div></div></div>`).join("")}</div></article>` : ""}
     <article class="card"><h2>${esc(MONTHS[new Date().getMonth()].replace(/^./, (x) => x.toUpperCase()))}</h2><div class="rz-tiles">
-      <div class="rz-tile"><small>I tjänsten</small><b>${esc(fmt(work, 1))}</b> mil</div>
+      <div class="rz-tile"><small>I tjänsten</small><b>${esc(fmt(kmOf(work)))}</b> km</div>
       <div class="rz-tile"><small>Ersättning</small><b>${esc(fmtKr(work * MIL_RATE))}</b> kr</div>
-      <div class="rz-tile"><small>Privat</small><b>${esc(fmt(priv, 1))}</b> mil</div></div>
-      <p class="hint" style="margin-top:10px">${esc(`Ersättningen räknas med ${MIL_RATE} kr per mil, Skatteverkets skattefria belopp för egen bil.`)}</p></article>
+      <div class="rz-tile"><small>Privat</small><b>${esc(fmt(kmOf(priv)))}</b> km</div></div>
+      <p class="hint" style="margin-top:10px">${esc(`Ersättningen räknas med ${fmt(MIL_RATE / KM_PER_MIL, 2)} kr per km, Skatteverkets skattefria belopp för egen bil.`)}</p></article>
     <article class="card"><h2>Senaste resorna ${list.length ? `<button class="link" type="button" data-act="trips">Alla</button>` : ""}</h2>
       ${recent.length ? `<div class="rows">${recent.map(row).join("")}</div>` : `<p class="muted">Inga resor än. Tryck på Starta resa när du åker.</p>`}
       ${list.length ? `<div class="ask"><button class="btn-soft" type="button" data-act="trip-year">${icon("print", 16)} Årsrapport (PDF)</button><button class="btn-soft" type="button" data-act="export-trips">Ladda ner som kalkylark</button></div>` : ""}</article>
@@ -5898,7 +5908,7 @@ function tripGaps(cid = S.carId) {
 }
 const gapText = (g) => {
   const d1 = fmtDateShort(g.a.date), d2 = fmtDateShort(g.b.date);
-  return `${fmt(g.mil, 1)} mil som inte är loggade ${d1 === d2 ? `den ${d1}` : `mellan ${d1} och ${d2}`}`;
+  return `${fmtKm(g.mil)} som inte är loggade ${d1 === d2 ? `den ${d1}` : `mellan ${d1} och ${d2}`}`;
 };
 function autoTripsHtml() {
   if (!tripsOn()) return "";
@@ -6087,7 +6097,7 @@ function reviewSheet() {
   const list = toReview().sort((a, b) => tsMs(a.startedAt) - tsMs(b.startedAt));
   if (!list.length) { closeSheet(); return showToast("Alla resor är genomgångna"); }
   openSheet("Resor att gå igenom", `<p class="muted" style="margin-top:0">Resorna har mätts med GPS. Mätarställningen är beräknad från den senast kända och sträckan.</p>
-    <div class="rows">${list.map((t) => `<div class="dl review-row"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.from, t.to].filter(Boolean).join(" → ") || "Resa")}</div><div class="dl-s">${esc(`${fmtDateShort(t.date)} ${clock(tsMs(t.startedAt))}–${clock(tsMs(t.endedAt))} · ${fmt(tripMil(t), 1)} mil`)}</div>
+    <div class="rows">${list.map((t) => `<div class="dl review-row"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.from, t.to].filter(Boolean).join(" → ") || "Resa")}</div><div class="dl-s">${esc(`${fmtDateShort(t.date)} ${clock(tsMs(t.startedAt))}–${clock(tsMs(t.endedAt))} · ${fmtKm(tripMil(t))}`)}</div>
       ${reviewBtns(t)}</div></div>`).join("")}</div>`);
 }
 
@@ -6096,7 +6106,7 @@ function reviewSheet() {
 const hmm = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 60)}:${pad(m % 60)}`; };
 function tripBarText(o) {
   const est = S.tripEst?.id === o.id ? S.tripEst.mil : null;
-  return `${hmm(Date.now() - tsMs(o.startedAt))}${est != null ? ` · ca ${fmt(est, 1)} mil` : ""}`;
+  return `${hmm(Date.now() - tsMs(o.startedAt))}${est != null ? ` · ca ${fmtKm(est)}` : ""}`;
 }
 function renderTripBar() {
   const o = S.user && S.hid && S.loaded.entries && tripsOn() && S.view !== "resor" ? openTrip() : null;
@@ -6145,17 +6155,17 @@ function tripForm(t = {}, mode = "new") {
   const title = mode === "start" ? "Starta resa" : mode === "end" ? "Avsluta resan" : t.id ? "Ändra resa" : "Resa";
   openSheet(title, `
     <form class="form" data-form="trip" data-mode="${mode}"${t.gap ? ` data-gap="1"` : ""} data-start="${odoStart ?? ""}"${t.id ? ` data-id="${esc(t.id)}"` : ""} novalidate>
-      ${mode === "end" ? `<p class="muted" style="margin-top:0">${esc(`Startade ${clock(tsMs(t.startedAt))} vid ${fmt(t.odoStart, 1)} mil.`)}</p>` : ""}
+      ${mode === "end" ? `<p class="muted" style="margin-top:0">${esc(`Startade ${clock(tsMs(t.startedAt))} vid ${fmtKm(t.odoStart)}.`)}</p>` : ""}
       ${mode === "new" && t.id && tripEnds(t) ? `<div class="bk-map trip-map" id="tr-map"><div class="bk-map-inner" id="tr-map-inner"></div>
         <button class="bk-map-open" type="button" data-act="trip-map-open" data-id="${esc(t.id)}" aria-label="Visa resan i en kartapp"><span>${icon("pin", 14)} Öppna i kartan</span></button></div>
         <div class="trip-ends"><span><i class="te-a"></i>${esc(t.from || "Start")}${t.startedAt ? ` · ${clock(tsMs(t.startedAt))}` : ""}</span><span><i class="te-b"></i>${esc(t.to || "Mål")}${t.endedAt ? ` · ${clock(tsMs(t.endedAt))}` : ""}</span></div>` : ""}
       ${t.edits?.length ? `<div class="hint" style="margin-top:0"><b>Ändrad i efterhand</b>${t.edits.slice(-5).reverse().map((e) => `<br>${esc(editLine(e))}`).join("")}</div>` : ""}
       ${mode === "end" ? "" : `<div class="row2">
         ${field("Datum", `<input type="date" name="date" id="tr-date" value="${esc(t.date || todayStr())}">`)}
-        ${field("Mätare vid start (mil)", `<input name="odoStart" id="tr-odoStart" inputmode="decimal" required value="${odoStart != null ? esc(String(odoStart).replace(".", ",")) : ""}" placeholder="${lastOdo != null ? esc(`Senast ${fmt(lastOdo, 1)}`) : ""}">`)}
+        ${field("Mätare vid start (km)", `<input name="odoStart" id="tr-odoStart" inputmode="numeric" required value="${odoStart != null ? kmOf(odoStart) : ""}" placeholder="${lastOdo != null ? esc(`Senast ${fmt(kmOf(lastOdo))}`) : ""}">`)}
       </div>
-      ${t.id ? "" : `<p class="hint" style="margin-top:-6px">Läs av mätaren i bilen${lastOdo != null ? esc(`. Senast kända är ${fmt(lastOdo, 1)} mil`) : ""}.</p>`}`}
-      ${mode === "start" ? "" : field("Mätare vid slut (mil)", `<input name="odoEnd" id="tr-odoEnd" inputmode="decimal" required value="${t.odoEnd != null ? esc(String(t.odoEnd).replace(".", ",")) : ""}" placeholder="Läs av mätaren i bilen">`, `<span id="tr-dist">${t.odoEnd != null ? esc(`${fmt(tripMil(t), 1)} mil`) : "Mil med en decimal. 1,2 mil är 12 km."}</span>`)}
+      ${t.id ? "" : `<p class="hint" style="margin-top:-6px">Läs av mätaren i bilen${lastOdo != null ? esc(`. Senast kända är ${fmtKm(lastOdo)}`) : ""}.</p>`}`}
+      ${mode === "start" ? "" : field("Mätare vid slut (km)", `<input name="odoEnd" id="tr-odoEnd" inputmode="numeric" required value="${t.odoEnd != null ? kmOf(t.odoEnd) : ""}" placeholder="Läs av mätaren i bilen">`, `<span id="tr-dist">${t.odoEnd != null ? esc(`${fmtKm(tripMil(t))}`) : "Som det står på mätaren, i km."}</span>`)}
       ${mode === "end" ? `<div id="tr-route" hidden></div><input type="hidden" name="endPos" id="tr-endPos">` : ""}
       ${mode === "start" ? `<input type="hidden" name="startPos" id="tr-startPos">` : ""}
       ${field("Från", `<span class="geo-row"><input name="from" id="tr-from" value="${esc(t.from ?? (mode === "new" && !t.id ? prev?.to || "" : ""))}" placeholder="Ort, adress eller företag" autocomplete="off"><button class="geo-btn" type="button" data-act="trip-here" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span><span class="suggest" id="tr-from-suggest" role="listbox" hidden></span><input type="hidden" name="fromLoc" id="tr-fromLoc" value="${t.fromLoc ? esc(JSON.stringify(t.fromLoc)) : ""}">`)}
@@ -6292,7 +6302,7 @@ async function routeMil(from, to) {
 const durText = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} tim ${m % 60} min`; };
 function tripLiveText(o) {
   const est = S.tripEst?.id === o.id ? S.tripEst.mil : null;
-  return [`Pågått ${durText(Date.now() - tsMs(o.startedAt))}`, est != null ? `ca ${fmt(est, 1)} mil från start` : ""].filter(Boolean).join(" · ");
+  return [`Pågått ${durText(Date.now() - tsMs(o.startedAt))}`, est != null ? `ca ${fmtKm(est)} från start` : ""].filter(Boolean).join(" · ");
 }
 async function updateTripEstimate() {
   const o = tripsOn() && openTrip();
@@ -6337,7 +6347,7 @@ async function suggestTripDistance(t) {
     if (mil == null || mil < 0.1 || !document.contains(box)) return;
     const odo = Math.round((t.odoStart + mil) * 10) / 10;
     // Bara en kontroll: mätaren i bilen gäller, men kartan visar om siffran verkar rimlig.
-    box.innerHTML = `<p class="hint">${icon("pin", 14)} ${esc(`Enligt kartan ca ${fmt(mil, 1)} mil från start, alltså runt ${fmt(odo, 1)} på mätaren.`)}</p>`;
+    box.innerHTML = `<p class="hint">${icon("pin", 14)} ${esc(`Enligt kartan ca ${fmtKm(mil)} från start, alltså runt ${fmtKm(odo)} på mätaren.`)}</p>`;
     box.hidden = false;
   } catch { /* utan karta får man läsa av mätaren */ }
 }
@@ -6357,16 +6367,16 @@ async function saveTrip(form) {
   const mode = form.dataset.mode;
   const str = (k) => String(fd.get(k) || "").trim();
   const old = form.dataset.id ? S.trips.find((x) => x.id === form.dataset.id) : null;
-  const odoStart = mode === "end" ? old?.odoStart : num(fd.get("odoStart"));
-  const odoEnd = mode === "start" ? null : num(fd.get("odoEnd"));
+  const odoStart = mode === "end" ? old?.odoStart : milOf(num(fd.get("odoStart")));
+  const odoEnd = mode === "start" ? null : milOf(num(fd.get("odoEnd")));
   if (odoStart == null) return formError("Fyll i mätarställningen vid start.");
   if (mode !== "start" && odoEnd == null) return formError("Fyll i mätarställningen vid slut.");
   if (odoEnd != null && odoEnd < odoStart) return formError("Mätarställningen vid slut ska vara högre än vid start.");
-  if (odoEnd != null && odoEnd - odoStart > 300) return formError("Sträckan ser för lång ut. Mätarställningen anges i mil, till exempel 21 480,6.");
+  if (odoEnd != null && odoEnd - odoStart > 300) return formError("Sträckan ser för lång ut. Mätarställningen anges i km, till exempel 214 806.");
   // En ny resa som startar lägre än senast kända mätarställning: fråga, det är oftast en felskrivning.
   const lastOdo = odoOf(c);
   if (!old && !form.dataset.gap && lastOdo != null && odoStart < lastOdo - 0.05) {
-    const ok = await confirmDialog({ title: "Stämmer mätarställningen?", lines: [`${fmt(odoStart, 1)} mil är lägre än senast kända, ${fmt(lastOdo, 1)} mil.`], okLabel: "Ja, spara", warn: "" });
+    const ok = await confirmDialog({ title: "Stämmer mätarställningen?", lines: [`${fmtKm(odoStart)} är lägre än senast kända, ${fmtKm(lastOdo)}.`], okLabel: "Ja, spara", warn: "" });
     if (!ok) return;
   }
   const data = clean({
@@ -6404,7 +6414,7 @@ async function saveTrip(form) {
   // Hann positionen inte komma medan rutan var öppen hämtas en ny nu.
   if (mode === "start" && !data.startLoc) freshTripPosition().then((loc) => { if (loc) { updateDoc(doc(col("trips"), id), { startLoc: loc }).catch(() => {}); const t = S.trips.find((x) => x.id === id); if (t) t.startLoc = loc; } });
   if (mode === "end" && !data.endLoc) freshTripPosition().then((loc) => { if (loc) { updateDoc(doc(col("trips"), id), { endLoc: loc }).catch(() => {}); const t = S.trips.find((x) => x.id === id); if (t) t.endLoc = loc; } });
-  showToast(mode === "start" ? "Resan är startad" : `${old && mode === "new" ? "Resan är ändrad" : "Resan är sparad"}: ${fmt(tripMil({ odoStart, odoEnd }) ?? 0, 1)} mil`);
+  showToast(mode === "start" ? "Resan är startad" : `${old && mode === "new" ? "Resan är ändrad" : "Resan är sparad"}: ${fmtKm(tripMil({ odoStart, odoEnd }) ?? 0)}`);
 }
 
 // Nästa resa med samma bil som startar inom 45 minuter efter att den här slutade.
@@ -6415,7 +6425,7 @@ function nextTripOf(t) {
     .sort((a, b) => tsMs(a.startedAt) - tsMs(b.startedAt))[0] || null;
 }
 async function mergeTrips(a, b) {
-  const ok = await confirmDialog({ title: "Slå ihop resorna?", lines: [`${[a.from, a.to].filter(Boolean).join(" → ") || "Resan"} och ${[b.from, b.to].filter(Boolean).join(" → ") || "nästa resa"} blir en resa på ${fmt((num(b.odoEnd) - num(a.odoStart)) || 0, 1)} mil.`], okLabel: "Slå ihop", warn: "" });
+  const ok = await confirmDialog({ title: "Slå ihop resorna?", lines: [`${[a.from, a.to].filter(Boolean).join(" → ") || "Resan"} och ${[b.from, b.to].filter(Boolean).join(" → ") || "nästa resa"} blir en resa på ${fmtKm((num(b.odoEnd) - num(a.odoStart)) || 0)}.`], okLabel: "Slå ihop", warn: "" });
   if (!ok) return;
   const pa = decodePath(a.path), pb = decodePath(b.path);
   const data = clean({
@@ -6437,8 +6447,8 @@ async function mergeTrips(a, b) {
 function splitSheet(t) {
   const mid = Math.round(((num(t.odoStart) + num(t.odoEnd)) / 2) * 10) / 10;
   openSheet("Dela resan", `<form class="form" data-form="trip-split" data-id="${esc(t.id)}" novalidate>
-    <p class="muted" style="margin-top:0">${esc(`Resan går från ${fmt(t.odoStart, 1)} till ${fmt(t.odoEnd, 1)} mil. Den delas i två där du stannade.`)}</p>
-    ${field("Mätare där du stannade (mil)", `<input name="odo" id="sp-odo" inputmode="decimal" required value="${esc(String(mid).replace(".", ","))}">`)}
+    <p class="muted" style="margin-top:0">${esc(`Resan går från ${fmt(t.odoStart, 1)} till ${fmtKm(t.odoEnd)}. Den delas i två där du stannade.`)}</p>
+    ${field("Mätare där du stannade (km)", `<input name="odo" id="sp-odo" inputmode="numeric" required value="${kmOf(mid)}">`)}
     ${field("Var stannade du?", `<input name="place" id="sp-place" placeholder="Till exempel Macken eller Kunden" autocomplete="off">`)}
     <p class="err" id="form-err" hidden></p>
     <button class="btn primary block" type="submit">Dela i två resor</button></form>`, { back: "edit-trip", backId: t.id });
@@ -6447,8 +6457,8 @@ async function saveSplit(form) {
   const t = S.trips.find((x) => x.id === form.dataset.id);
   if (!t) return closeSheet();
   const fd = new FormData(form);
-  const odo = num(fd.get("odo")), place = String(fd.get("place") || "").trim() || null;
-  if (odo == null || odo <= num(t.odoStart) || odo >= num(t.odoEnd)) return formError(`Skriv en mätarställning mellan ${fmt(t.odoStart, 1)} och ${fmt(t.odoEnd, 1)}.`);
+  const odo = milOf(num(fd.get("odo"))), place = String(fd.get("place") || "").trim() || null;
+  if (odo == null || odo <= num(t.odoStart) || odo >= num(t.odoEnd)) return formError(`Skriv en mätarställning mellan ${fmt(kmOf(t.odoStart))} och ${fmt(kmOf(t.odoEnd))} km.`);
   const f = (odo - num(t.odoStart)) / (num(t.odoEnd) - num(t.odoStart));
   const a0 = tsMs(t.startedAt), b0 = tsMs(t.endedAt || t.startedAt);
   const at = a0 && b0 ? Math.round(a0 + (b0 - a0) * f) : null;
@@ -6470,7 +6480,7 @@ async function saveSplit(form) {
   });
   const first = clean({ odoEnd: odo, to: place, toLoc: placeLocV, endLoc: cut || null, endedAt: at || t.endedAt,
     path: p1.length >= 2 ? encodePath(p1) : null, autoMeters: t.autoMeters != null ? Math.round(t.autoMeters * f) : null,
-    edits: [...(t.edits || []), { at: Date.now(), by: uid(), changes: [`delad vid ${fmt(odo, 1)} mil`] }].slice(-20) });
+    edits: [...(t.edits || []), { at: Date.now(), by: uid(), changes: [`delad vid ${fmtKm(odo)}`] }].slice(-20) });
   const gone = ["to", "toLoc", "endLoc", "path", "autoMeters"].filter((k) => !(k in first));
   const local = { ...t, ...first }; for (const k of gone) delete local[k];
   await updateDoc(doc(col("trips"), t.id), { ...first, ...Object.fromEntries(gone.map((k) => [k, deleteField()])) }).catch(onWriteError);
@@ -6495,21 +6505,21 @@ function tripYearPdf(year) {
   const work = sumMil(list, "tjanst"), priv = sumMil(list, "privat");
   const first = list[0], last = list.at(-1);
   pdf.autoTable({ ...base, startY: 35, theme: "plain", columnStyles: { 0: { textColor: 110, cellWidth: 70 } }, body: [
-    ["Mätarställning vid årets första resa", first ? `${fmt(first.odoStart, 1)} mil (${fmtDateShort(first.date)})` : "-"],
-    ["Mätarställning vid årets sista resa", last ? `${fmt(last.odoEnd, 1)} mil (${fmtDateShort(last.date)})` : "-"],
-    ["Körda mil enligt mätaren", first && last ? `${fmt(num(last.odoEnd) - num(first.odoStart), 1)} mil` : "-"],
-    ["Tjänsteresor", `${fmt(work, 1)} mil`], ["Privata resor", `${fmt(priv, 1)} mil`],
+    ["Mätarställning vid årets första resa", first ? `${fmtKm(first.odoStart)} (${fmtDateShort(first.date)})` : "-"],
+    ["Mätarställning vid årets sista resa", last ? `${fmtKm(last.odoEnd)} (${fmtDateShort(last.date)})` : "-"],
+    ["Körda km enligt mätaren", first && last ? `${fmtKm(num(last.odoEnd) - num(first.odoStart))}` : "-"],
+    ["Tjänsteresor", `${fmtKm(work)}`], ["Privata resor", `${fmtKm(priv)}`],
     ["Antal resor", String(list.length)],
-    ["Milersättning", `${fmtKr(work * MIL_RATE)} kr (${MIL_RATE} kr per mil)`],
+    ["Milersättning", `${fmtKr(work * MIL_RATE)} kr (${fmt(MIL_RATE / KM_PER_MIL, 2)} kr per km)`],
   ].map(([k, v]) => [t(k), t(v)]) });
   let y = pdf.lastAutoTable.finalY + 8;
   pdf.setFont("helvetica", "bold"); pdf.setFontSize(13); pdf.text(t("Per månad"), 14, y);
-  const months = MONTHS.map((m, i) => { const key = `${year}-${pad(i + 1)}`; const ml = list.filter((x) => x.date.startsWith(key)); return [m.replace(/^./, (x) => x.toUpperCase()), fmt(sumMil(ml, "tjanst"), 1), fmt(sumMil(ml, "privat"), 1), fmtKr(sumMil(ml, "tjanst") * MIL_RATE)]; });
-  pdf.autoTable({ ...base, startY: y + 3, head: [["Månad", "Tjänst (mil)", "Privat (mil)", "Ersättning (kr)"].map(t)], body: months.map((r) => r.map(t)), columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } } });
+  const months = MONTHS.map((m, i) => { const key = `${year}-${pad(i + 1)}`; const ml = list.filter((x) => x.date.startsWith(key)); return [m.replace(/^./, (x) => x.toUpperCase()), fmt(kmOf(sumMil(ml, "tjanst"))), fmt(kmOf(sumMil(ml, "privat"))), fmtKr(sumMil(ml, "tjanst") * MIL_RATE)]; });
+  pdf.autoTable({ ...base, startY: y + 3, head: [["Månad", "Tjänst (km)", "Privat (km)", "Ersättning (kr)"].map(t)], body: months.map((r) => r.map(t)), columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } } });
   pdf.addPage();
   pdf.setFont("helvetica", "bold"); pdf.setFontSize(16); pdf.text(t("Alla resor"), 14, 20);
-  pdf.autoTable({ ...base, startY: 25, styles: { ...base.styles, fontSize: 8 }, head: [["Datum", "Mätare start", "Mätare slut", "Mil", "Från - till", "Ärende", "Typ", "Förare"].map(t)],
-    body: list.map((x) => [x.date, fmt(x.odoStart, 1), fmt(x.odoEnd, 1), fmt(tripMil(x), 1), [x.from, x.to].filter(Boolean).join(" -> "), x.purpose || "", TRIP_KINDS[x.kind] || "Ej genomgången", memberName(x.driver)].map(t)),
+  pdf.autoTable({ ...base, startY: 25, styles: { ...base.styles, fontSize: 8 }, head: [["Datum", "Mätare start (km)", "Mätare slut (km)", "Km", "Från - till", "Ärende", "Typ", "Förare"].map(t)],
+    body: list.map((x) => [x.date, fmt(kmOf(x.odoStart)), fmt(kmOf(x.odoEnd)), fmt(kmOf(tripMil(x))), [x.from, x.to].filter(Boolean).join(" -> "), x.purpose || "", TRIP_KINDS[x.kind] || "Ej genomgången", memberName(x.driver)].map(t)),
     columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } } });
   const estimated = list.filter((x) => x.odoEstimated).length;
   if (estimated) { const yy = pdf.lastAutoTable.finalY + 6; pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(110); pdf.text(t(`${estimated} resor är mätta med GPS. Där är mätarställningen beräknad från den senast avlästa och sträckan.`), 14, yy); pdf.setTextColor(0); }
@@ -6533,16 +6543,16 @@ function tripsSheet() {
   const months = [...new Set(list.map((t) => (t.date || "").slice(0, 7)))];
   openSheet("Körjournal", `
     <dl class="detail-list">
-      <div><dt>${esc(`I tjänsten ${y}`)}</dt><dd>${esc(`${fmt(yWork, 1)} mil`)}</dd></div>
+      <div><dt>${esc(`I tjänsten ${y}`)}</dt><dd>${esc(`${fmtKm(yWork)}`)}</dd></div>
       <div><dt>Milersättning</dt><dd>${esc(`${fmtKr(yWork * MIL_RATE)} kr`)}</dd></div>
-      <div><dt>${esc(`Privat ${y}`)}</dt><dd>${esc(`${fmt(sumMil(year, "privat"), 1)} mil`)}</dd></div>
+      <div><dt>${esc(`Privat ${y}`)}</dt><dd>${esc(`${fmtKm(sumMil(year, "privat"))}`)}</dd></div>
     </dl>
-    <p class="hint">${esc(`Milersättningen räknas med ${MIL_RATE} kr per mil, Skatteverkets skattefria belopp för egen bil.`)}</p>
+    <p class="hint">${esc(`Milersättningen räknas med ${fmt(MIL_RATE / KM_PER_MIL, 2)} kr per km, Skatteverkets skattefria belopp för egen bil.`)}</p>
     ${months.length ? months.map((m) => {
       const ts = list.filter((t) => (t.date || "").startsWith(m));
       const [yy, mm] = m.split("-");
-      return `<h3 class="section-t" style="margin-top:18px">${esc(`${MONTHS[+mm - 1].replace(/^./, (x) => x.toUpperCase())} ${yy}`)} <span class="muted" style="font-weight:400">${esc(`${fmt(sumMil(ts, "tjanst"), 1)} mil i tjänsten`)}</span></h3>
-        <div class="rows">${ts.map((t) => `<button class="dl as-btn" type="button" data-act="edit-trip" data-id="${esc(t.id)}"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.purpose, t.from && t.to ? `${t.from.split(",")[0]} → ${t.to}` : t.to].filter(Boolean).join(", ") || (t.kind === "privat" ? "Privat resa" : "Tjänsteresa"))}</div><div class="dl-s">${esc([fmtDateShort(t.date), t.kind ? TRIP_KINDS[t.kind] : "Ej genomgången", t.auto ? "GPS" : "", S.house?.members?.length > 1 ? memberName(t.driver) : "", t.edits?.length ? editedText(t).toLowerCase() : ""].filter(Boolean).join(" · "))}</div></div><span class="dl-v">${esc(tripMil(t) != null ? `${fmt(tripMil(t), 1)} mil` : "Pågår")}</span></button>`).join("")}</div>`;
+      return `<h3 class="section-t" style="margin-top:18px">${esc(`${MONTHS[+mm - 1].replace(/^./, (x) => x.toUpperCase())} ${yy}`)} <span class="muted" style="font-weight:400">${esc(`${fmtKm(sumMil(ts, "tjanst"))} i tjänsten`)}</span></h3>
+        <div class="rows">${ts.map((t) => `<button class="dl as-btn" type="button" data-act="edit-trip" data-id="${esc(t.id)}"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.purpose, t.from && t.to ? `${t.from.split(",")[0]} → ${t.to}` : t.to].filter(Boolean).join(", ") || (t.kind === "privat" ? "Privat resa" : "Tjänsteresa"))}</div><div class="dl-s">${esc([fmtDateShort(t.date), t.kind ? TRIP_KINDS[t.kind] : "Ej genomgången", t.auto ? "GPS" : "", S.house?.members?.length > 1 ? memberName(t.driver) : "", t.edits?.length ? editedText(t).toLowerCase() : ""].filter(Boolean).join(" · "))}</div></div><span class="dl-v">${esc(tripMil(t) != null ? `${fmtKm(tripMil(t))}` : "Pågår")}</span></button>`).join("")}</div>`;
     }).join("") : `<p class="muted" style="margin-top:16px">Inga resor än.</p>`}
     <div class="form" style="margin-top:18px">
       <button class="btn primary block" type="button" data-act="new-trip">Logga resa</button>
@@ -6559,10 +6569,10 @@ function exportTrips() {
     const t = typeof v === "number" ? String(v).replace(".", ",") : String(v);
     return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
   };
-  const head = ["Datum", "Bil", "Reg.nr", "Mätare start (mil)", "Mätare slut (mil)", "Sträcka (mil)", "Sträcka (km)", "Från", "Vart", "Ärende", "Typ", "Förare", "Milersättning (kr)", "Ändrad i efterhand", "Mätt med", "Starttid", "Sluttid"];
+  const head = ["Datum", "Bil", "Reg.nr", "Mätare start (km)", "Mätare slut (km)", "Sträcka (km)", "Från", "Vart", "Ärende", "Typ", "Förare", "Milersättning (kr)", "Ändrad i efterhand", "Mätt med", "Starttid", "Sluttid"];
   const rows = list.map((t) => {
     const mil = tripMil(t);
-    return [t.date, carName(c), c.plate, t.odoStart, t.odoEnd, mil, mil != null ? Math.round(mil * 10) : null, t.from, t.to, t.purpose, TRIP_KINDS[t.kind], memberName(t.driver), t.kind === "tjanst" && mil != null ? Math.round(mil * MIL_RATE) : null, t.edits?.length ? t.edits.map(editLine).join("; ") : "",
+    return [t.date, carName(c), c.plate, kmOf(t.odoStart), kmOf(t.odoEnd), mil != null ? kmOf(mil) : null, t.from, t.to, t.purpose, TRIP_KINDS[t.kind], memberName(t.driver), t.kind === "tjanst" && mil != null ? Math.round(mil * MIL_RATE) : null, t.edits?.length ? t.edits.map(editLine).join("; ") : "",
       t.auto ? (t.odoEstimated ? "GPS, mätaren beräknad" : "GPS") : "Mätaren avläst", t.startedAt ? clock(tsMs(t.startedAt)) : "", t.endedAt ? clock(tsMs(t.endedAt)) : ""].map(cell).join(";");
   });
   downloadFile(`Körjournal ${carName(c)} ${todayStr()}.csv`, "\ufeff" + [head.join(";"), ...rows].join("\r\n"), "text/csv;charset=utf-8");
@@ -6601,7 +6611,7 @@ function exportLog() {
     const t = typeof v === "number" ? String(v).replace(".", ",") : String(v);
     return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
   };
-  const head = ["Bil", "Reg.nr", "Datum", "Typ", "Vad", "Detaljer", "Belopp (kr)", "Mätarställning (mil)", "Mängd", "Drivmedel", "Verkstad", "Station eller plats", "Handläggare", "Anteckning", "Loggad av"];
+  const head = ["Bil", "Reg.nr", "Datum", "Typ", "Vad", "Detaljer", "Belopp (kr)", "Mätarställning (km)", "Mängd", "Drivmedel", "Verkstad", "Station eller plats", "Handläggare", "Anteckning", "Loggad av"];
   const rows = [...S.entries, ...S.cars.flatMap((x) => recurringEntries(x))].sort((a, b) => (a.date || "").localeCompare(b.date || "")).map((e) => {
     const c = S.cars.find((x) => x.id === e.carId);
     return [
@@ -6777,7 +6787,7 @@ function entryForm(type, e = {}, opts = {}) {
   const bookKind = { service: "service", dack: "dack" }[type] || (type === "kostnad" && e.category === "Besiktning" ? "besiktning" : null);
   const date = field("Datum", `<input type="date" name="date" id="ef-date" required value="${esc(e.date || todayStr())}">`)
     + (bookKind && !e.id ? `<div class="future-hint" id="ef-future" data-kind="${bookKind}" hidden><span>Datumet är framåt i tiden. Vill du boka en tid i stället?</span><button class="btn-soft" type="button" data-act="to-booking">${icon("calendar", 16)} Lägg in som bokad tid</button></div>` : "");
-  const odo = (required = false) => field("Mätarställning (mil)", `<input name="odometer" id="ef-odometer" inputmode="numeric" ${required ? "required" : ""} placeholder="${odoOf(c) != null ? `Senast ${fmt(odoOf(c))}` : ""}" value="${e.odometer ?? ""}">`);
+  const odo = (required = false) => field("Mätarställning (km)", `<input name="odometer" id="ef-odometer" inputmode="numeric" ${required ? "required" : ""} placeholder="${odoOf(c) != null ? `Senast ${fmt(kmOf(odoOf(c)))}` : ""}" value="${e.odometer != null ? kmOf(e.odometer) : ""}">`);
   const amount = (example, label = "Kostnad (kr)", extra = "", hint = "") => field(label, `<input name="amount" id="ef-amount" inputmode="decimal"${extra} value="${e.amount ?? ""}">`, hint);
   const note = field("Anteckning", `<textarea name="note" id="ef-note" rows="2">${v("note")}</textarea>`);
   // Bilder: flera går att lägga till, en i taget eller många på en gång, och var och en går att ta bort.
@@ -7567,11 +7577,11 @@ async function saveEntry(form) {
   try { const l = JSON.parse(str("loc") || "null"); if (l && typeof l === "object") data.loc = l; } catch { /* ingen plats */ }
   const typedPlace = str("workshop") || str("place") || str("station");
   if (data.loc?.name && typedPlace && typedPlace !== data.loc.name) data.loc = null;
-  data.odometer = num(fd.get("odometer"));
+  data.odometer = milOf(num(fd.get("odometer")));
   if (fd.has("amount")) data.amount = num(fd.get("amount"));
   if (fd.has("handler")) data.handler = str("handler") || null;
 
-  if (data.odometer != null && (data.odometer < 0 || data.odometer > 200000)) return formError("Mätarställningen ser fel ut. Ange den i mil, till exempel 21 480.");
+  if (data.odometer != null && (data.odometer < 0 || data.odometer > 200000)) return formError("Mätarställningen ser fel ut. Ange den i km, till exempel 214 800.");
   // Varna om mätarställningen är lägre än den senaste (vanligt när man tappar en siffra).
   // Varnar också om en äldre post får högre mätarställning än en senare.
   if (data.odometer != null && form.dataset.odoOk !== "1") {
@@ -7581,11 +7591,11 @@ async function saveEntry(form) {
     const after = odoEnts.filter((e) => (e.date || "") > data.date && e.odometer < data.odometer).sort((a, b) => a.odometer - b.odometer)[0];
     if (before) {
       form.dataset.odoOk = "1";
-      return formError(`${fmt(data.odometer)} mil är lägre än tidigare (${fmt(before.odometer)} mil, ${fmtDateShort(before.date)}). Stämmer det? Tryck Spara igen för att spara ändå.`);
+      return formError(`${fmtKm(data.odometer)} är lägre än tidigare (${fmtKm(before.odometer)}, ${fmtDateShort(before.date)}). Stämmer det? Tryck Spara igen för att spara ändå.`);
     }
     if (after) {
       form.dataset.odoOk = "1";
-      return formError(`${fmt(data.odometer)} mil är högre än en senare post (${fmt(after.odometer)} mil, ${fmtDateShort(after.date)}). Stämmer datumet? Tryck Spara igen för att spara ändå.`);
+      return formError(`${fmtKm(data.odometer)} är högre än en senare post (${fmtKm(after.odometer)}, ${fmtDateShort(after.date)}). Stämmer datumet? Tryck Spara igen för att spara ändå.`);
     }
   }
 
@@ -7885,7 +7895,7 @@ function openEntry(id, { fromCat = null } = {}) {
   const rows = [
     ["Datum", fmtDate(e.date)],
     ["Loggad av", whoName(e.createdBy)],
-    e.odometer != null ? ["Mätarställning", `${fmt(e.odometer)} mil`] : null,
+    e.odometer != null ? ["Mätarställning", `${fmtKm(e.odometer)}`] : null,
     e.amount != null ? ["Kostnad", `${fmtKr(e.amount)} kr`] : null,
     e.liters != null ? ["Mängd", `${fmt(e.liters, 2)} ${/kWh/.test(e.fuel || "") ? "kWh" : "l"} ${e.fuel || ""}`] : null,
     e.pricePerL != null ? ["Pris", `${fmt(e.pricePerL, 2)} kr per enhet`] : null,
@@ -7970,7 +7980,7 @@ const ITEM_INFO = {
     en: ["A car battery doesn't need replacing as long as it works well. Check it instead, preferably every autumn. If you tap Checked – looks good, it gets another year.", "Have the voltage checked before winter, at a workshop or with your own meter. Fully charged it is about 12.6 volts with the engine off. Below 12.4 volts it should be charged, and below 12.0 volts it is in poor condition.", "Cold is hard on the battery. A battery older than five years may fail on a cold morning.", "Signs of a bad battery: the engine cranks slowly when starting, the lights dim when starting, the clock or radio resets, or the battery light is on. Short trips charge poorly, so take a longer drive now and then."],
   },
   kamrem: {
-    sv: ["Kamremmen styr motorns ventiler. Går den av kan motorn få allvarliga skador.", "Följ tillverkarens intervall noga, både mil och år. Gummit åldras även om bilen inte körs så mycket.", "Byt vattenpumpen och sträckarna samtidigt om verkstaden rekommenderar det. Det blir ofta billigare än att göra det i två omgångar.", "Kamremmen ger sällan varning innan den går av. Har du köpt bilen begagnad och vet inte när den byttes, låt byta den för säkerhets skull."],
+    sv: ["Kamremmen styr motorns ventiler. Går den av kan motorn få allvarliga skador.", "Följ tillverkarens intervall noga, både km och år. Gummit åldras även om bilen inte körs så mycket.", "Byt vattenpumpen och sträckarna samtidigt om verkstaden rekommenderar det. Det blir ofta billigare än att göra det i två omgångar.", "Kamremmen ger sällan varning innan den går av. Har du köpt bilen begagnad och vet inte när den byttes, låt byta den för säkerhets skull."],
     en: ["The timing belt controls the engine's valves. If it breaks, the engine can be seriously damaged.", "Follow the manufacturer's interval closely, both distance and years. The rubber ages even if the car isn't driven much.", "Change the water pump and tensioners at the same time if the workshop recommends it. It is often cheaper than doing it twice.", "A timing belt rarely gives a warning before it breaks. If you bought the car used and don't know when it was changed, have it changed to be safe."],
   },
 };
@@ -8001,18 +8011,18 @@ function itemSheet(id) {
     <dl class="detail-list">
       <div><dt>Intervall</dt><dd>${esc(interval || "–")}</dd></div>
       ${otherWork ? `<div><dt>Senast gjort</dt><dd>${esc(`${WORK_ACTIONS[touchAction] || "Gjort"} ${fmtDate(touch.date)}`)}<br><span class="hint">Räknas inte som byte</span></dd></div>` : ""}
-      ${st.check ? `<div><dt>Senast kontrollerat</dt><dd>${esc(fmtDate(st.check.date))}<br><span class="hint">Såg bra ut, fick ${esc(checkExtension(item).months ? "ett år" : `${fmt(checkExtension(item).mil)} mil`)} till</span></dd></div>` : ""}
-      <div><dt>${LAST_LABEL[item.id] || "Senast bytt"}</dt><dd>${esc((st.check ? st.replacedDate : st.lastDate) ? [fmtDate(st.check ? st.replacedDate : st.lastDate), (st.check ? st.replacedMil : st.lastMil) != null ? `vid ${fmt(st.check ? st.replacedMil : st.lastMil)} mil` : ""].filter(Boolean).join(", ") : "Okänt")}${manual ? `<br><span class="hint">Ifyllt för hand, inte från loggen</span>` : ""}</dd></div>
+      ${st.check ? `<div><dt>Senast kontrollerat</dt><dd>${esc(fmtDate(st.check.date))}<br><span class="hint">Såg bra ut, fick ${esc(checkExtension(item).months ? "ett år" : `${fmtKm(checkExtension(item).mil)}`)} till</span></dd></div>` : ""}
+      <div><dt>${LAST_LABEL[item.id] || "Senast bytt"}</dt><dd>${esc((st.check ? st.replacedDate : st.lastDate) ? [fmtDate(st.check ? st.replacedDate : st.lastDate), (st.check ? st.replacedMil : st.lastMil) != null ? `vid ${fmtKm(st.check ? st.replacedMil : st.lastMil)}` : ""].filter(Boolean).join(", ") : "Okänt")}${manual ? `<br><span class="hint">Ifyllt för hand, inte från loggen</span>` : ""}</dd></div>
       ${!st.unknown ? `<div><dt>Nästa</dt><dd>${esc(dueText(st) || "–")}</dd></div><div><dt>Kvar</dt><dd>${esc(st.label)}</dd></div>` : ""}
       ${!st.unknown && item.mil ? (plusFeat()
-        ? `<div><dt>Beräknat</dt><dd>${fc && fc.rate ? `${esc(forecastText(fc))}<br><span class="hint">${esc(`Ni kör ungefär ${fmt(Math.round(fc.rate * 30.44))} mil i månaden`)}</span>` : `<span class="hint">Logga mätarställningen några gånger, så räknas det ut.</span>`}</dd></div>`
+        ? `<div><dt>Beräknat</dt><dd>${fc && fc.rate ? `${esc(forecastText(fc))}<br><span class="hint">${esc(`Ni kör ungefär ${fmtKm(Math.round(fc.rate * 30.44))} i månaden`)}</span>` : `<span class="hint">Logga mätarställningen några gånger, så räknas det ut.</span>`}</dd></div>`
         : plusLock() ? `<div><dt>Beräknat</dt><dd><button class="link" type="button" data-act="plus" data-f="forecast">Se när <span class="plus-badge">Plus</span></button></dd></div>` : "") : ""}
     </dl>
     ${wearBar(st) ? `<div style="margin-top:12px">${wearBar(st)}</div>` : ""}
     ${info ? `<details class="more item-info" style="margin-top:16px"${st.unknown ? " open" : ""}><summary>Bra att veta</summary><ul data-notr>${info.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></details>` : ""}
     <h3 class="section-t" style="margin-top:20px">I loggen</h3>
     ${manual ? `<div class="manual-base">
-      <p><b>${esc(`Ifyllt för hand: ${fmtDate(item.baseDate)}${item.baseMil != null ? ` vid ${fmt(item.baseMil)} mil` : ""}`)}</b></p>
+      <p><b>${esc(`Ifyllt för hand: ${fmtDate(item.baseDate)}${item.baseMil != null ? ` vid ${fmtKm(item.baseMil)}` : ""}`)}</b></p>
       <p class="hint">${esc(history.length ? `Datumet är nyare än det som står i loggen, så det räknas som senaste byte. Stämmer det inte, ta bort det så räknar appen från loggen (${fmtDate(history[0].date)}).` : "Det finns inget i loggen, så datumet räknas som senaste byte.")}</p>
       <div class="ask"><button class="btn-soft" type="button" data-act="edit-item-form" data-id="${esc(id)}">Ändra</button>${history.length ? `<button class="link danger" type="button" data-act="clear-item-base" data-id="${esc(id)}">Ta bort datumet</button>` : ""}</div>
     </div>` : ""}
@@ -8022,7 +8032,7 @@ function itemSheet(id) {
     <div class="form" style="margin-top:18px">
       <button class="btn primary block" type="button" data-act="log-item" data-id="${esc(id)}">Logga byte</button>
       ${CHECK_ITEMS.has(id) ? `${st.check?.date === todayStr() ? `<button class="btn block check-done" type="button" disabled>${icon("check", 18)} Kontrollerat i dag</button>` : `<button class="btn block" type="button" data-act="item-checked" data-id="${esc(id)}">${icon("check", 18)} Kontrollerat – ser bra ut</button>`}
-      <p class="hint" style="margin-top:-4px">${st.check?.date === todayStr() ? "Kontrollen är sparad i loggen. Blev det fel kan du ta bort den där." : esc(`Behöver inte bytas? Då får den ${checkExtension(item).months ? "ett år" : `${fmt(checkExtension(item).mil)} mil`} till från i dag, och kontrollen syns i loggen.`)}</p>` : ""}
+      <p class="hint" style="margin-top:-4px">${st.check?.date === todayStr() ? "Kontrollen är sparad i loggen. Blev det fel kan du ta bort den där." : esc(`Behöver inte bytas? Då får den ${checkExtension(item).months ? "ett år" : `${fmtKm(checkExtension(item).mil)}`} till från i dag, och kontrollen syns i loggen.`)}</p>` : ""}
       <button class="btn ghost block" type="button" data-act="edit-item-form" data-id="${esc(id)}">Ändra intervall</button>
     </div>`);
 }
@@ -8143,7 +8153,7 @@ function itemRowHtml(i) {
   return `<div class="item-row" data-item="${esc(i.id)}">
     <label class="field"><span>Namn</span><input name="name" value="${esc(i.name)}" required></label>
     <div class="row2">
-      <label class="field"><span>Intervall (mil)</span><input name="mil" inputmode="numeric" value="${i.mil ?? ""}" placeholder="–"></label>
+      <label class="field"><span>Intervall (km)</span><input name="mil" inputmode="numeric" value="${i.mil != null ? kmOf(i.mil) : ""}" placeholder="–"></label>
       ${(() => {
         const years = i.months && i.months % 12 === 0;
         return `<label class="field"><span>Intervall (tid)</span><span class="unit-row"><input name="months" inputmode="numeric" value="${i.months ? (years ? i.months / 12 : i.months) : ""}" placeholder="–" aria-label="Intervall i tid">
@@ -8229,7 +8239,7 @@ function readCarForm(form) {
     });
   }
   // Bara för en ny bil: blir bilens första loggpost.
-  if (has("odometer")) data.odometer = num(fd.get("odometer"));
+  if (has("odometer")) data.odometer = milOf(num(fd.get("odometer")));
   if (has("lastInspection")) {
     const est = estimateInspection(str("lastInspection"), fd.get("notInspected") === "on", str("year"));
     if (est && est >= todayStr()) data.besiktning = est;
@@ -8864,7 +8874,7 @@ const ACTIONS = {
       await setDoc(ref("entries", eid), data);
       if (!S.entries.some((e) => e.id === eid)) S.entries = sortEntries([{ id: eid, ...data, createdAt: Date.now() }, ...S.entries]);
       itemSheet(id); render();
-      showToast(`${item.name}: kontrollerat, ${checkExtension(item).months ? "ett år" : `${fmt(checkExtension(item).mil)} mil`} till`, 6000, () => {
+      showToast(`${item.name}: kontrollerat, ${checkExtension(item).months ? "ett år" : `${fmtKm(checkExtension(item).mil)}`} till`, 6000, () => {
         deleteDoc(ref("entries", eid)).catch(onWriteError);
         S.entries = S.entries.filter((e) => e.id !== eid);
         if (!sheet.hidden && $("#sheet .check-done")) itemSheet(id);
@@ -9753,7 +9763,7 @@ async function saveNewCar(form) {
     for (const k of ["besiktning", "gearbox", "towMax", "totalWeight", "trainWeight", "skattBelopp", "bodyStyle", "seats", "firstReg", "co2"]) if (d[k] != null && data[k] == null) data[k] = d[k];
     data.reg = reg;
   }
-  if (startOdo != null && (startOdo < 0 || startOdo > 200000)) return formError("Mätarställningen ser fel ut. Ange den i mil, till exempel 21 480.") ?? showToast("Mätarställningen ser fel ut. Ange den i mil.");
+  if (startOdo != null && (startOdo < 0 || startOdo > 200000)) return formError("Mätarställningen ser fel ut. Ange den i km, till exempel 214 800.") ?? showToast("Mätarställningen ser fel ut. Ange den i km.");
   const cRef = doc(col("cars"));
   if (startOdo != null) {
     // Mätarställningen vid start blir bilens första loggpost.
@@ -9846,7 +9856,7 @@ function saveItems(form) {
     return clean({
       id: r.dataset.item,
       name: g("name"),
-      mil: num(g("mil")),
+      mil: milOf(num(g("mil"))),
       months: num(g("months")) != null ? Math.round(num(g("months")) * (g("monthsUnit") === "man" ? 1 : 12)) || null : null,
     });
   }).filter((i) => i.name);
@@ -9880,10 +9890,11 @@ function onInput(ev) {
   if (ev.isTrusted && ev.target.classList?.contains("from-receipt")) ev.target.classList.remove("from-receipt");
   if (ev.target.classList?.contains("invalid") && String(ev.target.value || "").trim()) ev.target.classList.remove("invalid");
   if (ev.target.id === "tr-odoEnd" || ev.target.id === "tr-odoStart") {
-    const a = $("#tr-odoStart") ? num($("#tr-odoStart").value) : num(ev.target.form?.dataset.start);
+    // Fälten är i km. Startmätaren från en pågående resa (data-start) är sparad i mil.
+    const a = $("#tr-odoStart") ? num($("#tr-odoStart").value) : kmOf(num(ev.target.form?.dataset.start));
     const b = num($("#tr-odoEnd")?.value);
     const out = $("#tr-dist");
-    if (out) out.textContent = a != null && b != null && b >= a ? `${fmt(Math.round((b - a) * 10) / 10, 1)} mil (${fmt(Math.round((b - a) * 10))} km)` : "Mil med en decimal. 1,2 mil är 12 km.";
+    if (out) out.textContent = a != null && b != null && b >= a ? `${fmt(Math.round(b - a))} km` : "Som det står på mätaren, i km.";
   }
   if (ev.target.id === "ef-amount" && $("#ef-rec-split")) {
     const box = $("#ef-rec-split");

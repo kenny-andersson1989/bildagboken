@@ -214,7 +214,8 @@ exports.nyLogg = onDocumentCreated("households/{hid}/entries/{eid}", async (even
   const house = (await db.doc(`households/${hid}`).get()).data() || {};
   const who = house.memberInfo?.[e.createdBy]?.name || "Någon";
   const amount = e.amount != null ? ` · ${Math.round(e.amount)} kr` : "";
-  const odo = e.type === "matare" && e.odometer != null ? ` · ${e.odometer} mil` : "";
+  // Sträckor sparas i mil men visas i km.
+  const odo = e.type === "matare" && e.odometer != null ? ` · ${Math.round(e.odometer * 10).toLocaleString("sv-SE")} km` : "";
   await send(hid, tokens, {
     tag: `entry-${event.params.eid}`, url: "./#aviseringar",
     sv: { title: "Bildagboken", body: `${who} ${LOGGED.sv[e.type] || "loggade något"}${amount}${odo}` },
@@ -356,7 +357,7 @@ const TANK_TOOL = {
       belopp_kr: { type: "number", description: "Vad tankningen kostade totalt, i kronor" },
       full_tank: { type: "boolean", description: "Om användaren tankade fullt" },
       datum: { type: "string", description: "YYYY-MM-DD. Utelämna om det var i dag." },
-      matarstallning_mil: { type: "number", description: "Mätarställning i svenska mil, bara om användaren sa den" },
+      matarstallning_km: { type: "number", description: "Mätarställning i kilometer, bara om användaren sa den. Säger användaren mil (svensk mil), gånger 10." },
     },
   },
 };
@@ -368,6 +369,7 @@ const CHAT_SYSTEM = [
   "Du är en go och glad göteborgare: varm, positiv och lite skämtsam, med koll på bilar som en erfaren mekaniker.",
   "Skriv vanlig svenska med en lätt göteborgsk ton (till exempel Tjenare, go, gött, ba), och slå ibland till med en kort göteborgsvits, men inte i varje svar och aldrig när det gäller säkerhet eller pengar som är på väg att bli dyra.",
   "Bilens uppgifter, underhåll, kostnader, förbrukning, körjournal och hela loggen finns nedan. Utgå från dem.",
+  "Appen räknar sträckor i kilometer. Skriv alltid km, inte mil.",
   "Summor, snitt och förbrukning är redan uträknade av appen. Använd de siffrorna i stället för att räkna själv, och hitta aldrig på siffror.",
   "Säg tydligt när något inte finns i loggen. Du får använda allmän kunskap om bilmodellen och bilskötsel, men säg då att det är allmänna råd och inte från loggen.",
   "Svara kort: oftast två till fyra meningar, om användaren inte ber om mer. Skriv i hela meningar, utan rubriker, listor, tabeller, fetstil eller tecken som * och #, eftersom svaret ofta läses upp.",
@@ -492,7 +494,8 @@ function tankAction(i = {}) {
   return {
     type: "tank", station: String(i.station).slice(0, 80), amount: Math.round(amount * 100) / 100, full: i.full_tank !== false,
     date: /^\d{4}-\d{2}-\d{2}$/.test(i.datum || "") && i.datum <= todayStr() ? i.datum : todayStr(),
-    odometer: Number(i.matarstallning_mil) > 0 ? Math.round(Number(i.matarstallning_mil)) : null,
+    // Appen sparar mätarställningen i mil (1 mil = 10 km).
+    odometer: Number(i.matarstallning_km) > 0 ? Math.round(Number(i.matarstallning_km)) / 10 : null,
   };
 }
 
@@ -835,7 +838,7 @@ function monthLetter(c, cur, prev, lang, today) {
   if (!cur.length) parts.push(en ? "Nothing was logged last month. Log your fill-ups and odometer, and I'll keep track for you." : "Ingenting loggades förra månaden. Logga tankningar och mätarställning, så håller jag koll åt er.");
   else {
     parts.push(en ? `The car cost ${nf(cost, lang)} kr${before ? ` (${nf(before, lang)} kr the month before)` : ""}.` : `Bilen kostade ${nf(cost, lang)} kr${before ? ` (${nf(before, lang)} kr månaden innan)` : ""}.`);
-    if (driven) parts.push(en ? `You drove about ${nf(driven, lang)} mil.` : `Ni körde ungefär ${nf(driven, lang)} mil.`);
+    if (driven) parts.push(en ? `You drove about ${nf(driven * 10, lang)} km.` : `Ni körde ungefär ${nf(driven * 10, lang)} km.`);
     if (tanks) parts.push(en ? `${tanks} fill-up${tanks === 1 ? "" : "s"}.` : `${tanks} ${tanks === 1 ? "tankning" : "tankningar"}.`);
   }
   if (c.besiktning && c.besiktning >= today) {
@@ -1156,7 +1159,7 @@ exports.adminVoice = onCall({ timeoutSeconds: 30, memory: "256MiB", maxInstances
   if (voice && !/^sv-SE-[A-Za-z0-9-]+$/.test(voice)) throw new HttpsError("invalid-argument", "Fel röst.");
   const rate = ttsRate(Number(req.data?.rate));
   if (action === "sample") {
-    const text = spoken("Tjenare! Jag är Glenn. Bilen har gått 21 480 mil, och nästa service är om ungefär 1 500 mil. Kör försiktigt nu, det är halt ute!");
+    const text = spoken("Tjenare! Jag är Glenn. Bilen har gått 214 800 kilometer, och nästa service är om ungefär 15 000 kilometer. Kör försiktigt nu, det är halt ute!");
     const r = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
       method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ input: { text }, voice: { languageCode: "sv-SE", name: voice }, audioConfig: { audioEncoding: "MP3", speakingRate: rate } }),
