@@ -2294,7 +2294,7 @@ function renderLogin(error = "") {
   // Välkomstsidan: logotyp, rubrik, tre fördelar och inloggning längst ner.
   setScreen("login", `
     <section class="login-a">
-      <h1 class="la-brand"><img class="logo-l" src="icons/logo.svg?v=4" alt="Bildagboken" width="936" height="200"><img class="logo-d" src="icons/logo-dark.svg?v=4" alt="" aria-hidden="true" width="936" height="200"></h1>
+      <h1 class="la-brand"><img class="logo-l" src="icons/logo.svg?v=6" alt="Bildagboken" width="936" height="200"><img class="logo-d" src="icons/logo-dark.svg?v=6" alt="" aria-hidden="true" width="936" height="200"></h1>
       <h2 class="la-title">Håll koll på bilen, tillsammans.</h2>
       <p class="la-sub">Bildagboken samlar allt om er bil på ett ställe, och alla ni som delar bilen ser samma sak.</p>
       <div class="la-feats">
