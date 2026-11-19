@@ -231,6 +231,8 @@ const TYPE = {
   tvatt: { label: "Tvätt", icon: "wash" },
   parkering: { label: "Parkering", icon: "parking" },
   kostnad: { label: "Kostnad", icon: "receipt" },
+  // Glenns månadsbrev: skrivs av servern den första i månaden, går inte att lägga in själv.
+  brev: { label: "Glenns brev", icon: "bell" },
 };
 const FUELS = ["Bensin", "Diesel", "Flexifuel (bensin/E85)", "Laddhybrid", "Hybrid", "El"];
 const COST_CATS = ["Försäkring", "Skatt", "Besiktning", "Parkering", "Tvätt", "Tillbehör", "Övrigt"];
@@ -823,7 +825,7 @@ function plusThanks() {
 // hushållet. Bara ägaren kan ta bort andra (också i säkerhetsreglerna).
 const ownerUid = (h = S.house) => h?.owner || h?.members?.[0] || null;
 const isOwner = () => ownerUid() === uid();
-const memberName = (u) => S.house?.memberInfo?.[u]?.name || "Någon";
+const memberName = (u) => (u === "glenn" ? "Glenn" : S.house?.memberInfo?.[u]?.name || "Någon");
 const whoName = (u) => (u === uid() ? "Du" : memberName(u));
 const myName = () => memberName(uid());
 const lastSeenMs = () => tsMs(S.house?.memberInfo?.[uid()]?.lastSeen);
@@ -842,6 +844,7 @@ function entryTitle(e) {
     case "tvatt": return "Tvätt";
     case "parkering": return e.fine ? "P-bot" : e.recurringId ? "Parkering, hyrd plats" : "Parkering";
     case "kostnad": return e.title || e.category || "Kostnad";
+    case "brev": return (EN && e.titleEn) || e.title || "Glenns månadsbrev";
     default: return "Logg";
   }
 }
@@ -957,6 +960,7 @@ function extraParts(c) {
   return list.sort((a, b) => (b.entries[0].date || "").localeCompare(a.entries[0].date || ""));
 }
 function entryDetail(e, c = car()) {
+  if (e.type === "brev") return String((EN && e.textEn) || e.text || "").split(/(?<=\.)\s/)[0];
   const unit = /kWh/.test(e.fuel || "") ? "kWh" : "l";
   switch (e.type) {
     case "tank": {
@@ -991,6 +995,7 @@ function activityText(e) {
   if (e._booking) return bookingActivity(e._booking);
   if (e._todo) return e._todo.to === uid() && e.createdBy !== uid() ? `${memberName(e.createdBy)} bad dig: ${e._todo.text}` : `${whoName(e.createdBy)} lade till att göra: ${e._todo.text}`;
   if (e._doc) return `${whoName(e.createdBy)} sparade dokumentet ${e._doc.title}`;
+  if (e.type === "brev") return `Glenn skickade ${String(entryTitle(e)).replace(/^Glenns /, "sitt ")}`;
   const n = whoName(e.createdBy);
   const unit = /kWh/.test(e.fuel || "") ? "kWh" : "l";
   const kr = e.amount != null ? ` för ${fmtKr(e.amount)} kr` : "";
@@ -4426,15 +4431,27 @@ function logTile(dateStr, urgent = false) {
   const year = dt && dt.getFullYear() !== new Date().getFullYear() ? `<small class="kt-y">${dt.getFullYear()}</small>` : "";
   return dt ? `<span class="koll-tile${urgent ? " hot" : ""}${year ? " has-year" : ""}"><b>${dt.getDate()}</b><small>${esc(MONTHS_SHORT[dt.getMonth()])}</small>${year}</span>` : `<span class="koll-tile"></span>`;
 }
+// Glenns månadsbrev, som det kom i notisen, med Glenn bredvid.
+function letterSheet(e) {
+  const c = S.cars.find((x) => x.id === e.carId);
+  const text = (EN && e.textEn) || e.text || "";
+  openSheet(entryTitle(e), `<div class="letter">
+      <img class="letter-glenn" src="${glennSrc("base")}" alt="" width="64" height="64">
+      <div class="letter-body">${text.split(/(?<=\.)\s+/).map((p) => `<p>${esc(p)}</p>`).join("")}<p class="letter-sign">/Glenn</p></div>
+    </div>
+    <p class="hint">${esc([fmtDate(e.date), S.cars.length > 1 && c ? carName(c) : ""].filter(Boolean).join(" · "))}</p>
+    <div class="form" style="margin-top:12px"><button class="btn ghost block" type="button" data-go="ekonomi">Se Ekonomi</button>
+      <button class="btn danger block" type="button" data-act="delete-entry" data-id="${esc(e.id)}">Ta bort brevet</button></div>`);
+}
 function entryRow(e, fromCat = null) {
-  const mine = e.createdBy === uid();
+  const mine = e.createdBy === uid() || e.type === "brev";
   const d = entryDetail(e);
   // Namnet syns bara när någon annan har loggat.
   const extra = [e.odometer != null && e.type !== "matare" ? `${fmt(e.odometer)} mil` : "", photosOf(e).length > 1 ? `${photosOf(e).length} bilder` : photosOf(e).length ? "bild" : ""].filter(Boolean).join(" · ");
   const sub = [d, extra].filter(Boolean).join(" · ");
   return `<button class="entry log-row" type="button" data-act="open-entry" data-id="${esc(e.id)}"${fromCat ? ` data-cat="${esc(fromCat)}"` : ""}>
     ${logTile(e.date)}
-    <span class="dl-ic">${icon(entryIcon(e), 20)}</span>
+    ${e.type === "brev" ? `<span class="dl-ic brev-ic"><img src="${glennSrc("base")}" alt="" width="36" height="36"></span>` : `<span class="dl-ic">${icon(entryIcon(e), 20)}</span>`}
     <span><span class="t">${esc(entryTitle(e))}</span>${sub || !mine ? `<span class="d">${mine ? "" : `<span class="who">${esc(whoName(e.createdBy))}</span> `}${esc(sub)}</span>` : ""}</span>
     <span class="amt">${e.amount != null ? `${fmtKr(e.amount)} kr` : e.type === "matare" && e.odometer != null ? `${fmt(e.odometer)} mil` : ""}</span>
   </button>`;
@@ -7676,6 +7693,7 @@ async function showEntryMap(e) {
 function openEntry(id, { fromCat = null } = {}) {
   const e = S.entries.find((x) => x.id === id);
   if (!e) return;
+  if (e.type === "brev") return letterSheet(e);
   const c = S.cars.find((x) => x.id === e.carId) || car();
   const rows = [
     ["Datum", fmtDate(e.date)],
