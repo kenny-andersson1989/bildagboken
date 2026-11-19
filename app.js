@@ -2307,6 +2307,7 @@ function render() {
 }
 
 function renderLogin(error = "") {
+  S.obStep = "";
   // Välkomstsidan: logotyp, rubrik, tre fördelar och inloggning längst ner.
   setScreen("login", `
     <section class="login-a">
@@ -2329,34 +2330,77 @@ function renderLogin(error = "") {
     </section>`);
 }
 
+// Första gången: välj om man startar en ny bildagbok eller går med i en befintlig. Sedan bara det steget.
+// Med en inbjudningslänk (?join=KOD) hoppar appen direkt till Gå med, med koden ifylld.
 function renderOnboarding(error = "") {
   const join = new URLSearchParams(location.search).get("join") || "";
   const first = (S.user.displayName || "").split(" ")[0];
   const code = join.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (code) loadJoinInfo(code);
-  const invited = code && joinInfo?.code === code ? joinInfo.name : null;
-  const joinForm = `<form class="card form" data-form="join-house" data-keep>
-      <h2>${invited ? `Du är inbjuden till ${esc(invited)}` : "Gå med i en befintlig"}</h2>
-      ${invited ? `<p class="muted">Skriv ditt namn så ser de andra vem som loggar. Koden är redan ifylld.</p>` : ""}
-      <label class="field"><span>Ditt namn</span><input name="name" id="ob-name2" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
-      <label class="field"><span>Inbjudningskod</span><input name="code" id="ob-code" required maxlength="8" value="${esc(join)}" autocapitalize="characters" autocomplete="off" placeholder="Sex tecken" style="text-transform:uppercase;letter-spacing:.12em"></label>
-      <button class="btn primary block" type="submit">${invited ? `Gå med i ${esc(invited)}` : "Gå med"}</button>
-    </form>`;
+  if (code && !S.obStep) S.obStep = "join";
+  const step = S.obStep || "";
+  const back = `<button class="ob-back" type="button" data-act="ob-step" data-step="">‹ Tillbaka</button>`;
+  const logout = `<button class="link" type="button" data-act="logout" style="align-self:center">Logga ut (${esc(S.user.email || "")})</button>`;
+  if (step === "new") {
+    setScreen("onboarding", `${back}
+      <header class="top"><div class="hello"><h1>Starta en ny bildagbok</h1></div></header>
+      <form class="card form" data-form="create-house" data-keep>
+        <label class="field"><span>Ditt namn</span><input name="name" id="ob-name" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
+        <label class="field"><span>Vad heter hushållet?</span><input name="house" id="ob-house" maxlength="40" placeholder="Till exempel Familjen Andersson"><small>Syns för dem du bjuder in.</small></label>
+        <button class="btn primary block" type="submit">Skapa</button>
+        <p class="hint">Sedan kan du bjuda in andra med en kod, till exempel familj eller den du delar bil med.</p>
+      </form>
+      ${error ? `<p class="err">${esc(error)}</p>` : ""}${logout}`);
+    if (!window.matchMedia("(pointer: coarse)").matches) $(first ? "#ob-house" : "#ob-name")?.focus();
+    return;
+  }
+  if (step === "join") {
+    setScreen("onboarding", `${back}
+      <header class="top"><div class="hello"><h1>Gå med i en befintlig</h1></div></header>
+      <form class="card form" data-form="join-house" data-keep>
+        <label class="field"><span>Inbjudningskod</span><input name="code" id="ob-code" class="ob-code${error ? " bad" : ""}" required maxlength="6" value="${esc(code)}" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="Sex tecken"></label>
+        <div id="ob-found" aria-live="polite">${error ? `<p class="err" style="margin:-6px 0 12px">${esc(error)}</p>` : ""}</div>
+        <label class="field"><span>Ditt namn</span><input name="name" id="ob-name2" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
+        <button class="btn primary block" type="submit" id="ob-join-btn" disabled>Gå med</button>
+        <p class="hint">Koden får du av den som har skapat bildagboken. Den finns under Inställningar → Hushåll.</p>
+      </form>${logout}`);
+    if (code.length === 6) checkJoinCode(code);
+    else if (!window.matchMedia("(pointer: coarse)").matches) $("#ob-code")?.focus();
+    return;
+  }
   setScreen("onboarding", `
-    <header class="top"><div class="hello"><small>Välkommen</small><h1>Kom igång</h1></div></header>
-    ${code ? joinForm : ""}
-    <form class="card form" data-form="create-house" data-keep>
-      <h2>Starta en ny bildagbok</h2>
-      <label class="field"><span>Ditt namn</span><input name="name" id="ob-name" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
-      <label class="field"><span>Vad heter hushållet?</span><input name="house" id="ob-house" maxlength="40"></label>
-      <button class="btn primary block" type="submit">Skapa</button>
-      <p class="hint">Sedan kan du bjuda in andra med en kod, till exempel familj eller den du delar bil med.</p>
-    </form>
-    ${code ? "" : joinForm}
-    ${error ? `<p class="err">${esc(error)}</p>` : ""}
-    <button class="link" type="button" data-act="logout" style="align-self:center">Logga ut (${esc(S.user.email || "")})</button>`);
-  if (join && !window.matchMedia("(pointer: coarse)").matches) $("#ob-code")?.focus();
+    <header class="top"><div class="hello"><small>${esc(first ? `Välkommen, ${first}` : "Välkommen")}</small><h1>Hur vill du börja?</h1></div></header>
+    <button class="ob-choice" type="button" data-act="ob-step" data-step="new"><span class="ob-ic">${icon("car", 26)}</span><span><b>Starta en ny bildagbok</b><small>Du är först. Lägg till din bil och bjud in andra när du vill.</small></span><span class="ob-chev">›</span></button>
+    <button class="ob-choice" type="button" data-act="ob-step" data-step="join"><span class="ob-ic">${icon("hand", 26)}</span><span><b>Gå med i en befintlig</b><small>Någon har redan skapat en och gett dig en inbjudningskod.</small></span><span class="ob-chev">›</span></button>
+    ${error ? `<p class="err">${esc(error)}</p>` : ""}${logout}`);
 }
+// Koden kollas direkt när sex tecken är skrivna: hushållets namn om den finns, annars ett fel. Gå med är grått tills dess.
+let joinCheck = 0;
+async function checkJoinCode(code) {
+  const box = $("#ob-found"), btn = $("#ob-join-btn"), inp = $("#ob-code");
+  if (!box || !btn) return;
+  const n = ++joinCheck;
+  btn.disabled = true; inp?.classList.remove("bad");
+  if (code.length < 6) { box.innerHTML = ""; return; }
+  box.innerHTML = `<p class="hint" style="margin:-6px 0 12px">Kollar koden …</p>`;
+  let inv = null;
+  try { inv = await getDoc(doc(db, "invites", code)); } catch { if (n === joinCheck) box.innerHTML = `<p class="err" style="margin:-6px 0 12px">Kunde inte kolla koden. Kontrollera att du har nät.</p>`; return; }
+  if (n !== joinCheck || !document.contains(box)) return;
+  if (!inv.exists()) {
+    inp?.classList.add("bad");
+    box.innerHTML = `<p class="err" style="margin:-6px 0 12px">Hittade ingen bildagbok med den koden. Kontrollera stavningen, eller be om en ny kod.</p>`;
+    return;
+  }
+  const name = inv.data().houseName || "bildagboken";
+  box.innerHTML = `<div class="ob-found">${icon("tick", 18)}<span>Du går med i <b>${esc(name)}</b></span></div>`;
+  btn.disabled = false; btn.textContent = `Gå med i ${name}`;
+}
+document.addEventListener("input", (ev) => {
+  if (ev.target.id !== "ob-code") return;
+  const v = ev.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+  if (ev.target.value !== v) ev.target.value = v;
+  const btn = $("#ob-join-btn"); if (btn) btn.textContent = "Gå med";
+  checkJoinCode(v);
+});
 
 // Chassinummer (VIN): 17 tecken utan I, O och Q. Tillverkaren står i de tre första tecknen och årsmodellen i det tionde.
 const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/;
@@ -8301,6 +8345,7 @@ async function copyText(text) {
 
 const ACTIONS = {
   // Inloggning med e-post och lösenord: logga in, skapa konto eller få ett mejl för att byta lösenord.
+  "ob-step"(el) { S.obStep = el.dataset.step || ""; renderOnboarding(); },
   "email-login"(el) { emailSheet(el?.dataset?.mode || "login"); },
   async "verify-check"() {
     const u = auth.currentUser;
