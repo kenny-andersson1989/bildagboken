@@ -4590,20 +4590,30 @@ function logCounts() {
   const all = [...carEntries(), ...tripRowsFor(["resor"])].filter((e) => inPeriod(e.date) && (!o.mine || e.createdBy === uid()));
   return Object.fromEntries(LOG_ORDER.map((k) => [k, all.filter((e) => matchKey(e, k)).length]));
 }
+// Rullgardinsmeny: "Visar: Alla poster ▾". Öppen visar den Alla poster och varje typ med ikon och antal,
+// under rubrikerna Köra, Underhåll och Övrigt. Typer utan poster syns inte.
 function logFilterBar() {
   const o = logOpt(), counts = logCounts();
   const cur = S.filter || "alla";
-  const activeGroup = o.types.length ? null : cur === "alla" ? "alla" : cur.startsWith("g:") ? cur.slice(2) : groupOf(cur);
   const nOpt = (o.period !== "all" ? 1 : 0) + (o.mine ? 1 : 0) + (o.types.length ? 1 : 0);
-  const groups = [["alla", "Alla"], ...LOG_GROUPS.map(([n]) => [n, n])];
-  const sub = activeGroup && activeGroup !== "alla" ? LOG_GROUPS.find(([n]) => n === activeGroup)[1].filter((k) => counts[k] > 0 || k === cur) : [];
+  const label = o.types.length ? (o.types.length === 1 ? typeLabel(o.types[0]) : `${o.types.length} typer`)
+    : cur === "alla" ? "Alla poster" : cur.startsWith("g:") ? cur.slice(2) : typeLabel(cur);
+  const ic = o.types.length === 1 ? typeIcon(o.types[0]) : cur === "alla" || cur.startsWith("g:") || o.types.length ? "list" : typeIcon(cur);
+  const total = Object.entries(counts).filter(([k]) => k !== "resor" && k !== "matare").reduce((a, [, n]) => a + n, 0);
+  const sel = (k) => !o.types.length && cur === k;
+  const item = (k, l, i, n) => `<button type="button" class="dd-item" role="menuitemradio" data-act="log-pick" data-f="${k}" aria-checked="${sel(k)}">${icon(i, 18)}<span>${esc(l)}</span><span class="n">${n}</span><span class="dd-tick">${sel(k) ? icon("tick", 16) : ""}</span></button>`;
   return `<div class="log-bar">
-      <div class="seg log-groups" role="group" aria-label="Visa">${groups.map(([k, l]) => `<button type="button" data-act="log-group" data-g="${esc(k)}" aria-pressed="${activeGroup === k}">${esc(l)}</button>`).join("")}</div>
+      <div class="dd-wrap${S.logDd ? " open" : ""}">
+        <button class="dd-btn" type="button" data-act="log-dd" aria-haspopup="menu" aria-expanded="${!!S.logDd}">${icon(ic, 18)}<span><small>Visar</small>${esc(label)}</span>${icon("down", 16)}</button>
+        ${S.logDd ? `<div class="dd-menu" role="menu">${item("alla", "Alla poster", "list", total)}${LOG_GROUPS.map(([n, keys]) => {
+          const ks = keys.filter((k) => counts[k] > 0 || sel(k));
+          return ks.length ? `<p class="dd-h">${esc(n)}</p>${ks.map((k) => item(k, typeLabel(k), typeIcon(k), counts[k])).join("")}` : "";
+        }).join("")}</div>` : ""}
+      </div>
       <button class="icon-btn log-filter-btn${nOpt ? " on" : ""}" type="button" data-act="log-filter" aria-label="${nOpt ? `Filter, ${nOpt} valda` : "Filter"}">${icon("sliders", 18)}${nOpt ? `<span class="badge">${nOpt}</span>` : ""}</button>
     </div>
-    ${sub.length ? `<div class="filters log-sub" role="group" aria-label="Typ">${sub.map((k) => `<button type="button" data-act="filter" data-f="${k}" aria-pressed="${cur === k}">${icon(typeIcon(k), 15)} ${esc(typeLabel(k))} <span class="n">${counts[k]}</span></button>`).join("")}</div>` : ""}
-    ${o.types.length || o.period !== "all" || o.mine ? `<div class="log-chips">${[
-      ...o.types.map((k) => typeLabel(k)), o.period !== "all" ? LOG_PERIODS[o.period] : "", o.mine ? "Bara mina" : ""].filter(Boolean).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}<button class="link" type="button" data-act="log-filter-clear">Rensa</button></div>` : ""}`;
+    ${o.types.length > 1 || o.period !== "all" || o.mine ? `<div class="log-chips">${[
+      ...(o.types.length > 1 ? o.types.map((k) => typeLabel(k)) : []), o.period !== "all" ? LOG_PERIODS[o.period] : "", o.mine ? "Bara mina" : ""].filter(Boolean).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}<button class="link" type="button" data-act="log-filter-clear">Rensa</button></div>` : ""}`;
 }
 function logFilterSheet() {
   const o = logOpt(), counts = logCounts();
@@ -5454,15 +5464,24 @@ const typeIcon = (k) => (k === "besiktning" ? "check" : k === "resor" ? "route" 
 const typeLabel = (k) => (k === "besiktning" ? "Besiktning" : k === "resor" ? "Resor" : k === "skada" ? "Skada" : TYPE[k].label);
 // Laddning i plusmenyn för elbilar och laddhybrider (och bilar utan drivmedel ifyllt).
 const canCharge = (c) => !c?.fuel || /^el$|laddhybrid/i.test(c.fuel) || S.entries.some((e) => e.carId === c?.id && e.type === "laddning");
+// Plusmenyn: ett rutnät med tre i bredd, de vanligaste först. Går det inte jämnt ut fyller de sista rutorna
+// ut raden, så att det inte blir några tomma hål.
+const PICK_ORDER = ["tank", "laddning", "matare", "service", "dack", "tvatt", "parkering", "eget", "skada", "besiktning", "kostnad", "anteckning"];
 function typePicker() {
   const c0 = car();
-  openSheet("Vad vill du logga?", LOG_GROUPS.map(([name, keys0]) => [name, keys0.filter((k) => !NOT_PICKABLE.includes(k) && (k !== "laddning" || canCharge(c0)))]).map(([name, keys]) => `<p class="types-head">${name}</p><div class="types">
-    ${keys.map((k) => `<button type="button" data-act="new-entry" data-type="${k === "besiktning" ? "kostnad" : k}"${k === "besiktning" ? ' data-cat="Besiktning"' : ""}>${icon(typeIcon(k), 26)}${typeLabel(k)}</button>`).join("")}
-  </div>`).join("") + `
-  ${!tripsOn() && plusOnSale() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="plus" data-f="trips" class="plus-teaser">${icon("car", 26)}Resa<span class="plus-badge">Plus</span></button></div>` : ""}
-  ${tripsOn() && !tripsVisible() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="trips-on">${icon("route", 26)}Slå på körjournalen</button></div>` : ""}
-  ${tripsVisible() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="trip-menu">${icon("car", 26)}${openTrip() ? "Avsluta resa" : "Resa"}</button></div>` : ""}
-  <p class="types-head">Boka</p><button class="btn primary block" type="button" data-act="new-booking">${icon("calendar", 18)} Lägg in bokad tid</button>
+  const tile = (attrs, ic, label, extra = "") => ({ attrs, ic, label, extra });
+  // Rena elbilar laddar i stället för att tanka (Tankning finns kvar om bilen redan har tankningar).
+  const noTank = isElectric(c0) && !S.entries.some((e) => e.carId === c0?.id && e.type === "tank");
+  const tiles = PICK_ORDER.filter((k) => (k !== "laddning" || canCharge(c0)) && (k !== "tank" || !noTank)).map((k) => tile(`data-act="new-entry" data-type="${k === "besiktning" ? "kostnad" : k}"${k === "besiktning" ? ' data-cat="Besiktning"' : ""}`, typeIcon(k), typeLabel(k)));
+  if (!tripsOn() && plusOnSale()) tiles.push(tile(`data-act="plus" data-f="trips" class="plus-teaser"`, "car", "Resa", `<span class="plus-badge">Plus</span>`));
+  else if (tripsOn() && !tripsVisible()) tiles.push(tile(`data-act="trips-on"`, "route", "Körjournal"));
+  else if (tripsVisible()) tiles.push(tile(`data-act="trip-menu"`, "route", openTrip() ? "Avsluta resa" : "Resa"));
+  tiles.push(tile(`data-act="new-booking"`, "calendar", "Bokad tid"));
+  const rest = tiles.length % 3;
+  openSheet("Vad vill du logga?", `<div class="types types-grid">${tiles.map((t, i) => {
+    const wide = rest && i >= tiles.length - rest ? (rest === 1 ? " w3" : " w2") : "";
+    return `<button type="button" ${t.attrs.replace(/class="([^"]*)"/, `class="$1${wide}"`)}${/class="/.test(t.attrs) ? "" : wide ? ` class="${wide.trim()}"` : ""}>${icon(t.ic, 26)}${esc(t.label)}${t.extra}</button>`;
+  }).join("")}</div>
   <p class="hint" style="margin-top:14px">Det du sparar syns direkt för alla ni som delar bilen.</p>`);
 }
 
@@ -5693,6 +5712,12 @@ const sumMil = (list, kind) => Math.round(list.filter((t) => t.kind === kind).re
 const editedText = (t) => { const e = t.edits?.at(-1); return e ? `Ändrad ${fmtDateShort(ymd(new Date(tsMs(e.at))))} av ${whoName(e.by).replace(/^Du$/, "dig")}` : ""; };
 const clock = (ms) => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
+
+// Rullgardinsmenyn i loggen stängs vid tryck utanför och med Esc.
+document.addEventListener("click", (ev) => {
+  if (S.logDd && !ev.target.closest?.(".dd-wrap")) { S.logDd = false; render(); }
+}, true);
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && S.logDd) { S.logDd = false; render(); } });
 
 // Svep en resa att gå igenom: höger blir Tjänst, vänster Privat. Ett kort svep glider tillbaka.
 (() => {
@@ -8774,6 +8799,8 @@ const ACTIONS = {
     render();
   },
   "log-group"(el) { const g = el.dataset.g; S.filter = g === "alla" ? "alla" : `g:${g}`; logOpt().types = []; render(); },
+  "log-dd"() { S.logDd = !S.logDd; render(); },
+  "log-pick"(el) { S.filter = el.dataset.f; logOpt().types = []; S.logDd = false; render(); },
   "log-filter"() { logFilterSheet(); },
   "log-filter-clear"() { S.logOpt = { period: "all", mine: false, types: [] }; S.filter = "alla"; closeSheet(); render(); },
   "clear-search"() {
