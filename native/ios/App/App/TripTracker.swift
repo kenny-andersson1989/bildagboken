@@ -352,9 +352,9 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
               let start = trip["start"] as? Double, let end = trip["end"] as? Double else { return }
         let nf = NumberFormatter()
         nf.locale = Locale(identifier: en ? "en_US" : "sv_SE")
-        nf.minimumFractionDigits = 1
-        nf.maximumFractionDigits = 1
-        let mil = nf.string(from: NSNumber(value: (meters / 1000).rounded() / 10)) ?? ""
+        nf.minimumFractionDigits = 0
+        nf.maximumFractionDigits = 0
+        let km = nf.string(from: NSNumber(value: (meters / 1000).rounded())) ?? ""
         let tf = DateFormatter()
         tf.dateFormat = "HH:mm"
         let times = "\(tf.string(from: Date(timeIntervalSince1970: start / 1000)))–\(tf.string(from: Date(timeIntervalSince1970: end / 1000)))"
@@ -365,7 +365,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         if route[0] != nil || route[1] != nil {
             parts.append("\(route[0] ?? (en ? "Start" : "Start")) → \(route[1] ?? (en ? "Destination" : "Mål"))")
         }
-        parts.append("\(mil) mil")
+        parts.append("\(km) km")
         parts.append(times)
         c.body = parts.joined(separator: " · ")
         c.sound = .default
