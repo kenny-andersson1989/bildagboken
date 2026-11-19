@@ -231,6 +231,9 @@ const TYPE = {
   tvatt: { label: "Tvätt", icon: "wash" },
   parkering: { label: "Parkering", icon: "parking" },
   kostnad: { label: "Kostnad", icon: "receipt" },
+  laddning: { label: "Laddning", icon: "plug" },
+  skada: { label: "Skada och reparation", icon: "alert" },
+  anteckning: { label: "Anteckning", icon: "pen" },
   // Glenns månadsbrev: skrivs av servern den första i månaden, går inte att lägga in själv.
   brev: { label: "Glenns brev", icon: "bell" },
 };
@@ -845,6 +848,9 @@ function entryTitle(e) {
     case "parkering": return e.fine ? "P-bot" : e.recurringId ? "Parkering, hyrd plats" : "Parkering";
     case "kostnad": return e.title || e.category || "Kostnad";
     case "brev": return (EN && e.titleEn) || e.title || "Glenns månadsbrev";
+    case "laddning": return "Laddning";
+    case "skada": return e.title || "Skada";
+    case "anteckning": return e.title || "Anteckning";
     default: return "Logg";
   }
 }
@@ -986,6 +992,9 @@ function entryDetail(e, c = car()) {
       const rule = e.recurringId ? (c?.recurring || []).find((x) => x.id === e.recurringId) : null;
       return [e.place, rule ? `återkommande, ${PERIODS[rule.period]?.toLowerCase()}` : "", e.note].filter(Boolean).join(" · ");
     }
+    case "laddning": return [e.kwh != null ? `${fmt(e.kwh, 1)} kWh` : "", CHARGE_WHERE[e.chargeWhere] || "", e.station].filter(Boolean).join(" · ");
+    case "skada": return [e.workshop, e.insurance ? "Försäkringsärende" : "", e.note].filter(Boolean).join(" · ");
+    case "anteckning": return e.note || "";
     case "kostnad": return isInspection(e) && e.result ? [INSP_RESULTS[e.result], e.defects?.length ? `${e.defects.length} ${e.defects.length === 1 ? "brist" : "brister"}` : ""].filter(Boolean).join(" · ") : e.title && e.category ? e.category : e.note || "";
     default: return "";
   }
@@ -1008,6 +1017,9 @@ function activityText(e) {
     case "tvatt": return `${n} tvättade bilen${e.place ? ` hos ${e.place}` : ""}${kr}`;
     case "parkering": return e.fine ? `${n} fick en p-bot${e.place ? ` vid ${e.place}` : ""}${kr}` : `${n} parkerade${e.place ? ` vid ${e.place}` : ""}${kr}`;
     case "kostnad": return `${n} lade till ${(e.title || e.category || "en kostnad").toLowerCase()}${kr}`;
+    case "laddning": return `${n} laddade bilen${e.kwh != null ? ` ${fmt(e.kwh, 1)} kWh` : ""}${kr}`;
+    case "skada": return `${n} loggade en skada${e.title ? `: ${e.title.replace(/^./, (x) => x.toLowerCase())}` : ""}${kr}`;
+    case "anteckning": return `${n} skrev en anteckning${e.title ? `: ${e.title}` : ""}`;
     default: return `${n} loggade något`;
   }
 }
@@ -1294,7 +1306,8 @@ function bookingRows(c) {
 }
 
 function catOf(e) {
-  if (e.type === "tank") return "Bränsle";
+  if (e.type === "tank" || e.type === "laddning") return "Bränsle";
+  if (e.type === "skada") return "Service och reparationer";
   if (e.type === "service" || e.type === "eget") return "Service och reparationer";
   if (e.type === "dack") return "Däck";
   // Tvättar som loggats som kostnad förr hamnar också under Tvätt.
@@ -3778,7 +3791,9 @@ function parseReceipt(text) {
 }
 
 // Kvittoknappen i formulären: fota kvittot, läs av det och fyll i belopp, datum och ställe. Fotot sparas som bild på posten.
-const RECEIPT_TYPES = ["tank", "service", "eget", "dack", "tvatt", "parkering", "kostnad"];
+const RECEIPT_TYPES = ["tank", "service", "eget", "dack", "tvatt", "parkering", "kostnad", "laddning", "skada"];
+// Var bilen laddades.
+const CHARGE_WHERE = { hemma: "Hemma", jobbet: "På jobbet", publik: "Publik laddare" };
 // Med Plus läses kvittot, servicefakturan eller besiktningsprotokollet av med AI (Cloud Function lasDokument).
 const aiOn = () => hasPlus() || (isAdmin() && !testMode());
 function receiptButton() {
@@ -4398,7 +4413,9 @@ const BOOK_FILTER = { service: "service", reparation: "service", dack: "dack", b
 function upcomingHtml(q) {
   const c = car();
   const list = sortedBookings(c).filter((b) => {
-    if (S.filter !== "alla" && BOOK_FILTER[b.kind] !== S.filter) return false;
+    const keys = filterKeys();
+    if (keys && !keys.includes(BOOK_FILTER[b.kind])) return false;
+    if (logOpt().period === "lastyear") return false;
     if (!q) return true;
     const hay = [BOOK_KINDS[b.kind], b.place, b.addr, b.note, bookingWhen(b), b.date].filter(Boolean).join(" ").toLowerCase();
     return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
@@ -4473,9 +4490,7 @@ function entryMatches(e, q) {
 function logListHtml() {
   const q = (S.query || "").trim();
   // Filtret Mätarställning visar alla poster med mätarställning (även service, tankning och däck), inte bara manuella avläsningar.
-  const isInspection = (e) => e.type === "kostnad" && e.category === "Besiktning";
-  const inFilter = (e) => S.filter === "alla" || (S.filter === "matare" ? e.odometer != null : S.filter === "besiktning" ? isInspection(e) : S.filter === "kostnad" ? e.type === "kostnad" && !isInspection(e) : e.type === S.filter);
-  const ents = carEntries().filter((e) => inFilter(e) && entryMatches(e, q));
+  const ents = logEntries(q);
   const groups = [];
   for (const e of ents) {
     const key = (e.date || "").slice(0, 7);
@@ -4501,34 +4516,118 @@ function logListHtml() {
   const nUpcoming = nUpcoming0 + extra.length;
   const hits = ents.length + nUpcoming;
   // Summa för det som visas, när man har filtrerat eller sökt: i år och totalt.
-  const paid = (S.filter !== "alla" || q) ? ents.filter((e) => e.amount > 0) : [];
+  const paid = (logFiltered() || q) ? ents.filter((e) => e.amount > 0) : [];
   const year = String(new Date().getFullYear());
   const yearSum = paid.filter((e) => (e.date || "").startsWith(year)).reduce((a, e) => a + e.amount, 0);
   const allSum = paid.reduce((a, e) => a + e.amount, 0);
   const sumText = paid.length ? `${fmtKr(yearSum)} kr i år${allSum !== yearSum ? ` · ${fmtKr(allSum)} kr totalt` : ""}` : "";
-  const countText = q ? `${hits === 1 ? "1 träff" : `${hits} träffar`} för ”${esc(q)}”` : S.filter !== "alla" ? `${ents.length === 1 ? "1 post" : `${ents.length} poster`}` : "";
+  const countText = q ? `${hits === 1 ? "1 träff" : `${hits} träffar`} för ”${esc(q)}”` : logFiltered() ? `${ents.length === 1 ? "1 post" : `${ents.length} poster`}` : "";
   const count = countText ? `<p class="hint log-sum" style="margin:0 4px">${countText}${sumText ? ` · <b>${esc(sumText)}</b>` : ""}</p>` : "";
   if (!groups.length && upcoming) return count + upcoming;
   if (!groups.length) {
     return q
       ? `${count}<div class="card empty"><b>Inga träffar</b>Prova ett annat ord, till exempel verkstad, del eller belopp.</div>`
-      : `<div class="card empty"><b>${S.filter === "alla" ? "Inget loggat än" : "Inget här än"}</b>Tryck på plusknappen för att logga en tankning, service eller något du gjort själv.</div>`;
+      : `<div class="card empty"><b>${!logFiltered() ? "Inget loggat än" : "Inget här än"}</b>Tryck på plusknappen för att logga en tankning, service eller något du gjort själv.</div>`;
   }
   // Månadens summa till höger om månadsrubriken.
   const monthSum = (g) => g.items.reduce((a, e) => a + (e.amount > 0 ? e.amount : 0), 0);
-  return count + upcoming + groups.map((g) => `<div class="month log-month">${esc(monthLabel(g.key))}${monthSum(g) ? `<span>${fmtKr(monthSum(g))} kr</span>` : ""}</div><div class="card">${g.items.map((e) => entryRow(e)).join("")}</div>`).join("");
+  return count + upcoming + groups.map((g) => `<div class="month log-month">${esc(monthLabel(g.key))}${monthSum(g) ? `<span>${fmtKr(monthSum(g))} kr</span>` : ""}</div><div class="card">${g.items.map((e) => (e._trip ? tripLogRow(e._trip) : entryRow(e))).join("")}</div>`).join("");
+}
+
+/* Filtret i loggen: fyra grupper som alltid får plats (Alla, Köra, Underhåll, Övrigt). Väljer man en grupp
+   visas dess typer på raden under, med antal. Typer utan poster döljs. Filter-knappen väljer period,
+   bara mina poster och flera typer samtidigt. */
+const LOG_PERIODS = { all: "Allt", year: "I år", lastyear: "Förra året", m12: "Senaste 12 månaderna" };
+const logOpt = () => (S.logOpt ||= { period: "all", mine: false, types: [] });
+const isInsp = (e) => e.type === "kostnad" && e.category === "Besiktning";
+function matchKey(e, k) {
+  if (e._trip) return k === "resor";
+  if (k === "matare") return e.odometer != null;
+  if (k === "besiktning") return isInsp(e);
+  if (k === "kostnad") return e.type === "kostnad" && !isInsp(e);
+  return e.type === k;
+}
+const groupOf = (k) => LOG_GROUPS.find(([, keys]) => keys.includes(k))?.[0] || null;
+const filterKeys = () => {
+  const o = logOpt();
+  if (o.types.length) return o.types;
+  if (!S.filter || S.filter === "alla") return null;
+  if (S.filter.startsWith("g:")) return LOG_GROUPS.find(([n]) => n === S.filter.slice(2))?.[1] || null;
+  return [S.filter];
+};
+const logFiltered = () => !!filterKeys() || logOpt().period !== "all" || logOpt().mine;
+function inPeriod(date) {
+  const p = logOpt().period, y = new Date().getFullYear(), d = String(date || "");
+  if (p === "year") return d.startsWith(String(y));
+  if (p === "lastyear") return d.startsWith(String(y - 1));
+  if (p === "m12") return d >= ymd(addMonths(today0(), -12));
+  return true;
+}
+// Resor (Plus) visas bara när man väljer dem, så att GPS-resorna inte tränger undan allt annat.
+const tripRowsFor = (keys) => (tripsOn() && keys?.includes("resor") ? carTrips().filter((t) => t.odoEnd != null).map((t) => ({ _trip: t, id: t.id, date: t.date, createdBy: t.driver || t.createdBy, createdAt: t.startedAt })) : []);
+function logEntries(q = "") {
+  const keys = filterKeys(), o = logOpt();
+  const base = [...carEntries(), ...tripRowsFor(keys)];
+  const list = base.filter((e) => (!keys || keys.some((k) => matchKey(e, k))) && inPeriod(e.date) && (!o.mine || e.createdBy === uid())
+    && (e._trip ? tripMatches(e._trip, q) : entryMatches(e, q)));
+  return keys?.includes("resor") ? list.sort((a, b) => (b.date || "").localeCompare(a.date || "") || tsMs(b.createdAt) - tsMs(a.createdAt)) : list;
+}
+function tripMatches(t, q) {
+  const words = String(q || "").toLowerCase().split(/\s+/).filter(Boolean);
+  const hay = [t.from, t.to, t.purpose, TRIP_KINDS[t.kind], t.date, "resa"].filter(Boolean).join(" ").toLowerCase();
+  return words.every((w) => hay.includes(w));
+}
+function tripLogRow(t) {
+  const mil = tripMil(t);
+  return `<button class="entry log-row" type="button" data-act="edit-trip" data-id="${esc(t.id)}">
+    ${logTile(t.date)}<span class="dl-ic">${icon("route", 20)}</span>
+    <span><span class="t">${esc([t.from, t.to].filter(Boolean).join(" → ") || t.purpose || "Resa")}</span><span class="d">${esc([t.kind ? TRIP_KINDS[t.kind] : "Ej genomgången", t.purpose, t.auto ? "GPS" : ""].filter(Boolean).join(" · "))}</span></span>
+    <span class="amt">${mil != null ? esc(`${fmt(mil, 1)} mil`) : ""}</span></button>`;
+}
+// Antal poster per typ, för knapparna (period och "bara mina" räknas in).
+function logCounts() {
+  const o = logOpt();
+  const all = [...carEntries(), ...tripRowsFor(["resor"])].filter((e) => inPeriod(e.date) && (!o.mine || e.createdBy === uid()));
+  return Object.fromEntries(LOG_ORDER.map((k) => [k, all.filter((e) => matchKey(e, k)).length]));
+}
+function logFilterBar() {
+  const o = logOpt(), counts = logCounts();
+  const cur = S.filter || "alla";
+  const activeGroup = o.types.length ? null : cur === "alla" ? "alla" : cur.startsWith("g:") ? cur.slice(2) : groupOf(cur);
+  const nOpt = (o.period !== "all" ? 1 : 0) + (o.mine ? 1 : 0) + (o.types.length ? 1 : 0);
+  const groups = [["alla", "Alla"], ...LOG_GROUPS.map(([n]) => [n, n])];
+  const sub = activeGroup && activeGroup !== "alla" ? LOG_GROUPS.find(([n]) => n === activeGroup)[1].filter((k) => counts[k] > 0 || k === cur) : [];
+  return `<div class="log-bar">
+      <div class="seg log-groups" role="group" aria-label="Visa">${groups.map(([k, l]) => `<button type="button" data-act="log-group" data-g="${esc(k)}" aria-pressed="${activeGroup === k}">${esc(l)}</button>`).join("")}</div>
+      <button class="icon-btn log-filter-btn${nOpt ? " on" : ""}" type="button" data-act="log-filter" aria-label="${nOpt ? `Filter, ${nOpt} valda` : "Filter"}">${icon("sliders", 18)}${nOpt ? `<span class="badge">${nOpt}</span>` : ""}</button>
+    </div>
+    ${sub.length ? `<div class="filters log-sub" role="group" aria-label="Typ">${sub.map((k) => `<button type="button" data-act="filter" data-f="${k}" aria-pressed="${cur === k}">${icon(typeIcon(k), 15)} ${esc(typeLabel(k))} <span class="n">${counts[k]}</span></button>`).join("")}</div>` : ""}
+    ${o.types.length || o.period !== "all" || o.mine ? `<div class="log-chips">${[
+      ...o.types.map((k) => typeLabel(k)), o.period !== "all" ? LOG_PERIODS[o.period] : "", o.mine ? "Bara mina" : ""].filter(Boolean).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}<button class="link" type="button" data-act="log-filter-clear">Rensa</button></div>` : ""}`;
+}
+function logFilterSheet() {
+  const o = logOpt(), counts = logCounts();
+  openSheet("Filter", `<form class="form" data-form="log-filter" novalidate>
+    ${field("Period", `<select name="period" id="lf-period">${Object.entries(LOG_PERIODS).map(([k, l]) => `<option value="${k}"${o.period === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
+    ${(S.house?.members?.length || 0) > 1 ? `<label class="check"><input type="checkbox" name="mine"${o.mine ? " checked" : ""}> Bara det jag har loggat</label>` : ""}
+    <p class="label" style="margin:8px 0 0">Visa de här typerna</p>
+    <p class="hint" style="margin:0">Välj flera, till exempel Service och Däck. Inget valt visar allt.</p>
+    ${LOG_GROUPS.map(([n, keys]) => {
+      const ks = keys.filter((k) => counts[k] > 0 || o.types.includes(k));
+      return ks.length ? `<p class="types-head" style="margin:10px 0 4px">${esc(n)}</p><div class="lf-types">${ks.map((k) => `<label class="check lf-type"><input type="checkbox" name="types" value="${k}"${o.types.includes(k) ? " checked" : ""}> ${icon(typeIcon(k), 16)} ${esc(typeLabel(k))} <span class="n">${counts[k]}</span></label>`).join("")}</div>` : "";
+    }).join("")}
+    <button class="btn primary block" type="submit" style="margin-top:14px">Visa</button>
+    <button class="btn ghost block" type="button" data-act="log-filter-clear">Rensa filtret</button>
+  </form>`);
 }
 
 function viewLog() {
-  const filters = [["alla", "Alla"], ...LOG_ORDER.map((k) => [k, typeLabel(k)])];
   return `${subHeader("Allt som hänt med bilen", "Logg")}
     <label class="search">${icon("search", 18)}
       <input type="search" id="log-search" placeholder="Sök" value="${esc(S.query || "")}" autocomplete="off" enterkeyhint="search" aria-label="Sök i loggen">
       ${S.query ? `<button class="search-clear" type="button" data-act="clear-search" aria-label="Rensa sökningen">${icon("close", 14)}</button>` : ""}
     </label>
-    <div class="filters" role="group" aria-label="Filtrera loggen">
-      ${filters.map(([k, l]) => `<button type="button" data-act="filter" data-f="${k}" aria-pressed="${S.filter === k}">${l}</button>`).join("")}
-    </div>
+    ${logFilterBar()}
     <div id="log-list" class="log-list">${logListHtml()}</div>`;
 }
 
@@ -5343,16 +5442,21 @@ $("#confirm-scrim").addEventListener("click", () => closeConfirm(false));
 
 // Samma ordning överallt (plusmenyn och filtren i loggen), i tre grupper:
 // det man gör när man kör, underhåll av bilen och övriga kostnader. Det vanligaste först i varje grupp.
+// Grupperna i plusmenyn och i loggens filter. Resor och Glenns brev finns bara i filtret.
 const LOG_GROUPS = [
-  ["Köra", ["tank", "matare", "parkering"]],
-  ["Underhåll", ["service", "dack", "eget"]],
-  ["Övrigt", ["besiktning", "tvatt", "kostnad"]],
+  ["Köra", ["tank", "laddning", "matare", "parkering", "resor"]],
+  ["Underhåll", ["service", "dack", "eget", "skada"]],
+  ["Övrigt", ["besiktning", "tvatt", "kostnad", "anteckning", "brev"]],
 ];
 const LOG_ORDER = LOG_GROUPS.flatMap(([, keys]) => keys);
-const typeIcon = (k) => (k === "besiktning" ? "check" : TYPE[k].icon);
-const typeLabel = (k) => (k === "besiktning" ? "Besiktning" : TYPE[k].label);
+const NOT_PICKABLE = ["resor", "brev"];
+const typeIcon = (k) => (k === "besiktning" ? "check" : k === "resor" ? "route" : TYPE[k].icon);
+const typeLabel = (k) => (k === "besiktning" ? "Besiktning" : k === "resor" ? "Resor" : k === "skada" ? "Skada" : TYPE[k].label);
+// Laddning i plusmenyn för elbilar och laddhybrider (och bilar utan drivmedel ifyllt).
+const canCharge = (c) => !c?.fuel || /^el$|laddhybrid/i.test(c.fuel) || S.entries.some((e) => e.carId === c?.id && e.type === "laddning");
 function typePicker() {
-  openSheet("Vad vill du logga?", LOG_GROUPS.map(([name, keys]) => `<p class="types-head">${name}</p><div class="types">
+  const c0 = car();
+  openSheet("Vad vill du logga?", LOG_GROUPS.map(([name, keys0]) => [name, keys0.filter((k) => !NOT_PICKABLE.includes(k) && (k !== "laddning" || canCharge(c0)))]).map(([name, keys]) => `<p class="types-head">${name}</p><div class="types">
     ${keys.map((k) => `<button type="button" data-act="new-entry" data-type="${k === "besiktning" ? "kostnad" : k}"${k === "besiktning" ? ' data-cat="Besiktning"' : ""}>${icon(typeIcon(k), 26)}${typeLabel(k)}</button>`).join("")}
   </div>`).join("") + `
   ${!tripsOn() && plusOnSale() ? `<p class="types-head">Körjournal</p><div class="types"><button type="button" data-act="plus" data-f="trips" class="plus-teaser">${icon("car", 26)}Resa<span class="plus-badge">Plus</span></button></div>` : ""}
@@ -5828,6 +5932,10 @@ function workHoursHtml() {
     ${w.on ? `<div class="work-hours"><div class="day-chips" role="group" aria-label="Arbetsdagar">${WORK_DAYS.map(([d, l]) => `<button type="button" class="chip-btn" data-act="work-day" data-d="${d}" aria-pressed="${w.days.includes(d)}">${l}</button>`).join("")}</div>
       <div class="row2"><label class="field"><span>Från</span><input type="time" id="wh-from" value="${esc(w.from)}"></label><label class="field"><span>Till</span><input type="time" id="wh-to" value="${esc(w.to)}"></label></div></div>` : ""}</div>`;
 }
+document.addEventListener("change", (ev) => {
+  if (ev.target.id === "ef-chargeWhere") { const b = $("#ef-station-box"); if (b) b.hidden = ev.target.value !== "publik"; }
+  if (ev.target.id === "ef-insurance") { const b = $("#ef-claim-box"); if (b) b.hidden = !ev.target.checked; }
+});
 document.addEventListener("change", (ev) => {
   if (ev.target.id !== "wh-from" && ev.target.id !== "wh-to") return;
   const from = $("#wh-from")?.value || WORK_DEFAULT.from, to = $("#wh-to")?.value || WORK_DEFAULT.to;
@@ -6664,6 +6772,29 @@ function entryForm(type, e = {}, opts = {}) {
     case "matare":
       body = `${odo(true)}${date}`;
       break;
+    case "laddning": {
+      const where = e.chargeWhere || (e.id ? "" : pref.get("charge." + c.id) || "hemma");
+      body = `${amount("120", "Kostnad (kr)", "", "Hemma: kWh gånger ditt elpris. Lämna tomt om du inte vet.")}
+        ${field("Laddat (kWh)", `<input name="kwh" id="ef-kwh" inputmode="decimal" value="${e.kwh ?? ""}" placeholder="Till exempel 32">`)}
+        ${field("Var", `<select name="chargeWhere" id="ef-chargeWhere">${Object.entries(CHARGE_WHERE).map(([k, l]) => `<option value="${k}"${where === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
+        <div id="ef-station-box"${where === "publik" ? "" : " hidden"}>${placeField("station", "ef-station", e.station, "charging_station", "Ionity")}</div>
+        ${odo(false)}${date}${more()}`;
+      break;
+    }
+    case "skada":
+      body = `${field("Vad hände?", `<input name="title" id="ef-title" required value="${v("title")}" placeholder="Till exempel stenskott i rutan">`)}
+        ${placeField("workshop", "ef-workshop", e.workshop, "car_repair", "Carglass")}
+        <label class="check"><input type="checkbox" name="insurance" id="ef-insurance"${e.insurance ? " checked" : ""}> Försäkringsärende</label>
+        <div id="ef-claim-box"${e.insurance ? "" : " hidden"}>${field("Skadenummer (valfritt)", `<input name="claim" id="ef-claim" value="${v("claim")}" autocomplete="off">`)}</div>
+        ${amount("1 500", "Vad du betalade (kr)", "", "Med försäkring: självrisken.")}${odo(false)}${date}
+        ${more("", true)}`;
+      break;
+    case "anteckning":
+      body = `${field("Rubrik", `<input name="title" id="ef-title" required value="${v("title")}" placeholder="Till exempel varningslampa lyste">`)}
+        ${field("Vad hände?", `<textarea name="note" id="ef-note" rows="4">${v("note")}</textarea>`, "Bra att ha när du pratar med verkstaden.")}
+        ${odo(false)}${date}
+        <details class="more"${photosOf(e).length ? " open" : ""}><summary>Bild (valfritt)</summary><div class="form">${photo}</div></details>`;
+      break;
     // Samma ordning i alla formulär: vad → belopp → mätarställning → datum → detaljer.
     case "service":
       body = `${items}${parts}
@@ -7435,6 +7566,25 @@ async function saveEntry(form) {
     case "matare":
       if (data.odometer == null) return formError("Fyll i mätarställningen.");
       break;
+    case "laddning":
+      data.kwh = num(fd.get("kwh"));
+      data.chargeWhere = str("chargeWhere") || null;
+      data.station = data.chargeWhere === "publik" ? str("station") || null : null;
+      if (data.amount == null && data.kwh == null) return formError("Fyll i kostnaden eller hur mycket du laddade.");
+      if (data.amount != null && data.amount < 0) return formError("Kostnaden kan inte vara mindre än noll.");
+      if (data.chargeWhere) pref.set("charge." + c.id, data.chargeWhere);
+      break;
+    case "skada":
+      data.title = str("title");
+      data.workshop = str("workshop") || null;
+      data.insurance = fd.get("insurance") === "on" || null;
+      data.claim = data.insurance ? str("claim") || null : null;
+      if (!data.title) return formError("Skriv vad som hände.");
+      break;
+    case "anteckning":
+      data.title = str("title");
+      if (!data.title) return formError("Skriv en rubrik.");
+      break;
     case "service":
     case "eget":
       {
@@ -7703,6 +7853,9 @@ function openEntry(id, { fromCat = null } = {}) {
     e.liters != null ? ["Mängd", `${fmt(e.liters, 2)} ${/kWh/.test(e.fuel || "") ? "kWh" : "l"} ${e.fuel || ""}`] : null,
     e.pricePerL != null ? ["Pris", `${fmt(e.pricePerL, 2)} kr per enhet`] : null,
     e.type === "tank" ? ["Fulltankad", e.full ? "Ja" : "Nej"] : null,
+    e.kwh != null ? ["Laddat", `${fmt(e.kwh, 1)} kWh${e.amount > 0 && e.kwh > 0 ? ` (${fmt(e.amount / e.kwh, 2)} kr per kWh)` : ""}`] : null,
+    e.chargeWhere ? ["Var", CHARGE_WHERE[e.chargeWhere]] : null,
+    e.type === "skada" && e.insurance ? ["Försäkring", e.claim ? `Ja, skadenummer ${e.claim}` : "Ja"] : null,
     e.station || e.place || e.workshop ? ["Plats", e.station || e.place || e.workshop] : null,
     e.handler ? ["Handläggare", e.handler] : null,
     e.type === "parkering" && e.fine ? ["Typ", "P-bot eller felparkeringsavgift"] : null,
@@ -8613,7 +8766,16 @@ const ACTIONS = {
     showToast(`${TYPE[e.type]?.label || "Posten"} ligger i papperskorgen`, 6000, () => restoreEntry(e.id));
   },
   "trash-entry"(el) { restoreEntry(el.dataset.id); },
-  filter(el) { S.filter = el.dataset.f; render(); },
+  filter(el) {
+    // Samma typ igen: tillbaka till hela gruppen.
+    const k = el.dataset.f;
+    S.filter = S.filter === k && groupOf(k) ? `g:${groupOf(k)}` : k;
+    logOpt().types = [];
+    render();
+  },
+  "log-group"(el) { const g = el.dataset.g; S.filter = g === "alla" ? "alla" : `g:${g}`; logOpt().types = []; render(); },
+  "log-filter"() { logFilterSheet(); },
+  "log-filter-clear"() { S.logOpt = { period: "all", mine: false, types: [] }; S.filter = "alla"; closeSheet(); render(); },
   "clear-search"() {
     S.query = "";
     render();
@@ -9279,6 +9441,12 @@ async function onSubmit(ev) {
     if (kind === "rec-price") return saveRecPrice(form);
     if (kind === "trip") return saveTrip(form);
     if (kind === "trip-split") return saveSplit(form);
+    if (kind === "log-filter") {
+      const fd = new FormData(form);
+      S.logOpt = { period: String(fd.get("period") || "all"), mine: fd.get("mine") === "on", types: fd.getAll("types").map(String) };
+      if (S.logOpt.types.length) S.filter = "alla";
+      closeSheet(); return render();
+    }
     if (kind === "place") return savePlace(form);
     if (kind === "chat") { const i = $("#chat-in"); const q = i?.value || ""; if (i) i.value = ""; chatInputChanged(); return askCar(q); }
     if (kind === "doc") return await saveDoc(form);
