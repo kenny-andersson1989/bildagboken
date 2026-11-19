@@ -3,7 +3,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebas
 import {
   getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   linkWithPopup, linkWithRedirect, onAuthStateChanged, signOut, reauthenticateWithPopup, deleteUser,
-  signInWithCredential, linkWithCredential, reauthenticateWithCredential
+  signInWithCredential, linkWithCredential, reauthenticateWithCredential,
+  signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, EmailAuthProvider, updateProfile
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
@@ -512,7 +513,7 @@ function recurringEntries(c) {
 // Hushåll som skapas från och med 16 november 2026 har gratisgränserna. De som fanns innan har inga gränser.
 const FREE = { from: "2026-11-16", cars: 1, members: 2, photos: 30 };
 // Går Plus att köpa? Tills dess har nya hushåll gratisversionen, och Plus visas som "kommer snart".
-const PLUS_ON_SALE = false;
+const PLUS_ON_SALE = true;
 // Plus är för en familj, som familjeabonnemang brukar vara: upp till sex personer och sex bilar.
 const PLUS = { cars: 6, members: 6, photos: 2000 };
 // Testläge för administratören: visa appen som gratisversionen (med gränserna) eller som Plus.
@@ -2305,6 +2306,7 @@ function renderLogin(error = "") {
       <div class="la-btns">
         ${ANDROID ? "" : `<button class="btn apple block" type="button" data-act="login" data-provider="apple">${icon("apple", 20)} Fortsätt med Apple</button>`}
         <button class="btn google block" type="button" data-act="login" data-provider="google">${icon("google", 20)} Fortsätt med Google</button>
+        <button class="btn ghost block" type="button" data-act="email-login">${icon("doc", 20)} Fortsätt med e-post</button>
         ${error ? `<p class="err">${esc(error)}</p>` : ""}
         <p class="la-legal">Har du fått en inbjudan? Logga in först, sedan skriver du in koden.<br><a href="${LANG === "en" ? "privacy.html" : "integritet.html"}" target="_blank" rel="noopener">Så hanteras dina uppgifter</a>${NATIVE ? "" : ` · <a href="installera.html" target="_blank" rel="noopener">Lägg till på hemskärmen</a>`}</p>
       </div>
@@ -5406,6 +5408,7 @@ function unlockScroll() {
 }
 let reloadWhenClosed = false;
 function closeSheet(fromBack = false) {
+  if (pwResolve) { const r = pwResolve; pwResolve = null; r(null); }
   if (S.chat?.voice) endVoice();
   if (typeof stopSpeech === "function") stopSpeech();
   // Vänta en stund, så att det som just sparades hinner skrivas innan sidan laddas om.
@@ -8278,6 +8281,14 @@ async function copyText(text) {
 }
 
 const ACTIONS = {
+  // Inloggning med e-post och lösenord: logga in, skapa konto eller få ett mejl för att byta lösenord.
+  "email-login"(el) { emailSheet(el?.dataset?.mode || "login"); },
+  async "email-reset"() {
+    const email = $("#em-email")?.value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || "")) return formError("Skriv din e-postadress först.");
+    try { await sendPasswordResetEmail(auth, email); } catch (e) { if (e.code !== "auth/user-not-found") return formError(emailError(e)); }
+    showToast("Om adressen har ett konto kommer ett mejl strax. Följ länken för att välja ett nytt lösenord.", 7000);
+  },
   async login(el) {
     if (NATIVE) {
       try { await signInWithCredential(auth, await nativeCredential(el?.dataset.provider || "google")); }
@@ -8333,9 +8344,14 @@ const ACTIONS = {
     const signedInAgo = Date.now() - Date.parse(auth.currentUser?.metadata?.lastSignInTime || 0);
     if (!(signedInAgo < 4 * 60e3)) {
       try {
-        if (NATIVE) await reauthenticateWithCredential(auth.currentUser, await nativeCredential(linkedProviders()[0] || "google"));
+        if (!linkedProviders().length && auth.currentUser?.providerData.some((x) => x.providerId === "password")) {
+          const pw = await askPassword();
+          if (!pw) return showToast("Kontot är inte raderat.");
+          await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(auth.currentUser.email, pw));
+        } else if (NATIVE) await reauthenticateWithCredential(auth.currentUser, await nativeCredential(linkedProviders()[0] || "google"));
         else await reauthenticateWithPopup(auth.currentUser, authProvider(linkedProviders()[0] || "google"));
       } catch (e) {
+        if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password") return showToast("Fel lösenord. Kontot är inte raderat.", 5000);
         if (e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request" || (NATIVE && nativeCancelled(e))) return showToast("Kontot är inte raderat.");
         return showToast("Logga ut och logga in igen, och radera sedan kontot direkt efteråt.", 7000);
       }
@@ -9411,6 +9427,54 @@ function linkedProviders() {
   return Object.keys(PROVIDER_IDS).filter((k) => ids.includes(PROVIDER_IDS[k]));
 }
 
+function emailSheet(mode = "login") {
+  const create = mode === "create";
+  openSheet(create ? "Skapa konto med e-post" : "Logga in med e-post", `<form class="form" data-form="email-auth" data-mode="${mode}" novalidate>
+    ${create ? field("Ditt namn", `<input name="name" id="em-name" autocomplete="name" required>`, "Syns för dem du delar bilen med.") : ""}
+    ${field("E-post", `<input type="email" name="email" id="em-email" autocomplete="email" inputmode="email" autocapitalize="off" required>`)}
+    ${field("Lösenord", `<input type="password" name="password" id="em-password" autocomplete="${create ? "new-password" : "current-password"}" required minlength="8">`, create ? "Minst 8 tecken." : "")}
+    <p class="err" id="form-err" hidden></p>
+    <button class="btn primary block" type="submit">${create ? "Skapa konto" : "Logga in"}</button>
+    ${create
+      ? `<p class="hint" style="text-align:center">Har du redan ett konto? <button class="link" type="button" data-act="email-login" data-mode="login">Logga in</button></p>`
+      : `<div class="email-links"><button class="link" type="button" data-act="email-reset">Glömt lösenordet?</button><button class="link" type="button" data-act="email-login" data-mode="create">Skapa konto</button></div>`}
+  </form>`);
+}
+function emailError(e) {
+  const map = {
+    "auth/invalid-credential": "Fel e-post eller lösenord.", "auth/wrong-password": "Fel e-post eller lösenord.", "auth/user-not-found": "Fel e-post eller lösenord.",
+    "auth/invalid-email": "E-postadressen ser fel ut.", "auth/email-already-in-use": "Det finns redan ett konto med den adressen. Logga in i stället, eller använd Glömt lösenordet.",
+    "auth/weak-password": "Välj ett längre lösenord, minst 8 tecken.", "auth/too-many-requests": "För många försök. Vänta en stund och försök igen.",
+  };
+  return map[e?.code] || authError(e);
+}
+async function saveEmailAuth(form) {
+  const fd = new FormData(form), mode = form.dataset.mode;
+  const email = String(fd.get("email") || "").trim(), pw = String(fd.get("password") || ""), name = String(fd.get("name") || "").trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return formError("Skriv en giltig e-postadress.");
+  if (mode === "create" && !name) return formError("Skriv ditt namn.");
+  if (pw.length < (mode === "create" ? 8 : 1)) return formError(mode === "create" ? "Lösenordet ska vara minst 8 tecken." : "Skriv ditt lösenord.");
+  const btn = form.querySelector('button[type="submit"]'); if (btn) btn.disabled = true;
+  try {
+    if (mode === "create") {
+      const cred = await createUserWithEmailAndPassword(auth, email, pw);
+      await updateProfile(cred.user, { displayName: name }).catch(() => {});
+    } else await signInWithEmailAndPassword(auth, email, pw);
+    closeSheet();
+  } catch (e) { if (btn) btn.disabled = false; formError(emailError(e)); }
+}
+// Lösenordet igen, när Firebase vill ha en färsk inloggning (till exempel innan kontot raderas).
+let pwResolve = null;
+function askPassword() {
+  return new Promise((resolve) => {
+    pwResolve = resolve;
+    openSheet("Bekräfta med ditt lösenord", `<form class="form" data-form="reauth-pw" novalidate>
+      <p class="muted" style="margin-top:0">${esc(`Av säkerhetsskäl: skriv lösenordet för ${S.user?.email || "ditt konto"}.`)}</p>
+      ${field("Lösenord", `<input type="password" name="password" id="re-password" autocomplete="current-password" required>`)}
+      <p class="err" id="form-err" hidden></p>
+      <button class="btn primary block" type="submit">Fortsätt</button></form>`);
+  });
+}
 function authError(e, name = null) {
   const map = {
     "auth/network-request-failed": "Ingen kontakt med nätet. Försök igen.",
@@ -9468,6 +9532,8 @@ async function onSubmit(ev) {
     if (kind === "rec-price") return saveRecPrice(form);
     if (kind === "trip") return saveTrip(form);
     if (kind === "trip-split") return saveSplit(form);
+    if (kind === "email-auth") return saveEmailAuth(form);
+    if (kind === "reauth-pw") { const r = pwResolve; pwResolve = null; const pw = String(new FormData(form).get("password") || ""); closeSheet(); return r?.(pw || null); }
     if (kind === "log-filter") {
       const fd = new FormData(form);
       S.logOpt = { period: String(fd.get("period") || "all"), mine: fd.get("mine") === "on", types: fd.getAll("types").map(String) };
