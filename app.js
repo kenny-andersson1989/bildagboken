@@ -9478,7 +9478,8 @@ function emailSheet(mode = "login") {
     <button class="btn primary block" type="submit">${create ? "Skapa konto" : "Logga in"}</button>
     ${create
       ? `<p class="hint" style="text-align:center">Har du redan ett konto? <button class="link" type="button" data-act="email-login" data-mode="login">Logga in</button></p>`
-      : `<div class="email-links"><button class="link" type="button" data-act="email-reset">Glömt lösenordet?</button><button class="link" type="button" data-act="email-login" data-mode="create">Skapa konto</button></div>`}
+      : `<button class="btn ghost block" type="button" data-act="email-login" data-mode="create">Skapa konto</button>
+         <div class="email-links"><button class="link" type="button" data-act="email-reset">Glömt lösenordet?</button></div>`}
   </form>`);
 }
 function emailError(e) {
