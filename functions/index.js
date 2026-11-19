@@ -205,7 +205,7 @@ const LOGGED = {
 
 exports.nyLogg = onDocumentCreated("households/{hid}/entries/{eid}", async (event) => {
   const e = event.data?.data();
-  if (!e || !e.createdBy || e.fromBase) return; // datum som flyttats in i loggen automatiskt: ingen notis
+  if (!e || !e.createdBy || e.fromBase || e.type === "brev") return; // automatiska poster och Glenns brev: ingen notis
   // Gamla poster som läggs in i efterhand skickar ingen notis.
   if (e.date && daysBetween(e.date, todayStr()) > 2) return;
   const hid = event.params.hid;
@@ -816,6 +816,7 @@ exports.revenuecatWebhook = onRequest({ secrets: [REVENUECAT_WEBHOOK_AUTH], invo
 // Glenns månadsbrev (Plus): den första i månaden kl. 10 får hushåll med Plus en notis per bil om förra månaden:
 // vad bilen kostade (och månaden innan), hur långt den kördes, tankningar, och om besiktningen närmar sig.
 // Enheter som har stängt av månadsbrevet (prefs.letter) hoppas över.
+// Brevet sparas också som en post i loggen (typ "brev"), så att det går att läsa i appen efteråt.
 const nf = (n, lang) => Math.round(n).toLocaleString(lang === "en" ? "en-GB" : "sv-SE").replace(/,/g, lang === "en" ? "," : " ");
 function monthLetter(c, cur, prev, lang, today) {
   const en = lang === "en";
@@ -851,7 +852,6 @@ exports.manadsbrev = onSchedule({ schedule: "0 10 1 * *", timeZone: TZ, timeoutS
     const plus = (hd.plus?.until?.toMillis?.() ?? 0) > Date.now() || (hd.members || []).includes(ADMIN_UID);
     if (!plus) continue;
     const tokens = await tokensOf(h.id, "letter");
-    if (!tokens.length) continue;
     const cars = (await db.collection(`households/${h.id}/cars`).get()).docs.filter((d) => !d.data().deletedAt);
     if (!cars.length) continue;
     const ents = (await db.collection(`households/${h.id}/entries`).where("date", ">=", `${before}-01`).where("date", "<=", `${last}-31`).get())
@@ -864,8 +864,14 @@ exports.manadsbrev = onSchedule({ schedule: "0 10 1 * *", timeZone: TZ, timeoutS
       const msg = { tag: `letter-${c.id}-${last}`, url: "./#ekonomi",
         sv: { title: `${several ? `${name}: ` : ""}Glenns månadsbrev för ${MONTHS.sv[lm - 1]}`, body: monthLetter(c.data(), cur, prev, "sv", today) },
         en: { title: `${several ? `${name}: ` : ""}Glenn's letter for ${MONTHS.en[lm - 1]}`, body: monthLetter(c.data(), cur, prev, "en", today) } };
-      await send(h.id, tokens, msg);
-      sent++;
+      // Samma id varje gång för samma bil och månad, så att en extra körning inte ger dubbla brev.
+      await db.doc(`households/${h.id}/entries/brev-${c.id}-${last}`).set({
+        carId: c.id, type: "brev", date: today, month: last, createdBy: "glenn", createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        title: `Glenns månadsbrev för ${MONTHS.sv[lm - 1]}`, titleEn: `Glenn's letter for ${MONTHS.en[lm - 1]}`,
+        text: msg.sv.body, textEn: msg.en.body,
+      }, { merge: true });
+      msg.url = `./#logg`;
+      if (tokens.length) { await send(h.id, tokens, msg); sent++; }
     }
   }
   logger.info(`Månadsbrev skickade: ${sent}`);
