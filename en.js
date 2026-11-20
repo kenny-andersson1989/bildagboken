@@ -1047,6 +1047,7 @@ export const EN = {
   "köpte nya däck": "bought new tyres",
   "Ändra dokument": "Edit document",
   "Öppna i kartan": "Open in the map",
+  "Senast kända mätarställning är ifylld. Visar mätaren något annat kan du skriva in det, annars räknar appen fram den.": "The last known odometer is filled in. If the odometer shows something else you can enter it, otherwise the app works it out.",
   "Hur vill du logga resor?": "How do you want to log trips?",
   "Går att ändra senare under Resor → Inställningar.": "You can change this later under Trips → Settings.",
   "Av sig själv": "On its own",
