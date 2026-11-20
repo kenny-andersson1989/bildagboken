@@ -1,17 +1,17 @@
 // Bildagboken — delad bilapp för ett hushåll. Data synkas via Firebase (Firestore + inloggning med Google eller Apple).
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import { initializeApp } from "./vendor/firebase/firebase-app.js";
 import {
   getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   linkWithPopup, linkWithRedirect, onAuthStateChanged, signOut, reauthenticateWithPopup, deleteUser,
   signInWithCredential, linkWithCredential, reauthenticateWithCredential,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, EmailAuthProvider, updateProfile,
   sendEmailVerification, reload
-} from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+} from "./vendor/firebase/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs,
   query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, writeBatch, deleteField
-} from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+} from "./vendor/firebase/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { MAPKIT_TOKEN } from "./maps-config.js";
 import { CAR_MODELS } from "./car-models.js";
@@ -1596,7 +1596,7 @@ function glennGesture(m, ms = 3500) {
 }
 const callFn = async (name, payload) => {
   if (window.__fnMock) return window.__fnMock(name, payload); // bara i test
-  const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-functions.js");
+  const { getFunctions, httpsCallable } = await import("./vendor/firebase/firebase-functions.js");
   return (await httpsCallable(getFunctions(fb, "europe-west1"), name, { timeout: 120000 })(payload)).data;
 };
 
@@ -3680,7 +3680,7 @@ async function renderShared(token) {
 }
 // Serviceboken som PDF, byggd i telefonen med jsPDF. Delas via telefonens delningsmeny
 // (Spara i Filer, Skriv ut, AirDrop, Mail) eller laddas ner på datorn.
-const PDF_LIBS = ["https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js", "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"];
+const PDF_LIBS = ["./vendor/pdf/jspdf.umd.min.js", "./vendor/pdf/jspdf.plugin.autotable.min.js"];
 let pdfLibsPromise = null;
 function loadPdfLibs() {
   if (window.jspdf?.jsPDF?.API?.autoTable) return Promise.resolve(window.jspdf.jsPDF);
@@ -3925,7 +3925,7 @@ async function aiReadDocument(file) {
     const payload = { hid: S.hid, image: data.split(",")[1], mediaType: "image/jpeg", formType: cat === "Besiktning" ? "besiktning" : TYPE[type]?.label || type };
     if (window.__aiMock) res = await window.__aiMock(payload);
     else {
-      const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-functions.js");
+      const { getFunctions, httpsCallable } = await import("./vendor/firebase/firebase-functions.js");
       res = (await httpsCallable(getFunctions(fb, "europe-west1"), "lasDokument", { timeout: 120000 })(payload)).data;
     }
   } catch (e) {
@@ -5162,7 +5162,7 @@ const pushSupported = () => NATIVE || ("Notification" in window && "serviceWorke
 const pushOn = () => pushSupported() && (NATIVE || Notification.permission === "granted") && !!pref.get("pushToken");
 async function pushToken() {
   if (NATIVE) return (await nativePlugin("FirebaseMessaging").getToken()).token;
-  const m = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-messaging.js");
+  const m = await import("./vendor/firebase/firebase-messaging.js");
   if (!(await m.isSupported())) throw new Error("unsupported");
   const reg = await navigator.serviceWorker.ready;
   return m.getToken(m.getMessaging(fb), { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
@@ -5216,7 +5216,7 @@ async function disablePush() {
   if (t && S.hid) await deleteDoc(doc(db, "households", S.hid, "tokens", t)).catch(() => {});
   try {
     if (NATIVE) await nativePlugin("FirebaseMessaging").deleteToken();
-    else { const m = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-messaging.js"); await m.deleteToken(m.getMessaging(fb)); }
+    else { const m = await import("./vendor/firebase/firebase-messaging.js"); await m.deleteToken(m.getMessaging(fb)); }
   } catch { /* redan borta */ }
   render();
   showToast("Pushnotiser är avstängda på den här enheten");

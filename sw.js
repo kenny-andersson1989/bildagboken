@@ -1,5 +1,5 @@
 // Service worker: gör att appen startar även utan nät och kan visa notiser.
-const CACHE = "bildagboken-v304";
+const CACHE = "bildagboken-v305";
 const SHELL = [
   "./",
   "./index.html",
@@ -18,7 +18,18 @@ const SHELL = [
   "./integritet.html",
   "./installera.html",
   "./privacy.html",
-  "./en.js"
+  "./en.js",
+  "./fonts.css",
+  "./fonts/urbanist-latin-500-normal.woff2",
+  "./fonts/urbanist-latin-600-normal.woff2",
+  "./fonts/urbanist-latin-700-normal.woff2",
+  "./fonts/urbanist-latin-800-normal.woff2",
+  "./fonts/figtree-latin-400-normal.woff2",
+  "./fonts/figtree-latin-500-normal.woff2",
+  "./fonts/figtree-latin-600-normal.woff2",
+  "./vendor/firebase/firebase-app.js",
+  "./vendor/firebase/firebase-auth.js",
+  "./vendor/firebase/firebase-firestore.js"
 ];
 
 self.addEventListener("install", (event) => {
