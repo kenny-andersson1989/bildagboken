@@ -6283,6 +6283,9 @@ function tripForm(t = {}, mode = "new") {
   // Mätarställningen läses av i bilen varje gång. Senast kända står som ledtext, så att man ser om något verkar fel.
   const odoStart = t.odoStart;
   const lastOdo = odoOf(c);
+  // Avsluta: mätaren vid slut räknas fram från GPS-sträckan, om telefonen har mätt resan.
+  const gpsSoFar = mode === "end" && t.odoStart != null ? tripSoFarMil(t) : null;
+  const endGuess = gpsSoFar?.gps ? Math.round((t.odoStart + gpsSoFar.mil) * 10) / 10 : null;
   const kind = t.kind || (!t.id ? kindFromHours(Date.now()) : null) || prev?.kind || "tjanst";
   const title = mode === "start" ? "Starta resa" : mode === "end" ? "Avsluta resan" : t.id ? "Ändra resa" : "Resa";
   openSheet(title, `
@@ -6294,10 +6297,12 @@ function tripForm(t = {}, mode = "new") {
       ${t.edits?.length ? `<div class="hint" style="margin-top:0"><b>Ändrad i efterhand</b>${t.edits.slice(-5).reverse().map((e) => `<br>${esc(editLine(e))}`).join("")}</div>` : ""}
       ${mode === "end" ? "" : `<div class="row2">
         ${field("Datum", `<input type="date" name="date" id="tr-date" value="${esc(t.date || todayStr())}">`)}
-        ${field("Mätare vid start (km)", `<input name="odoStart" id="tr-odoStart" inputmode="numeric" required value="${odoStart != null ? kmOf(odoStart) : ""}" placeholder="${lastOdo != null ? esc(`Senast ${fmt(kmOf(lastOdo))}`) : ""}">`)}
+        ${field("Mätare vid start (km)", `<input name="odoStart" id="tr-odoStart" inputmode="numeric" required value="${odoStart != null ? kmOf(odoStart) : mode === "start" && lastOdo != null ? kmOf(lastOdo) : ""}"${mode === "start" && odoStart == null && lastOdo != null ? ` data-pre="${kmOf(lastOdo)}"` : ""} placeholder="${lastOdo != null ? esc(`Senast ${fmt(kmOf(lastOdo))}`) : ""}">`)}
       </div>
-      ${t.id ? "" : `<p class="hint" style="margin-top:-6px">Läs av mätaren i bilen${lastOdo != null ? esc(`. Senast kända är ${fmtKm(lastOdo)}`) : ""}.</p>`}`}
-      ${mode === "start" ? "" : field("Mätare vid slut (km)", `<input name="odoEnd" id="tr-odoEnd" inputmode="numeric" required value="${t.odoEnd != null ? kmOf(t.odoEnd) : ""}" placeholder="Läs av mätaren i bilen">`, `<span id="tr-dist">${t.odoEnd != null ? esc(`${fmtKm(tripMil(t))}`) : "Som det står på mätaren, i km."}</span>`)}
+      ${t.id ? "" : mode === "start" && lastOdo != null
+        ? `<p class="hint" style="margin-top:-6px">Senast kända mätarställning är ifylld. Visar mätaren något annat kan du skriva in det, annars räknar appen fram den.</p>`
+        : `<p class="hint" style="margin-top:-6px">Läs av mätaren i bilen${lastOdo != null ? esc(`. Senast kända är ${fmtKm(lastOdo)}`) : ""}.</p>`}`}
+      ${mode === "start" ? "" : field("Mätare vid slut (km)", `<input name="odoEnd" id="tr-odoEnd" inputmode="numeric" required value="${t.odoEnd != null ? kmOf(t.odoEnd) : endGuess != null ? kmOf(endGuess) : ""}"${t.odoEnd == null && endGuess != null ? ` data-pre="${kmOf(endGuess)}"` : ""} placeholder="Läs av mätaren i bilen">`, `<span id="tr-dist">${t.odoEnd != null ? esc(`${fmtKm(tripMil(t))}`) : "Som det står på mätaren, i km."}</span>`)}
       ${mode === "end" ? `<div id="tr-route" hidden></div><input type="hidden" name="endPos" id="tr-endPos">` : ""}
       ${mode === "start" ? `<input type="hidden" name="startPos" id="tr-startPos">` : ""}
       ${field("Från", `<span class="geo-row"><input name="from" id="tr-from" value="${esc(t.from ?? (mode === "new" && !t.id ? prev?.to || "" : ""))}" placeholder="Ort, adress eller företag" autocomplete="off"><button class="geo-btn" type="button" data-act="trip-here" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span><span class="suggest" id="tr-from-suggest" role="listbox" hidden></span><input type="hidden" name="fromLoc" id="tr-fromLoc" value="${t.fromLoc ? esc(JSON.stringify(t.fromLoc)) : ""}">`)}
@@ -6318,7 +6323,7 @@ function tripForm(t = {}, mode = "new") {
       ${mode === "start" && S.autoStatus?.enabled ? `<p class="hint">Den automatiska körjournalen är på. Den sparar ingen egen resa för samma sträcka, den här gäller.</p>` : ""}
     </form>`, { back: t.id && mode === "new" ? "trips" : null });
   if (mode === "end" && !window.matchMedia("(pointer: coarse)").matches) $("#tr-odoEnd")?.focus({ preventScroll: true });
-  if (mode === "end") suggestTripDistance(t);
+  if (mode === "end") { suggestTripDistance(t); $("#tr-odoEnd")?.dispatchEvent(new Event("input", { bubbles: true })); }
   if (mode === "new" && t.id && tripEnds(t)) tripMap($("#tr-map-inner"), ...tripEnds(t), decodePath(t.path));
   if (mode === "start" && !t.from) fillTripFrom(false);
 }
@@ -6498,6 +6503,9 @@ async function suggestTripDistance(t) {
     const odo = Math.round((t.odoStart + mil) * 10) / 10;
     // Bara en kontroll: mätaren i bilen gäller, men kartan visar om siffran verkar rimlig.
     box.innerHTML = `<p class="hint">${icon("pin", 14)} ${esc(`Enligt kartan ca ${fmtKm(mil)} från start, alltså runt ${fmtKm(odo)} på mätaren.`)}</p>`;
+    // Tomt fält: fyll i kartans förslag, så räcker det med ett tryck på Avsluta.
+    const inp = $("#tr-odoEnd");
+    if (inp && !inp.value.trim()) { inp.value = String(kmOf(odo)); inp.dataset.pre = String(kmOf(odo)); inp.dispatchEvent(new Event("input", { bubbles: true })); }
     box.hidden = false;
   } catch { /* utan karta får man läsa av mätaren */ }
 }
@@ -6511,6 +6519,8 @@ function tripChanges(a, b) {
 const editLine = (e) => `${fmtDateShort(ymd(new Date(tsMs(e.at))))} av ${whoName(e.by).replace(/^Du$/, "dig")}${e.changes?.length ? `: ${e.changes.join(", ")}` : ""}`;
 
 const parsePos = (v) => { try { const p = JSON.parse(v || "null"); return p && Number.isFinite(p.lat) && Number.isFinite(p.lon) ? p : null; } catch { return null; } };
+// Ett fält som appen fyllde i och som man inte har ändrat: mätarställningen är då uträknad, inte avläst.
+const untouched = (sel) => { const el = document.querySelector(sel); return !!el?.dataset.pre && num(el.value) === num(el.dataset.pre); };
 async function saveTrip(form) {
   const c = car();
   const fd = new FormData(form);
@@ -6549,7 +6559,8 @@ async function saveTrip(form) {
     endLoc: (mode === "end" ? parsePos(str("endPos")) : null) || old?.endLoc || undefined,
     gpsMeters: mode === "end" && S.autoStatus?.manualId === old?.id && S.autoStatus.manualMeters > 0 ? Math.round(S.autoStatus.manualMeters) : old?.gpsMeters ?? undefined,
     pausedMs: (old?.pausedAt ? (old.pausedMs || 0) + (Date.now() - tsMs(old.pausedAt)) : old?.pausedMs) || undefined,
-    odoEstimated: old?.odoEstimated ? odoStart === old.odoStart && odoEnd === old.odoEnd : undefined,
+    odoEstimated: mode === "new" ? (old?.odoEstimated ? odoStart === old.odoStart && odoEnd === old.odoEnd : undefined)
+      : (old?.odoEstimated || untouched("#tr-odoStart") || untouched("#tr-odoEnd")) || undefined,
     reviewedAt: old?.auto && !old.kind ? Date.now() : old?.reviewedAt ?? undefined,
     gapOk: old?.gapOk || undefined, suggestKind: old?.suggestKind || undefined,
   });
