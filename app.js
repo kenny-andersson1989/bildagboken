@@ -756,7 +756,6 @@ function plusSheet() {
     <div class="plus-perks">${PLUS_PERKS.map(([ic, t, d]) => `<div class="plus-perk"><span class="dl-ic">${icon(ic, 20)}</span><div><b>${esc(t)}</b><span>${esc(d)}</span></div></div>`).join("")}</div>
     <table class="plus-t"><thead><tr><th></th><th>Gratis</th><th>Plus</th></tr></thead>
       <tbody>${rows.map(([a, b, c]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td><td><b>${esc(c)}</b></td></tr>`).join("")}</tbody></table>
-    ${hasPlus() && !tripsVisible() ? `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="trips-on">${icon("route", 18)} Slå på körjournalen</button></div>` : ""}
     ${hasPlus() ? (S.house?.plus?.by === uid() && !S.house?.plus?.gift ? `<p class="hint" style="margin-top:16px">${canBuyHere() ? `Du betalar för Plus via App Store. <a href="https://apps.apple.com/account/subscriptions" target="_blank" rel="noopener">Hantera eller avsluta prenumerationen</a>` : "Du betalar för Plus via App Store. Prenumerationen hanterar du i iPhone-appen eller under Inställningar → ditt namn → Prenumerationer på din iPhone."}</p>` : "")
       : !plusOnSale() ? `<p class="hint" style="margin-top:16px">Plus går inte att köpa än, men kommer snart. Allt ni loggar nu finns kvar när ni uppgraderar.</p>`
       : canBuyHere() ? `<div class="form" style="margin-top:16px"><button class="btn primary block" type="button" data-act="plus-buy">Skaffa Plus</button>
@@ -5553,7 +5552,6 @@ function typePicker() {
   const noTank = isElectric(c0) && !S.entries.some((e) => e.carId === c0?.id && e.type === "tank");
   const tiles = PICK_ORDER.filter((k) => (k !== "laddning" || canCharge(c0)) && (k !== "tank" || !noTank)).map((k) => tile(`data-act="new-entry" data-type="${k === "besiktning" ? "kostnad" : k}"${k === "besiktning" ? ' data-cat="Besiktning"' : ""}`, typeIcon(k), typeLabel(k)));
   if (!tripsOn() && plusOnSale()) tiles.push(tile(`data-act="plus" data-f="trips" class="plus-teaser"`, "car", "Resa", `<span class="plus-badge">Plus</span>`));
-  else if (tripsOn() && !tripsVisible()) tiles.push(tile(`data-act="trips-on"`, "route", "Körjournal"));
   else if (tripsVisible()) tiles.push(tile(`data-act="trip-menu"`, "route", openTrip() ? "Avsluta resa" : "Resa"));
   tiles.push(tile(`data-act="new-booking"`, "calendar", "Bokad tid"));
   const rest = tiles.length % 3;
@@ -5770,18 +5768,8 @@ function saveBooking(form, wantCalendar = false) {
 const MIL_RATE = 25;
 const TRIP_KINDS = { tjanst: "Tjänsteresa", privat: "Privat" };
 function tripsOn() { return hasPlus() || (isAdmin() && !testMode()); }
-// Fliken Resor syns när körjournalen är påslagen (per person, under Inställningar eller på Plus-sidan).
-// Den som redan har resor men aldrig har valt räknas som påslagen.
-function tripsVisible() {
-  if (!tripsOn()) return false;
-  const v = S.house?.memberInfo?.[uid()]?.trips;
-  return v === true || (v == null && S.trips.length > 0);
-}
-function setTripsVisible(on) {
-  if (S.house?.memberInfo?.[uid()]) S.house.memberInfo[uid()].trips = on;
-  updateDoc(doc(db, "households", S.hid), { [`memberInfo.${uid()}.trips`]: on }).catch(onWriteError);
-  render();
-}
+// Fliken Resor syns alltid för den som har körjournalen (Plus). Utan Plus syns den med en Plus-markering.
+const tripsVisible = () => tripsOn();
 const carTrips = (cid = S.carId) => S.trips.filter((t) => t.carId === cid)
   .sort((a, b) => (b.date || "").localeCompare(a.date || "") || tsMs(b.startedAt || b.createdAt) - tsMs(a.startedAt || a.createdAt));
 const tripMil = (t) => (t.odoEnd != null && t.odoStart != null ? Math.max(0, Math.round((t.odoEnd - t.odoStart) * 10) / 10)
@@ -5912,10 +5900,9 @@ function tripsSettingsHtml() {
       ${row("places", "pin", "Sparade platser", S.places.length ? S.places.map((p) => p.name).join(", ") : "Inga sparade än")}
       ${native ? row("bt", "car", "Bilens Bluetooth och CarPlay", linked.length ? `${linked.join(", ")} kopplad` : "Ingen kopplad") : ""}
     </div></article>
-    <p class="set-grp">Övrigt</p><article class="card"><div class="rows">
-      ${native && st ? row("log", "list", "Felsökning", lastLog ? `Senast: ${AUTO_LOG_EN && EN ? AUTO_LOG_EN[lastLog.m] || lastLog.m : lastLog.m} ${clock(lastLog.t)}` : "Inget har hänt än") : ""}
-      <button class="dl as-btn set-row" type="button" data-act="trips-off"><span class="dl-ic set-ic">${icon("close", 18)}</span><span><span class="dl-t">Dölj fliken Resor</span><span class="dl-s">Resorna finns kvar. Slå på den igen under Inställningar → Bildagboken Plus.</span></span><span class="dl-v">›</span></button>
-    </div></article>`;
+    ${native && st ? `<p class="set-grp">Övrigt</p><article class="card"><div class="rows">
+      ${row("log", "list", "Felsökning", lastLog ? `Senast: ${AUTO_LOG_EN && EN ? AUTO_LOG_EN[lastLog.m] || lastLog.m : lastLog.m} ${clock(lastLog.t)}` : "Inget har hänt än")}
+    </div></article>` : ""}`;
 }
 const TRIP_SET_TITLES = { start: "Så loggas resor", hours: "Arbetstider", places: "Sparade platser", bt: "Bilens Bluetooth och CarPlay", log: "Felsökning" };
 function tripSetBody(k) {
@@ -9095,7 +9082,6 @@ const ACTIONS = {
     ${NATIVE && !ANDROID ? "" : `<p class="hint" style="margin-top:14px">Med automatisk körjournal i iPhone-appen behöver du inte trycka alls.</p>`}`);
   },
   "trip-start-now"() { tripForm({}, "start"); },
-  "trips-on"() { setTripsVisible(true); closeSheet(); setView("resor"); showToast("Körjournalen är påslagen. Den finns under Resor i menyn."); },
   async "auto-toggle"(el) { const want = el.checked; await ACTIONS[want ? "auto-on" : "auto-off"](el); render(); },
   async "auto-allow"(el) {
     const t = tracker();
@@ -9107,11 +9093,6 @@ const ACTIONS = {
       // Äldre version av appen, utan knappen: beskriv vägen.
       showToast("Öppna telefonens Inställningar → Bildagboken → Plats och välj Alltid. Uppdatera appen för att få en knapp för det.", 9000);
     }
-  },
-  async "trips-off"() {
-    const ok = await confirmDialog({ title: "Dölja fliken Resor?", lines: ["Resorna finns kvar. Du kan slå på körjournalen igen med plusknappen i menyn."], okLabel: "Dölj", warn: "" });
-    if (!ok) return;
-    setTripsVisible(false); setView("oversikt");
   },
   "trips-review"() { reviewSheet(); },
   async "trip-kind"(el) {
