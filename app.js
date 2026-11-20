@@ -2141,7 +2141,15 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   app.classList.toggle("no-nav", !showNav);
   nav.hidden = !showNav;
   const resorTab = document.getElementById("tab-resor");
-  if (resorTab) { const on = S.user && S.hid ? tripsVisible() : false; resorTab.hidden = !on; resorTab.parentElement.classList.toggle("with-resor", on); }
+  // Resor syns också för den som inte har Plus, med en Plus-markering. Ett tryck visar då vad Plus ger.
+  if (resorTab) {
+    const locked = !!(S.user && S.hid && !tripsOn() && plusOnSale());
+    const on = S.user && S.hid ? tripsVisible() || locked : false;
+    resorTab.hidden = !on; resorTab.parentElement.classList.toggle("with-resor", on);
+    resorTab.classList.toggle("tab-plus", locked);
+    if (locked && !resorTab.querySelector(".tab-plus-badge")) resorTab.insertAdjacentHTML("beforeend", `<span class="tab-plus-badge" aria-label="Plus">+</span>`);
+    if (!locked) resorTab.querySelector(".tab-plus-badge")?.remove();
+  }
   // Glenn under sidomenyn på datorn och surfplattan på bredden, där knapparna uppe till höger är dolda.
   let navGlenn = document.getElementById("nav-glenn");
   const glennOn = !!(showNav && S.user && S.hid && (chatOn() || plusOnSale()));
@@ -10423,7 +10431,11 @@ document.addEventListener("click", (ev) => {
   if (!inSuggest) hideSuggestions(field ? document.getElementById(field.box) : null);
   if (!inSuggest && ev.target.id !== "w-search") { const wb = $("#w-suggest"); if (wb) wb.hidden = true; }
   const go = ev.target.closest("[data-go]");
-  if (go) { ev.preventDefault(); closeSheet(); setView(go.dataset.go); return; }
+  if (go) {
+    ev.preventDefault();
+    if (go.dataset.go === "resor" && !tripsOn()) { closeSheet(); return plusUpsell("trips"); }
+    closeSheet(); setView(go.dataset.go); return;
+  }
   const a = ev.target.closest("[data-act]");
   if (!a || a.tagName === "SELECT") return;
   const fn = ACTIONS[a.dataset.act];
