@@ -2126,3 +2126,4 @@ body.car-locked .fab { display: none; }
 /* Resor utan Plus: liten Plus-markering i hörnet på ikonen */
 #tab-resor { position: relative; }
 .tab-plus-badge { position: absolute; top: 2px; left: calc(50% + 6px); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: #fff; font: 800 12px/16px var(--f-body); text-align: center; box-shadow: 0 0 0 2px var(--nav-bg, var(--ground)); pointer-events: none; }
+.net-pill.server-down { background: var(--accent); color: #fff; cursor: pointer; pointer-events: auto; }

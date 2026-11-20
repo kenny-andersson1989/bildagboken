@@ -4060,7 +4060,7 @@ function viewOverview() {
   const dls = deadlines(c);
   parts.push("<!--card:koll-->", `<article class="card">
     <h2>På gång</h2>
-    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...odoReminder(c), ...docReminders(c), ...dls])}
+    ${kollRowsHtml([...bookingRows(c).map((b) => ({ ...b, always: true })), ...odoReminder(c), ...depthReminder(c), ...docReminders(c), ...dls])}
     ${!c.besiktning && !c.forsakringDatum ? `<div class="ask"><button class="btn-soft" type="button" data-act="edit-car" data-section="dates">Lägg till besiktning, försäkring och skatt</button></div>` : ""}
     <div class="ask"><button class="btn-soft" type="button" data-act="new-booking">${icon("calendar", 16)} Lägg in bokad tid</button></div>
   </article>`);
@@ -4395,6 +4395,24 @@ function realOdoEntry(carId) {
   const saved = S.trips;
   S.trips = saved.filter((t) => !t.odoEstimated);
   try { return latestOdoEntry(carId); } finally { S.trips = saved; }
+}
+// Efter ett däckbyte utan mönsterdjup: påminnelse i På gång de närmaste fyra veckorna. Försvinner när djupet
+// är ifyllt eller när man trycker Klar (som bara gäller det bytet).
+function depthReminder(c) {
+  const swap = S.entries.filter((e) => e.carId === c.id && !e.deletedAt && e.type === "dack" && isSwap(e.tireAction))
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
+  if (!swap || pref.get("depthDone." + swap.id)) return [];
+  const ago = -daysUntil(parseDate(swap.date));
+  if (ago < 0 || ago > 28) return [];
+  const on = swap.tireAction === "till_vinter" ? "vinterdäcken" : "sommardäcken";
+  const off = swap.tireAction === "till_vinter" ? "sommardäcken" : "vinterdäcken";
+  const season = swap.tireAction === "till_vinter" ? "våren" : "vintern";
+  const needOn = swap.depth == null, needOff = swap.depthOff == null;
+  if (!needOn && !needOff) return [];
+  const title = needOn && needOff ? "Mät mönsterdjupet på båda däcksatserna" : `Mät mönsterdjupet på ${needOff ? off : on}`;
+  const sub = needOff ? `${off.replace(/^./, (x) => x.toUpperCase())} ligger nu i förråd. Mät dem nu, så vet du i god tid om det behövs nya till ${season}.`
+    : `Mät ${on} som sitter på, så blir däckens hälsa rätt.`;
+  return [{ icon: "tire", title, sub, level: "soon", label: "Fyll i", act: "tire-depth", id: swap.id, always: true, days: 0 }];
 }
 function odoReminder(c) {
   // Med automatisk körjournal räknas mätaren fram från GPS-sträckorna. En gång i månaden: läs av den riktiga.
@@ -9228,6 +9246,15 @@ const ACTIONS = {
     S.tripTab = "alla"; closeSheet();
     if (S.view !== "resor") setView("resor"); else render();
   },
+  // Fyll i mönsterdjupet på däckbytet. Klar i rutan döljer påminnelsen även utan mått.
+  "tire-depth"(el) {
+    const e = S.entries.find((x) => x.id === el.dataset.id);
+    if (!e) return;
+    entryForm("dack", e);
+    $("#sheet form")?.insertAdjacentHTML("beforeend", `<button class="link" type="button" data-act="depth-done" data-id="${esc(e.id)}" style="display:block;margin:12px auto 0">Påminn inte om det här bytet</button>`);
+    setTimeout(() => $("#ef-depthOff")?.closest(".field, label")?.scrollIntoView({ block: "center" }), 250);
+  },
+  "depth-done"(el) { pref.set("depthDone." + el.dataset.id, "1"); closeSheet(); render(); },
   "trip-tab"(el) { S.tripTab = el.dataset.v || ""; render(); window.scrollTo(0, 0); },
   "trip-filter"(el) { S.tripFilter = el.dataset.v || ""; render(); },
   "trip-set"(el) { openTripSet(el.dataset.k); },
@@ -9818,14 +9845,14 @@ async function createHouse(form) {
   form.querySelector("button[type=submit]").disabled = true;
   const code = randomId(6, "ABCDEFGHJKLMNPQRSTUVWXYZ23456789");
   const hRef = doc(collection(db, "households"));
-  await setDoc(hRef, {
+  await watchServer(setDoc(hRef, {
     name: house,
     members: [uid()],
     owner: uid(),
     memberInfo: { [uid()]: { name, email: S.user.email || null, lastSeen: serverTimestamp() } },
     inviteCode: code,
     createdAt: serverTimestamp(),
-  });
+  }));
   await setDoc(doc(db, "invites", code), { householdId: hRef.id, houseName: house, createdBy: uid(), createdAt: serverTimestamp() });
   subscribe(hRef.id);
 }
@@ -10323,6 +10350,8 @@ function subscribe(hid) {
   S.loaded = { house: false, cars: false, entries: false };
   render();
 
+  // Når appen databasen? Hushållet hämtas från servern när den svarar, annars bara från webbläsarens kopia.
+  S.unsubs.push(onSnapshot(doc(db, "households", hid), { includeMetadataChanges: true }, (s) => serverState(!s.metadata.fromCache), () => {}));
   S.unsubs.push(onSnapshot(doc(db, "households", hid), (s) => {
     S.house = s.data({ serverTimestamps: "estimate" });
     S.loaded.house = true;
@@ -10459,9 +10488,31 @@ document.addEventListener("keydown", (ev) => {
   if (!sheet.hidden) closeSheet();
 });
 // En liten rad överst när nätet saknas, med hur många ändringar som väntar på att laddas upp.
+// Har nät men når inte databasen (till exempel när ett tillägg som NoScript blockerar Firebase):
+// då sparas allt bara i den här webbläsaren. Visas först efter en stund, så att ett långsamt nät inte räknas.
+const SERVER_WAIT = 15000;
+let serverTimer = null;
+function serverState(ok) {
+  if (ok) { clearTimeout(serverTimer); serverTimer = null; if (S.serverDown) { S.serverDown = false; updateNetBanner(); } return; }
+  if (serverTimer || S.serverDown) return;
+  serverTimer = setTimeout(() => { serverTimer = null; if (navigator.onLine) { S.serverDown = true; updateNetBanner(); } }, SERVER_WAIT);
+}
+// En sparning som inte har nått servern efter en stund: samma varning.
+function watchServer(promise) {
+  serverState(false);
+  Promise.resolve(promise).then(() => serverState(true), () => {});
+  return promise;
+}
 function updateNetBanner() {
   const el = $("#net");
   if (!el) return;
+  if (S.serverDown && navigator.onLine) {
+    el.hidden = false;
+    el.classList.add("syncing", "server-down");
+    el.textContent = "Når inte servern · det du gör sparas bara här";
+    return;
+  }
+  el.classList.remove("server-down");
   const n = S.pending.cars + S.pending.entries;
   const offline = !navigator.onLine;
   el.hidden = !offline && !(n && S.netWasOff);
@@ -10473,6 +10524,10 @@ function updateNetBanner() {
   if (!n && !offline) S.netWasOff = false;
 }
 window.addEventListener("offline", () => { S.netWasOff = true; updateNetBanner(); });
+document.addEventListener("click", (ev) => {
+  if (!S.serverDown || !ev.target.closest?.("#net")) return;
+  showToast("Appen har nät men når inte servern, så det du gör sparas bara i den här webbläsaren tills kontakten är tillbaka. Blockerar du något i webbläsaren, till exempel med NoScript eller en annonsblockerare, tillåt firestore.googleapis.com, identitytoolkit.googleapis.com och securetoken.googleapis.com.", 12000);
+});
 window.addEventListener("online", () => {
   updateNetBanner();
   if (!S.pending.cars && !S.pending.entries) { S.netWasOff = false; updateNetBanner(); }
