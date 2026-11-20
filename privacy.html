@@ -27,7 +27,7 @@
   <a class="back" href="./">‹ To Bildagboken</a> · <a href="integritet.html" lang="sv">På svenska</a>
   <h1>How your data is handled</h1>
   <p>Bildagboken is an app for keeping track of a car together. It has no ads, does not sell any data and does not track what you do.</p>
-  <p class="upd">Last updated 17 November 2026.</p>
+  <p class="upd">Last updated 20 November 2026.</p>
 
   <article>
     <h2>Who is responsible</h2>
@@ -37,7 +37,7 @@
   <article>
     <h2>What is stored</h2>
     <ul>
-      <li><b>Your account:</b> the name you enter, your email address and how you sign in (Apple or Google).</li>
+      <li><b>Your account:</b> the name you enter, your email address and how you sign in (Apple, Google or email). If you sign in with email, Firebase handles your password, which is stored encrypted so no one can read it, and sends an email to confirm the address.</li>
       <li><b>The car and the log:</b> what you enter yourselves, for example fill-ups, service, odometer readings, costs, places, bookings, the to-do list, photos and documents.</li>
       <li><b>The driving log</b> (Plus): where a trip starts and ends, the addresses, the distance, the time and who drove.</li>
       <li><b>Notifications:</b> if you turn on notifications, an address for your phone is stored so that reminders can be sent to it.</li>
@@ -63,11 +63,12 @@
   <article>
     <h2>Services the app uses</h2>
     <ul>
-      <li><b>Google Firebase</b> for sign-in, storage and notifications.</li>
+      <li><b>Google Firebase</b> for sign-in, storage and notifications. The app's code, the Firebase libraries and the fonts are served from bildagboken.com, so when the app starts it only contacts bildagboken.com and Firebase.</li>
       <li><b>Apple Maps</b> to search for garages and places and to show maps. What you search for is sent to Apple.</li>
       <li><b>OpenStreetMap and Photon</b> as a fallback when Apple Maps cannot find an address or a place.</li>
       <li><b>Registreringsnummer API</b> (registreringsnummerapi.se) for the car's details. When you tap Fetch, the registration number is sent there, and the service answers with, for example, the make, model, model year, colour and VIN. Nothing about you is sent, and owner details are not stored.</li>
       <li><b>Wikipedia</b> for a picture of the car model, if you have not added your own.</li>
+      <li><b>jsDelivr</b> (cdn.jsdelivr.net) for the text recognition that reads receipts and VINs on your phone. It is downloaded the first time you use it. jsDelivr then sees your IP address, but the image stays on your phone.</li>
       <li><b>Apple and RevenueCat</b> when you buy Plus in the iPhone app. Payment is handled by Apple, and Bildagboken never sees your card details. RevenueCat (revenuecat.com) keeps track of the subscription for Bildagboken. It receives your user ID in Bildagboken, what you bought and when, and technical details about the phone, but not your name or email address.</li>
       <li><b>Anthropic (Claude)</b> for reading with AI and Glenn in Bildagboken Plus. When you choose Read with AI, the photo of the receipt, invoice or protocol is sent to Anthropic, which reads it and sends the details back. When you ask Glenn a question, the question and what you have logged about the car (car details, maintenance, costs, driving log totals and the log, but no photos) are sent to Anthropic, which answers. Anthropic does not use the images or the details to train its models.</li>
       <li><b>Your location when you ask Glenn</b>, if you have allowed it. The approximate location is sent with the question so that Glenn can answer about the weather and find the nearest petrol station or workshop. For that, the coordinates are passed on to <b>Apple Maps</b> (with <b>OpenStreetMap</b> as a fallback) and <b>Open-Meteo</b>, without anything about you. The location is not saved. The app remembers roughly where you were (to within a kilometre or so) on the phone and asks Open-Meteo for the weather there, so that Glenn can dress for the weather.</li>
@@ -75,7 +76,7 @@
       <li><b>Apple (speech recognition)</b> when you talk to Glenn in the iPhone app. What you say is turned into text by Apple. The audio is not saved in Bildagboken.</li>
     </ul>
     <p>Without Plus, receipts are read on your phone, and the image is not sent anywhere to be read.</p>
-    <p>The app asks for your location when you tap the pin button, to suggest the nearest petrol station or garage. That location is not stored. With the automatic driving log in the iPhone app, the phone measures trips with GPS even when the app is closed. The route stays on the phone until the app is opened, and then only the start, end, distance and times are saved. You can turn it off at any time.</p>
+    <p>The app asks for your location when you tap the pin button, to suggest the nearest petrol station or garage. That location is not stored. With the automatic driving log in the iPhone app, the phone measures trips with GPS even when the app is closed. The route stays on the phone until the app is opened, and then the start, end, the route driven, distance and times are saved in the driving log. When you start a trip yourself, the phone measures the distance with GPS while the trip is in progress. You can turn it off at any time.</p>
   </article>
 
   <article>

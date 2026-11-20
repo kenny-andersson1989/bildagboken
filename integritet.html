@@ -27,7 +27,7 @@
   <a class="back" href="./">‹ Till Bildagboken</a> · <a href="privacy.html" lang="en">In English</a>
   <h1>Så hanteras dina uppgifter</h1>
   <p>Bildagboken är en app för att hålla koll på en bil tillsammans. Den har ingen reklam, säljer inga uppgifter och följer inte vad du gör.</p>
-  <p class="upd">Senast uppdaterad 17 november 2026.</p>
+  <p class="upd">Senast uppdaterad 20 november 2026.</p>
 
   <article>
     <h2>Vem som ansvarar</h2>
@@ -37,7 +37,7 @@
   <article>
     <h2>Vad som sparas</h2>
     <ul>
-      <li><b>Ditt konto:</b> namnet du skriver in, din e-postadress och vilket inloggningssätt du använder (Apple eller Google).</li>
+      <li><b>Ditt konto:</b> namnet du skriver in, din e-postadress och vilket inloggningssätt du använder (Apple, Google eller e-post). Loggar du in med e-post sköter Firebase lösenordet, som sparas krypterat så att ingen kan läsa det, och skickar ett mejl för att bekräfta adressen.</li>
       <li><b>Bilen och loggen:</b> det ni själva fyller i, till exempel tankningar, service, mätarställning, kostnader, platser, bokade tider, att göra-listan, bilder och dokument.</li>
       <li><b>Körjournalen</b> (Plus): var en resa startar och slutar, adresserna, sträckan, tiden och vem som körde.</li>
       <li><b>Notiser:</b> om du slår på notiser sparas en adress till din telefon, så att påminnelser kan skickas dit.</li>
@@ -63,11 +63,12 @@
   <article>
     <h2>Tjänster som appen använder</h2>
     <ul>
-      <li><b>Google Firebase</b> för inloggning, lagring och notiser.</li>
+      <li><b>Google Firebase</b> för inloggning, lagring och notiser. Appens kod, Firebase-biblioteken och typsnitten hämtas från bildagboken.com, så när appen startar kontaktas bara bildagboken.com och Firebase.</li>
       <li><b>Apple Maps</b> för att söka efter verkstäder och platser och visa kartor. Det du söker på skickas till Apple.</li>
       <li><b>OpenStreetMap och Photon</b> som reserv när Apple Maps inte hittar en adress eller ett ställe.</li>
       <li><b>Registreringsnummer API</b> (registreringsnummerapi.se) för bilens uppgifter. När du trycker på Hämta skickas registreringsnumret dit, och tjänsten svarar med bland annat märke, modell, årsmodell, färg och chassinummer. Inga uppgifter om dig skickas med, och ägaruppgifter sparas inte.</li>
       <li><b>Wikipedia</b> för en bild på bilmodellen, om ni inte har lagt in en egen.</li>
+      <li><b>jsDelivr</b> (cdn.jsdelivr.net) för textigenkänningen som läser kvitton och chassinummer i telefonen. Den hämtas första gången du använder den. jsDelivr ser då din IP-adress, men bilden stannar i telefonen.</li>
       <li><b>Apple och RevenueCat</b> när du köper Plus i iPhone-appen. Betalningen sköts av Apple, och Bildagboken ser aldrig dina kortuppgifter. RevenueCat (revenuecat.com) håller reda på prenumerationen åt Bildagboken. Dit skickas ditt användar-id i Bildagboken, vad du har köpt och när, och tekniska uppgifter om telefonen, men inte ditt namn eller din e-postadress.</li>
       <li><b>Anthropic (Claude)</b> för läsning med AI och Glenn i Bildagboken Plus. När du väljer Läs av med AI skickas fotot av kvittot, fakturan eller protokollet till Anthropic, som läser av det och skickar tillbaka uppgifterna. När du ställer en fråga till Glenn skickas frågan och det ni har loggat om bilen (uppgifter om bilen, underhåll, kostnader, körjournalens summor och loggen, men inga bilder) till Anthropic, som svarar. Anthropic använder inte bilderna eller uppgifterna för att träna sina modeller.</li>
       <li><b>Din plats när du frågar Glenn</b>, om du har gett appen lov. Den ungefärliga platsen skickas med frågan, så att Glenn kan svara om vädret och hitta närmaste mack eller verkstad. För det skickas koordinaterna vidare till <b>Apple Maps</b> (och <b>OpenStreetMap</b> som reserv) och <b>Open-Meteo</b>, utan något om dig. Platsen sparas inte. Appen kommer ihåg ungefär var du var (på någon kilometer när) i telefonen, och frågar Open-Meteo om vädret där, så att Glenn kan klä sig efter vädret.</li>
@@ -75,7 +76,7 @@
       <li><b>Apple (taligenkänning)</b> när du pratar med Glenn i iPhone-appen. Det du säger görs om till text av Apple. Ljudet sparas inte i Bildagboken.</li>
     </ul>
     <p>Utan Plus läses kvitton av i telefonen, och bilden skickas inte någonstans för att läsas.</p>
-    <p>Appen frågar efter din plats när du trycker på knappen med kartnålen, för att föreslå närmaste mack eller verkstad. Den platsen sparas inte. Med automatisk körjournal i iPhone-appen mäter telefonen resorna med GPS även när appen är stängd. Vägen sparas i telefonen tills appen öppnas, och sedan sparas bara start, slut, sträcka och tider. Du kan stänga av det när du vill.</p>
+    <p>Appen frågar efter din plats när du trycker på knappen med kartnålen, för att föreslå närmaste mack eller verkstad. Den platsen sparas inte. Med automatisk körjournal i iPhone-appen mäter telefonen resorna med GPS även när appen är stängd. Vägen sparas i telefonen tills appen öppnas, och sedan sparas start, slut, den körda vägen, sträcka och tider i körjournalen. När du själv startar en resa mäter telefonen sträckan med GPS medan resan pågår. Du kan stänga av det när du vill.</p>
   </article>
 
   <article>
