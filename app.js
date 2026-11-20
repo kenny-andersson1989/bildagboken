@@ -5895,11 +5895,11 @@ function tripsSettingsHtml() {
   const daysTxt = days.length === 5 && !w.days.includes(0) && !w.days.includes(6) ? "Mån–fre" : days.join(", ").replace(/^./, (x) => x.toUpperCase());
   const linked = S.cars.filter((x) => !x.deletedAt).flatMap((x) => (x.btNames || []).map((n) => btLabel(n)));
   const lastLog = Array.isArray(st?.log) && st.log.length ? st.log[st.log.length - 1] : null;
-  const startTxt = !native ? "Automatiskt finns i iPhone-appen" : !st ? "–" : !st.enabled ? "När du trycker eller ansluter till bilen"
+  const startTxt = !native ? "Automatiskt finns i iPhone-appen" : !st ? "–" : !st.enabled ? "När du själv startar"
     : st.auth !== "always" || st.precise === false ? "Automatiskt · behöver en inställning" : "Automatiskt · mäts i bakgrunden";
   const row = (k, ic, title, sub, warn = false) => `<button class="dl as-btn set-row" type="button" data-act="trip-set" data-k="${k}"><span class="dl-ic set-ic">${icon(ic, 18)}</span><span><span class="dl-t">${esc(title)}</span><span class="dl-s${warn ? " warn-t" : ""}">${esc(sub)}</span></span><span class="dl-v">›</span></button>`;
   return `<p class="set-grp">Resor</p><article class="card"><div class="rows">
-      ${row("start", "route", "Hur resor startas", startTxt, native && st?.enabled && (st.auth !== "always" || st.precise === false))}
+      ${row("start", "route", "Så loggas resor", startTxt, native && st?.enabled && (st.auth !== "always" || st.precise === false))}
       ${row("hours", "calendar", "Arbetstider", w.on ? `${daysTxt} ${w.from}–${w.to} föreslås som Tjänst` : "Av")}
       ${row("places", "pin", "Sparade platser", S.places.length ? S.places.map((p) => p.name).join(", ") : "Inga sparade än")}
       ${native ? row("bt", "car", "Bilens Bluetooth och CarPlay", linked.length ? `${linked.join(", ")} kopplad` : "Ingen kopplad") : ""}
@@ -5909,7 +5909,7 @@ function tripsSettingsHtml() {
       <button class="dl as-btn set-row" type="button" data-act="trips-off"><span class="dl-ic set-ic">${icon("close", 18)}</span><span><span class="dl-t">Dölj fliken Resor</span><span class="dl-s">Resorna finns kvar. Slå på den igen under Inställningar → Bildagboken Plus.</span></span><span class="dl-v">›</span></button>
     </div></article>`;
 }
-const TRIP_SET_TITLES = { start: "Hur resor startas", hours: "Arbetstider", places: "Sparade platser", bt: "Bilens Bluetooth och CarPlay", log: "Felsökning" };
+const TRIP_SET_TITLES = { start: "Så loggas resor", hours: "Arbetstider", places: "Sparade platser", bt: "Bilens Bluetooth och CarPlay", log: "Felsökning" };
 function tripSetBody(k) {
   const st = S.autoStatus || {};
   if (k === "start") return `<div class="trip-settings">${autoTripsHtml() || `<p class="muted">Automatisk körjournal finns i iPhone-appen. Den känner av när bilen körs och mäter vägen själv.</p>`}</div>`;
@@ -6025,14 +6025,14 @@ function autoTripsHtml() {
     ? st.driving ? `Kör nu${st.meters ? ` · ${fmt(st.meters / 1000, 1)} km` : ""}` : "Känner av när bilen körs och mäter vägen, även när appen är stängd."
     : "Känner av när bilen körs och mäter vägen, även när appen är stängd. Du väljer tjänst eller privat efteråt.")}</small></span>
     <input type="checkbox" class="ios-switch" data-act="auto-toggle"${on ? " checked" : ""} aria-label="Automatisk körjournal"></label>`;
-  if (!on) return `${sw}<button class="link tg-link" type="button" data-act="trip-guide">Hur ska resor startas?</button>`;
+  if (!on) return `${sw}<button class="link tg-link" type="button" data-act="trip-guide">Ändra hur resor loggas</button>`;
   // Det som saknas för att resorna ska mätas i bakgrunden, med en knapp som rättar det.
   let fix = "";
   if (st.auth === "denied") fix = autoFix("Appen får inte använda platsen", "Utan platsen kan resorna inte mätas. Tryck nedan och välj Plats → Alltid.", "Öppna inställningar", "settings");
   else if (st.auth !== "always") fix = autoFix("Platsen behöver vara på Alltid", "Nu mäts resor bara när appen är öppen. Med Alltid mäts de även när telefonen ligger i fickan.", "Tillåt Alltid", "always");
   else if (st.precise === false) fix = autoFix("Exakt plats är avstängd", "Då blir sträckorna fel. Tryck nedan och slå på Exakt plats under Plats.", "Öppna inställningar", "settings");
   const ok = !fix ? `<div class="auto-ok">${icon("check", 16)} Resorna mäts i bakgrunden</div>` : "";
-  return `${sw}${fix}${ok}<button class="link tg-link" type="button" data-act="trip-guide">Hur ska resor startas?</button>${btHtml(st)}${autoLogHtml(st)}`;
+  return `${sw}${fix}${ok}<button class="link tg-link" type="button" data-act="trip-guide">Ändra hur resor loggas</button>${btHtml(st)}${autoLogHtml(st)}`;
 }
 
 // Bilens Bluetooth eller CarPlay: kopplade bilar, förslag att koppla den som telefonen är ansluten till nu,
@@ -6095,18 +6095,18 @@ document.addEventListener("change", (ev) => {
   saveMyInfo("workHours", { ...workHours(), from, to });
   render();
 });
-// Hur ska resor startas? Automatiskt med GPS, eller när man själv trycker eller ansluter till bilen.
+// Hur vill du logga resor? Av sig själv med GPS, eller bara när man själv startar (eller ansluter till bilen).
 function tripGuideSheet(choice = S.tripGuideChoice || (S.autoStatus?.enabled ? "auto" : "")) {
   S.tripGuideChoice = choice;
   const opt = (k, ic, title, text) => `<button class="tg-opt${choice === k ? " on" : ""}" type="button" data-act="trip-guide-pick" data-v="${k}" aria-pressed="${choice === k}">
       <span class="tg-ic">${icon(ic, 26)}</span><span><b>${esc(title)}</b><small>${esc(text)}</small></span><span class="tg-radio" aria-hidden="true">${choice === k ? icon("tick", 14) : ""}</span></button>`;
-  openSheet("Hur ska resor startas?", `<p class="muted" style="margin-top:0">Du kan ändra det när som helst under Resor → Inställningar.</p>
-    ${opt("auto", "route", "Automatiskt", "Appen känner av när bilen körs och mäter vägen, även när appen är stängd.")}
-    ${opt("manual", "hand", "När jag trycker eller ansluter", "Starta med ett tryck, eller automatiskt när telefonen ansluts till bilens Bluetooth eller CarPlay. Ingen GPS i bakgrunden annars.")}
+  openSheet("Hur vill du logga resor?", `<p class="muted" style="margin-top:0">Går att ändra senare under Resor → Inställningar.</p>
+    ${opt("auto", "route", "Av sig själv", "Telefonen märker när bilen rullar och sparar resan, även med appen stängd.")}
+    ${opt("manual", "hand", "Bara när jag säger till", "Du startar resan själv, eller låter den starta när telefonen kopplas till bilens Bluetooth eller CarPlay. Ingen GPS i bakgrunden däremellan.")}
     <ul class="tg-notes">
-      <li>${icon("hand", 16)}<span>Du kan alltid starta en resa själv, vad du än väljer.</span></li>
-      <li>${icon("lock", 16)}<span>Start, mål och vägen sparas i er körjournal och syns bara för ert hushåll.</span></li>
-      <li>${icon("alert", 16)}<span>Håll blicken på vägen. Appen sköter sig själv medan du kör.</span></li>
+      <li>${icon("hand", 16)}<span>Det går alltid att lägga in en resa för hand.</span></li>
+      <li>${icon("lock", 16)}<span>Var du startade, slutade och körde sparas i körjournalen. Bara ert hushåll ser det.</span></li>
+      <li>${icon("alert", 16)}<span>Titta på vägen, inte på telefonen. Appen klarar sig själv under resan.</span></li>
     </ul>
     ${choice === "manual" ? `<details class="more" open><summary>Starta när telefonen ansluts till bilen</summary>
       <ol class="steps"><li>Öppna appen <b>Genvägar</b> → <b>Automation</b> → <b>+</b>.</li><li>Välj <b>Bluetooth</b> eller <b>CarPlay</b>, välj bilen och <b>Kör omedelbart</b>.</li><li>Lägg till åtgärden <b>Bilen är ansluten</b> från Bildagboken.</li></ol></details>` : ""}
@@ -9111,7 +9111,7 @@ const ACTIONS = {
     closeSheet();
     const on = !!S.autoStatus?.enabled;
     if (v === "auto" && !on) await ACTIONS["auto-on"]();
-    else if (v === "manual" && on) { try { S.autoStatus = await tracker().disable(); } catch { /* finns inte */ } render(); showToast("Resor startas när du trycker eller ansluter till bilen."); }
+    else if (v === "manual" && on) { try { S.autoStatus = await tracker().disable(); } catch { /* finns inte */ } render(); showToast("Resor loggas när du själv startar dem."); }
     else render();
   },
   "trip-guide"() { S.tripGuideChoice = null; tripGuideSheet(); },
