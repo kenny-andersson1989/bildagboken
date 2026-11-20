@@ -2111,3 +2111,15 @@ body.car-locked .fab { display: none; }
 .rz-hero > *, .rz-live { min-width: 0; }
 .rz-live .row { flex-wrap: wrap; }
 .rz-live .row [data-act="trip-nav"] { flex-basis: 100%; }
+
+/* Resor: flikar och inställningsrader */
+.trip-tabs { margin: 0 0 14px; }
+.trip-tabs button { position: relative; }
+.tab-n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--accent); color: #fff; font: 700 11px var(--f-body); vertical-align: 1px; }
+.trip-filters { margin: 0 0 12px; flex-wrap: wrap; overflow: visible; }
+.trip-sum { font-size: 13px; font-weight: 500; }
+.set-grp { margin: 14px 6px 6px; font: 700 11.5px var(--f-body); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3, var(--ink-2)); }
+.set-grp:first-of-type { margin-top: 0; }
+.set-row .set-ic { background: var(--accent-soft); color: var(--accent-text); }
+.set-row .warn-t { color: var(--accent-text); }
+#trip-set-body .trip-settings .auto-row:first-child { padding-top: 0; }
