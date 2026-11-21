@@ -2904,8 +2904,9 @@ function trailerCard(c) {
       <button class="btn-soft" type="submit">Spara</button>
     </form></div>`;
   const x = trailerSel(c), list = trailersOf(c);
-  const licSel = `<select id="tow-lic" class="tow-lic" aria-label="Ditt körkort">${Object.keys(LICENSES).map((k) => `<option value="${k}"${k === lic ? " selected" : ""}>${k}</option>`).join("")}</select>`;
-  if (!x) return `<div class="card tow-card"><h2 class="tow-head">Släpvagn <label class="tow-lic-l">Körkort ${licSel}</label></h2>
+  const licSel = `<div class="tow-lic-row"><span class="label">Körkort</span><div class="seg seg-sm" role="group" aria-label="Ditt körkort">${Object.keys(LICENSES).map((k) => `<button type="button" data-act="license" data-v="${k}" aria-pressed="${k === lic}">${k}</button>`).join("")}</div></div>`;
+  if (!x) return `<div class="card tow-card"><h2>Släpvagn</h2>
+    ${licSel}
     <p class="muted">Får du dra släpet? Fyll i vad som står på släpets skylt, så räknar appen ut det.</p>
     <div class="tow-sign"><span class="sign">TOTALVIKT<br>1000 kg<br>TJV 250</span><span>Vikterna står på skylten vid släpets drag, eller i släpets registreringsbevis.</span></div>
     <div class="ask" style="margin:0"><button class="btn-soft" type="button" data-act="trailer-edit">${icon("plus", 16)} Fyll i ditt släp</button></div></div>`;
@@ -2916,7 +2917,8 @@ function trailerCard(c) {
     const sum = r.bar.curb + r.bar.load + r.bar.rest, pc = (v) => `${(v / sum) * 100}%`;
     bar = `<div class="tow-bar" aria-hidden="true"><span class="tb-curb" style="width:${pc(r.bar.curb)}">${esc(fmt(r.bar.curb))}</span><span class="tb-load" style="width:${pc(r.bar.load)}">${esc(`Last ${fmt(r.bar.load)}`)}</span>${r.bar.rest > 0 ? `<span class="tb-rest" style="width:${pc(r.bar.rest)}">${esc(fmt(r.bar.rest))}</span>` : ""}</div>`;
   }
-  return `<div class="card tow-card"><h2 class="tow-head">Släpvagn <label class="tow-lic-l">Körkort ${licSel}</label></h2>
+  return `<div class="card tow-card"><h2>Släpvagn</h2>
+    ${licSel}
     <div class="tow-pick">${list.map((y) => `<button type="button" class="chip-btn" data-act="trailer-pick" data-id="${esc(y.id)}" aria-pressed="${y.id === x.id}">${esc(trailerName(y, list))}</button>`).join("")}<button type="button" class="chip-btn tow-new" data-act="trailer-edit">${icon("plus", 14)} Nytt</button><button class="link tow-edit" type="button" data-act="trailer-edit" data-id="${esc(x.id)}">Ändra</button></div>
     <div class="tow-verdict ${r.level}"><span class="tv-k">${esc(r.k)}</span>${r.load != null ? `<span class="tv-num">${esc(fmt(r.load))}<small>kg last</small></span>` : ""}${r.title ? `<span class="tv-title">${esc(r.title)}</span>` : ""}</div>
     ${bar}
