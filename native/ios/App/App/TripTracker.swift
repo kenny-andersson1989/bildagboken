@@ -172,16 +172,31 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     }
     // Automatisk resa: en ruta på låsskärmen medan den pågår (om iOS tillåter det just då), borta när den är klar.
     private func startAutoActivity() {
-        guard #available(iOS 16.2, *), manualId == nil, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        guard Activity<TripActivityAttributes>.activities.isEmpty else { return }
+        guard #available(iOS 16.2, *) else { return }
+        guard manualId == nil else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { log("Live Activity är avstängd för appen i Inställningar"); return }
+        // Redan igång för den här resan: inget att göra. En gammal ruta som hänger kvar stängs.
+        let current = Activity<TripActivityAttributes>.activities
+        if current.contains(where: { $0.attributes.tripId == "auto" && $0.activityState == .active }) { return }
+        if current.contains(where: { $0.attributes.tripId != "auto" && $0.activityState == .active }) { return }
+        if UIApplication.shared.applicationState != .active { log("Live Activity startar när appen öppnas"); return }
         let attrs = TripActivityAttributes(tripId: "auto", start: startTime ?? Date(), car: carName ?? "", lang: en ? "en" : "sv")
         let st = TripActivityAttributes.ContentState(from: "", to: "", kind: "", km: (meters / 100).rounded() / 10, paused: false, since: nil, elapsed: 0)
-        _ = try? Activity.request(attributes: attrs, content: ActivityContent(state: st, staleDate: nil), pushType: nil)
+        do {
+            _ = try Activity.request(attributes: attrs, content: ActivityContent(state: st, staleDate: nil), pushType: nil)
+            log("Live Activity startad")
+        } catch {
+            log("Live Activity kunde inte startas: \(error.localizedDescription)")
+        }
     }
     // Appen kommer fram medan en automatisk resa pågår: nu tillåter iOS att rutan på låsskärmen startas.
     func appDidBecomeActive() {
         guard enabled, driving else { return }
-        startAutoActivity()
+        // En kort stund efter att appen har kommit fram, då iOS räknar den som öppen.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self, self.driving else { return }
+            self.startAutoActivity()
+        }
     }
     // En tyst notis när en automatisk resa startar. Tryck på den öppnar appen, och då startar rutan på låsskärmen.
     private func notifyStarted() {
