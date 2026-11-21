@@ -55,6 +55,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     private var lastLoc: CLLocation?
     private var lastMove = Date()
     private var meters: CLLocationDistance = 0
+    private var pre: [CLLocation] = []  // positioner medan GPS:en letar efter en resa, innan farten är uppe
 
     var enabled: Bool { defaults.bool(forKey: enabledKey) }
 
@@ -122,6 +123,14 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     private(set) var manualId: String?
     private var manualPaused = false
     private var manualLast: CLLocation?
+    // Vägen för en egen resa, på samma sätt som för en automatisk. Sparas i telefonen, så att den finns kvar
+    // även om iOS stänger appen under resan.
+    private let manualPathKey = "autoTrips.manualPath"
+    private var manualPath: [CLLocationCoordinate2D] = []
+    private func saveManualPath() { defaults.set(manualPath.map { [$0.latitude, $0.longitude] }, forKey: manualPathKey) }
+    private func loadManualPath() {
+        manualPath = (defaults.array(forKey: manualPathKey) as? [[Double]] ?? []).compactMap { $0.count == 2 ? CLLocationCoordinate2D(latitude: $0[0], longitude: $0[1]) : nil }
+    }
     private var lastActivityPush = Date.distantPast
     var manualMeters: Double {
         get { defaults.double(forKey: manualMetersKey) }
@@ -129,7 +138,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     }
     func manualStart(id: String, paused: Bool) {
         if manualId != id {
-            if defaults.string(forKey: "autoTrips.manualId") != id { manualMeters = 0 }
+            if defaults.string(forKey: "autoTrips.manualId") != id { manualMeters = 0; manualPath = []; saveManualPath() } else { loadManualPath() }
             defaults.set(id, forKey: "autoTrips.manualId")
             manualId = id
             manualLast = nil
@@ -143,6 +152,8 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         guard manualId != nil else { return }
         manualId = nil
         manualLast = nil
+        manualPath = []
+        defaults.removeObject(forKey: manualPathKey)
         defaults.removeObject(forKey: "autoTrips.manualId")
         if !watching { manager.stopUpdatingLocation() }
     }
@@ -153,6 +164,9 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
             // Små hopp när bilen står still är GPS-brus.
             if d >= 15 || loc.speed > 1.5 { manualMeters += d; manualLast = loc }
         } else { manualLast = loc }
+        let before = manualPath.count
+        if manualPath.isEmpty { if loc.horizontalAccuracy <= 30 { manualPath.append(loc.coordinate) } } else { addPathPoint(loc, to: &manualPath) }
+        if manualPath.count != before, manualPath.count % 5 == 0 { saveManualPath() }
         pushActivityKm(manualMeters, auto: false)
     }
 
@@ -283,6 +297,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
 
     private func resetTrip() {
         driving = false
+        pre = []
         quickStop = false
         path = []
         carName = nil
@@ -335,11 +350,26 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         let speed = max(loc.speed, 0)
 
         if !driving {
+            // Positionerna innan farten är uppe (ut från parkeringen, första gatan) sparas, så att resan och
+            // vägen börjar där bilen faktiskt började rulla och inte först vid 18 km/h.
+            if loc.horizontalAccuracy <= 30 {
+                if let p = pre.last, p.distance(from: loc) < 10 { } else { pre.append(loc) }
+                pre.removeAll { now.timeIntervalSince($0.timestamp) > 300 }
+            }
             if speed >= driveSpeed {
                 driving = true
-                startTime = now
-                startLoc = lastLoc ?? loc
-                meters = lastLoc.map { loc.distance(from: $0) } ?? 0
+                // Från den sista positionen där telefonen fortfarande stod still (inom 25 m från den första).
+                var moved: [CLLocation] = []
+                if let anchor = pre.first {
+                    let i = pre.lastIndex { $0.distance(from: anchor) < 25 } ?? 0
+                    moved = Array(pre[i...])
+                }
+                startTime = moved.first?.timestamp ?? now
+                startLoc = moved.first ?? lastLoc ?? loc
+                meters = 0
+                var prevPt: CLLocation? = nil
+                for p in moved + [loc] { if let q = prevPt { meters += p.distance(from: q) }; prevPt = p }
+                if moved.isEmpty { meters = lastLoc.map { loc.distance(from: $0) } ?? 0 }
                 // GPS:en vaknar oftast en bit in i resan. Står bilen parkerad i närheten (inom 3 km) och har
                 // den stått där sedan förra resan, räknas resan därifrån och sträckan dit läggs till.
                 if let p = parked, let first = startLoc, p.timestamp < now {
@@ -353,7 +383,10 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
                     }
                 }
                 lastMove = now
-                path = [startLoc?.coordinate ?? loc.coordinate, loc.coordinate]
+                path = [startLoc?.coordinate ?? loc.coordinate]
+                for p in moved { addPathPoint(p, to: &path) }
+                if let last = path.last, CLLocation(latitude: last.latitude, longitude: last.longitude).distance(from: loc) > 5 { path.append(loc.coordinate) }
+                pre = []
                 checkCar(force: true)
                 log("Resa startad")
                 startAutoActivity()
@@ -372,7 +405,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
             let d = loc.distance(from: prev)
             // Små hopp när bilen står still är GPS-brus och räknas inte.
             if d >= 10 || speed > 1.5 { meters += d; lastLoc = loc }
-            addPathPoint(loc)
+            addPathPoint(loc, to: &path)
         } else {
             lastLoc = loc
         }
@@ -399,11 +432,12 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         let la1 = a.latitude * .pi / 180, la2 = b.latitude * .pi / 180, dl = (b.longitude - a.longitude) * .pi / 180
         return atan2(sin(dl) * cos(la2), cos(la1) * sin(la2) - sin(la1) * cos(la2) * cos(dl)) * 180 / .pi
     }
-    private func addPathPoint(_ loc: CLLocation) {
+    private func addPathPoint(_ loc: CLLocation, to path: inout [CLLocationCoordinate2D]) {
         guard loc.horizontalAccuracy <= 30, path.count < 8000, let last = path.last else { return }
         let d = CLLocation(latitude: last.latitude, longitude: last.longitude).distance(from: loc)
         if d >= 100 { path.append(loc.coordinate); return }
-        guard d >= 15, path.count >= 2 else { return }
+        guard d >= 15 else { return }
+        if path.count < 2 { if d >= 30 { path.append(loc.coordinate) }; return }
         var turn = abs(bearing(path[path.count - 2], last) - bearing(last, loc.coordinate))
         if turn > 180 { turn = 360 - turn }
         if turn >= 12 { path.append(loc.coordinate) }
@@ -598,7 +632,11 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         r["watching"] = watching
         // Har man tryckt på en notis om en resa: säg det en gång till webbappen.
         if defaults.bool(forKey: "autoTrips.openTrips") { r["openTrips"] = true; defaults.removeObject(forKey: "autoTrips.openTrips") }
-        if let id = manualId ?? defaults.string(forKey: "autoTrips.manualId") { r["manualId"] = id; r["manualMeters"] = manualMeters.rounded() }
+        if let id = manualId ?? defaults.string(forKey: "autoTrips.manualId") {
+            r["manualId"] = id; r["manualMeters"] = manualMeters.rounded()
+            if manualPath.isEmpty { loadManualPath() }
+            if manualPath.count >= 2 { r["manualPath"] = encodePath(manualPath) }
+        }
         r["log"] = defaults.array(forKey: logKey) as? [[String: Any]] ?? []
         if let name = currentCarRoute() { r["carNow"] = name }
         return r

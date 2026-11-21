@@ -6854,6 +6854,10 @@ async function saveTrip(form) {
   if (odoEnd != null && odoEnd - odoStart > 300) return formError("Sträckan ser för lång ut. Mätarställningen anges i km, till exempel 214 806.");
   // En ny resa som startar lägre än senast kända mätarställning: fråga, det är oftast en felskrivning.
   const lastOdo = odoOf(c);
+  // Avsluta en egen resa: hämta det GPS:en har mätt (sträckan och vägen) från telefonen just nu.
+  let gps = S.autoStatus;
+  if (mode === "end" && autoAvailable()) { try { const st = await tracker().status(); if (st) gps = { ...(S.autoStatus || {}), ...st }; } catch { /* äldre version av appen */ } }
+  const gpsOwn = mode === "end" && gps?.manualId === old?.id;
   if (!old && !form.dataset.gap && lastOdo != null && odoStart < lastOdo - 0.05) {
     const ok = await confirmDialog({ title: "Stämmer mätarställningen?", lines: [`${fmtKm(odoStart)} är lägre än senast kända, ${fmtKm(lastOdo)}.`], okLabel: "Ja, spara", warn: "" });
     if (!ok) return;
@@ -6876,7 +6880,10 @@ async function saveTrip(form) {
     // Automatiska resor behåller sina GPS-uppgifter. Ändras mätaren är den inte längre beräknad.
     auto: old?.auto || undefined, autoMeters: old?.autoMeters ?? undefined,
     endLoc: (mode === "end" ? parsePos(str("endPos")) : null) || old?.endLoc || undefined,
-    gpsMeters: mode === "end" && S.autoStatus?.manualId === old?.id && S.autoStatus.manualMeters > 0 ? Math.round(S.autoStatus.manualMeters) : old?.gpsMeters ?? undefined,
+    gpsMeters: gpsOwn && gps.manualMeters > 0 ? Math.round(gps.manualMeters) : old?.gpsMeters ?? undefined,
+    // Vägen som GPS:en mätte: från telefonen när en egen resa avslutas, annars den som redan finns (automatiska resor).
+    path: (gpsOwn && typeof gps.manualPath === "string" && gps.manualPath.length < 150000 ? gps.manualPath : null) || old?.path || undefined,
+    btName: old?.btName || undefined, suggestFrom: old?.suggestFrom || undefined,
     pausedMs: (old?.pausedAt ? (old.pausedMs || 0) + (Date.now() - tsMs(old.pausedAt)) : old?.pausedMs) || undefined,
     odoEstimated: mode === "new" ? (old?.odoEstimated ? odoStart === old.odoStart && odoEnd === old.odoEnd : undefined)
       : (old?.odoEstimated || untouched("#tr-odoStart") || untouched("#tr-odoEnd")) || undefined,
