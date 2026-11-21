@@ -5896,6 +5896,92 @@ document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && S.logD
   });
 })();
 
+/* Svep åt vänster på en post (i loggen, Översikt, kommande bokningar och resor) för att ta bort den.
+   Lite: knappen Ta bort syns till höger. Hela vägen: posten tas bort direkt. Posten hamnar i papperskorgen
+   och kan ångras, som när man tar bort den i rutan. */
+const SWIPE_DEL = {
+  'open-entry': { act: "delete-entry", ok: (id) => S.entries.some((e) => e.id === id) },
+  'open-booking': { act: "delete-booking", ok: (id) => (car()?.bookings || []).some((b) => b.id === id) },
+  'edit-trip': { act: "delete-trip", ok: (id) => S.trips.some((t) => t.id === id && t.odoEnd != null) },
+};
+(() => {
+  const OPEN = 88;
+  let row = null, wrap = null, btn = null, x0 = 0, y0 = 0, dx = 0, lock = null, base = 0, armed = false, opened = null, noClick = 0;
+  const conf = (r) => { const c = SWIPE_DEL[r?.dataset.act]; return c && c.ok(r.dataset.id) ? c : null; };
+  const unwrap = (w) => { if (!w?.isConnected) return; const r = w.querySelector(":scope > .del-row"); if (r) { r.classList.remove("del-row"); r.style.transform = ""; r.style.transition = ""; w.replaceWith(r); } else w.remove(); };
+  const close = (w, anim = true) => {
+    if (!w) return;
+    const r = w.querySelector(":scope > .del-row"), b = w.querySelector(":scope > .del-act");
+    if (opened === w) opened = null;
+    if (!anim || !r) return unwrap(w);
+    r.style.transition = b.style.transition = "transform .2s ease, width .2s ease";
+    r.style.transform = "translateX(0)"; b.style.width = "0px";
+    setTimeout(() => unwrap(w), 210);
+  };
+  const doDelete = (w, r) => {
+    const c = conf(r);
+    if (!c) return close(w);
+    navigator.vibrate?.(10);
+    const h = w.offsetHeight;
+    w.style.height = `${h}px`;
+    r.style.transition = "transform .18s ease"; r.style.transform = "translateX(-110%)";
+    const b = w.querySelector(":scope > .del-act"); if (b) { b.style.transition = "width .18s ease"; b.style.width = "calc(100% - 8px)"; }
+    setTimeout(() => { w.style.transition = "height .18s ease, opacity .18s ease"; w.style.height = "0px"; w.style.opacity = "0"; }, 170);
+    setTimeout(() => { if (opened === w) opened = null; ACTIONS[c.act]({ dataset: { id: r.dataset.id } }); setTimeout(() => { if (w.isConnected) { w.style.height = ""; w.style.opacity = ""; close(w, false); } }, 400); }, 360);
+  };
+  document.addEventListener("touchstart", (ev) => {
+    if (opened && !opened.contains(ev.target)) { close(opened); noClick = Date.now(); }
+    const r = ev.target.closest?.(".entry, .dl.as-btn");
+    if (!r || !conf(r) || r.closest(".swipe-wrap, #sheet")) return;
+    row = r; x0 = ev.touches[0].clientX; y0 = ev.touches[0].clientY; dx = 0; lock = null; armed = false;
+    wrap = r.parentElement?.classList.contains("del-wrap") ? r.parentElement : null;
+    base = wrap && opened === wrap ? -OPEN : 0;
+  }, { passive: true });
+  document.addEventListener("touchmove", (ev) => {
+    if (!row) return;
+    const mx = ev.touches[0].clientX - x0, my = ev.touches[0].clientY - y0;
+    if (lock == null && (Math.abs(mx) > 10 || Math.abs(my) > 10)) lock = Math.abs(mx) > Math.abs(my) * 1.2 ? "x" : "y";
+    if (lock !== "x") return;
+    if (!wrap) {
+      // Första sidledsrörelsen: lägg raden i en ram med knappen bakom.
+      wrap = document.createElement("div");
+      wrap.className = "del-wrap";
+      row.replaceWith(wrap);
+      wrap.appendChild(row);
+      row.classList.add("del-row");
+      wrap.insertAdjacentHTML("beforeend", `<button class="del-act" type="button" aria-label="Ta bort">${icon("trash", 20)}<span>Ta bort</span></button>`);
+      if (EN && typeof trTree === "function") trTree(wrap.querySelector(".del-act"));
+    }
+    btn = wrap.querySelector(":scope > .del-act");
+    const w = wrap.offsetWidth;
+    dx = Math.min(0, base + mx);
+    row.style.transition = btn.style.transition = "none";
+    row.style.transform = `translateX(${dx}px)`;
+    btn.style.width = `${Math.max(0, -dx - 8)}px`;
+    const nowArmed = -dx > w * 0.6;
+    if (nowArmed !== armed) { armed = nowArmed; wrap.classList.toggle("armed", armed); if (armed) navigator.vibrate?.(8); }
+  }, { passive: true });
+  document.addEventListener("touchend", () => {
+    if (!row) return;
+    const r = row, w = wrap; row = null;
+    if (lock !== "x" || !w) return;
+    noClick = Date.now();
+    if (armed) return doDelete(w, r);
+    if (-dx > 50) {
+      if (opened && opened !== w) close(opened);
+      r.style.transition = "transform .2s ease"; btn.style.transition = "width .2s ease";
+      r.style.transform = `translateX(${-OPEN}px)`; btn.style.width = `${OPEN - 8}px`;
+      opened = w;
+    } else close(w);
+  });
+  // Ett tryck på raden efter ett svep ska inte öppna posten. Tryck på Ta bort tar bort.
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest?.(".del-act");
+    if (b) { ev.preventDefault(); ev.stopImmediatePropagation(); const w = b.parentElement; doDelete(w, w.querySelector(":scope > .del-row")); return; }
+    if (Date.now() - noClick < 350) { ev.preventDefault(); ev.stopImmediatePropagation(); }
+  }, true);
+})();
+
 // Fliken Resor: allt som har med körjournalen att göra.
 // Tjänst och Privat för en automatisk resa. Det som de sparade platserna föreslår är markerat.
 const reviewBtns = (t) => `<div class="review-btns">${["tjanst", "privat"].map((k) => `<button class="btn-soft${t.suggestKind === k ? " sug" : ""}" type="button" data-act="trip-kind" data-id="${esc(t.id)}" data-kind="${k}">${k === "tjanst" ? "Tjänst" : "Privat"}</button>`).join("")}<button class="link" type="button" data-act="edit-trip" data-id="${esc(t.id)}">Mer</button></div>${t.suggestKind ? `<p class="hint sug-t">${esc(`Förslag: ${t.suggestKind === "tjanst" ? "Tjänst" : "Privat"}, ${t.suggestFrom === "hours" ? "från dina arbetstider" : "från dina sparade platser"}`)}</p>` : ""}`;
