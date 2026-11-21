@@ -470,6 +470,7 @@ export const EN = {
   "Mätare vid start (km)": "Odometer at start (km)",
   "Mätare vid slut (km)": "Odometer at end (km)",
   "Vart": "Where to",
+  "Släp": "Trailer",
   "Du får dra det, även fullt": "You can tow it, even fully loaded",
   "Du får dra det, men inte fullt": "You can tow it, but not fully loaded",
   "Bilen orkar det": "The car can manage it",
@@ -2007,6 +2008,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 km eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^([\d\s]+) kg totalvikt(?: · tomt ([\d\s]+) kg)? · (bromsat|obromsat)$/, (m, a, b, c) => `${a} kg gross weight${b ? ` · empty ${b} kg` : ""} · ${c === "bromsat" ? "braked" : "unbraked"}`],
   [/^Du behöver (B96|BE)$/, "You need $1"],
   [/^Högst ([\d\s]+) kg med last$/, "At most $1 kg with load"],
   [/^Släpet ([\d\s]+) kg av 3 500 kg\.$/, "Trailer $1 kg of 3,500 kg."],
