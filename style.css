@@ -2133,7 +2133,6 @@ body.car-locked .fab { display: none; }
 .lv-card .field { margin: 0; }
 .lv-card .hint { margin: -4px 0 0; }
 .lv-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #2FBF6B; margin-right: 6px; vertical-align: 1px; animation: lv-pulse 1.6s ease-in-out infinite; }
-.rz-live.paused .lv-dot { animation: none; background: #F0843F; }
 @keyframes lv-pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .lv-dot { animation: none; } }
 .lv-map { height: 170px; margin: 0; }
@@ -2143,3 +2142,8 @@ body.car-locked .fab { display: none; }
 .lv-btns { display: flex; flex-wrap: wrap; gap: 8px; }
 .lv-btns button { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lv-btns [data-act="trip-nav"] { flex-basis: 100%; }
+.lv-head { display: grid; gap: 2px; }
+.lv-head .k { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #2f9e5b; }
+.lv-head .k.old, .lv-head.paused .k { color: #E77026; }
+.lv-head .s { color: var(--ink-2); font-size: 14px; }
+.lv-head.paused .lv-dot { animation: none; background: #E77026; }

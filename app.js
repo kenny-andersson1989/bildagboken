@@ -5864,8 +5864,7 @@ function liveTripCard(o, old) {
   const chips = [...S.places.map((p) => ({ name: p.name, loc: placeLoc(p.name) })), ...carTrips().filter((t) => t.to && t !== o).map((t) => ({ name: t.to, loc: t.toLoc || null }))]
     .filter((x) => x.name && !seen.has(x.name) && seen.add(x.name)).slice(0, 8);
   return `<form class="lv-card" data-form="live-trip" data-keep data-id="${esc(o.id)}" novalidate>
-      <div class="rz-live${o.pausedAt ? " paused" : ""}"><span class="k${old ? " old" : ""}"><span class="lv-dot"></span>${o.pausedAt ? "Pausad" : old ? "Glömde du avsluta?" : "Pågående resa"}</span><span class="big" data-trip-bar>${esc(tripBarText(o))}</span>
-        <span class="s">${esc(from)}</span></div>
+      <div class="lv-head${o.pausedAt ? " paused" : ""}"><span class="k${old ? " old" : ""}"><span class="lv-dot"></span>${o.pausedAt ? "Pausad" : old ? "Glömde du avsluta?" : "Pågående resa"}</span><span class="s">${esc(from)}</span></div>
       ${o.startLoc || o.toLoc?.lat != null ? `<div class="bk-map trip-map lv-map" id="lv-map"></div>` : ""}
       <div class="seg" role="group" aria-label="Tjänst eller privat">${["tjanst", "privat"].map((k) => `<button type="button" data-act="live-kind" data-kind="${k}" aria-pressed="${(o.kind || "tjanst") === k}">${k === "tjanst" ? "Tjänst" : "Privat"}</button>`).join("")}</div>
       ${field("Vart", `<input id="lv-to" name="to" value="${esc(o.to || "")}" placeholder="Sök plats eller adress" autocomplete="off" enterkeyhint="done"><span class="suggest" id="lv-to-suggest" role="listbox" hidden></span>`)}
@@ -5927,14 +5926,18 @@ async function drawLiveMap() {
       showsCompass: mk.FeatureVisibility?.Hidden, showsScale: mk.FeatureVisibility?.Hidden,
       colorScheme: dark ? mk.Map?.ColorSchemes?.Dark : mk.Map?.ColorSchemes?.Light,
     });
-    const pad = new mk.Padding(40, 30, 40, 30);
     const items = [];
     if (a) items.push(new mk.MarkerAnnotation(new mk.Coordinate(a.lat, a.lon), { title: "Start", glyphText: "A", color: "#2f9e5b" }));
     if (to) items.push(new mk.MarkerAnnotation(new mk.Coordinate(to.lat, to.lon), { title: o.to || "Mål", glyphText: "B", color: "#E77026" }));
     if (here && mk.CircleOverlay) items.push(new mk.CircleOverlay(new mk.Coordinate(here.lat, here.lon), 40, { style: new mk.Style({ fillColor: "#1a73e8", fillOpacity: 0.9, strokeColor: "#fff", lineWidth: 3 }) }));
     items.forEach((x) => (x instanceof mk.MarkerAnnotation ? map.addAnnotation(x) : map.addOverlay(x)));
-    map.showItems(items, { animate: false, padding: pad });
-    if (pts.length === 1 || (pts.length === 2 && distM(pts[0], pts[1]) < 150)) map.cameraDistance = 1500;
+    // Zooma in på punkterna (showItems räknar fel när kartan nyss har skapats).
+    const fit = (list) => {
+      const la = list.map((x) => x.lat), lo = list.map((x) => x.lon);
+      const dLa = Math.max(0.01, (Math.max(...la) - Math.min(...la)) * 1.6), dLo = Math.max(0.02, (Math.max(...lo) - Math.min(...lo)) * 1.6);
+      map.region = new mk.CoordinateRegion(new mk.Coordinate((Math.max(...la) + Math.min(...la)) / 2, (Math.max(...lo) + Math.min(...lo)) / 2), new mk.CoordinateSpan(dLa, dLo));
+    };
+    fit(pts);
     // Vägen härifrån till målet, enligt Apple Kartor.
     const from = here || a;
     if (to && from && distM(from, to) > 150) new mk.Directions().route({ origin: new mk.Coordinate(from.lat, from.lon), destination: new mk.Coordinate(to.lat, to.lon), transportType: mk.Directions.Transport.Automobile }, (err, data) => {
@@ -5942,7 +5945,7 @@ async function drawLiveMap() {
       if (err || !line || liveMap !== map) return;
       line.style = new mk.Style({ strokeColor: "#E77026", lineWidth: 5, lineCap: "round", lineJoin: "round", strokeOpacity: 0.85, lineDash: [8, 8] });
       map.addOverlay(line);
-      map.showItems([...items, line], { animate: false, padding: pad });
+      fit([...pts, ...(line.points || []).map((c) => ({ lat: c.latitude, lon: c.longitude }))]);
     });
   } catch (err) {
     console.warn("Apple-kartan kunde inte visas", err);
