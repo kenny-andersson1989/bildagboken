@@ -1240,6 +1240,7 @@ export const EN = {
   "Någon har redan skapat en och gett dig en inbjudningskod.": "Someone has already created one and given you an invite code.",
   "‹ Tillbaka": "‹ Back",
   "Syns för dem du bjuder in.": "Shown to the people you invite.",
+  "Syns för dem du bjuder in. Går att ändra senare.": "Shown to the people you invite. You can change it later.",
   "Till exempel Familjen Andersson": "For example The Andersons",
   "Koden får du av den som har skapat bildagboken. Den finns under Inställningar → Hushåll.": "You get the code from whoever created the car diary. It's under Settings → Household.",
   "Kollar koden …": "Checking the code …",
