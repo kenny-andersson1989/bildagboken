@@ -52,6 +52,21 @@ if ! app-store-connect apps list >/dev/null; then
   exit 1
 fi
 
+# Byggnumret måste vara högre än alla som redan finns i TestFlight. Fråga Apple, så fungerar det
+# oavsett vilket Codemagic-konto (eller GitHub Actions) som bygger.
+echo "▶ Byggnummer"
+APPLE_APP_ID=$(app-store-connect apps list --bundle-id-identifier "$BUNDLE" --strict-match-identifier --json 2>/dev/null \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["id"] if d else "")' 2>/dev/null || true)
+if [ -n "$APPLE_APP_ID" ]; then
+  LATEST=$(app-store-connect get-latest-testflight-build-number "$APPLE_APP_ID" 2>/dev/null | tail -1 | tr -dc '0-9' || true)
+  if [ -n "$LATEST" ] && [ "$LATEST" -ge "$BUILD_NUMBER" ]; then
+    echo "  Senaste i TestFlight är $LATEST, så det här bygget får nummer $((LATEST + 1)) (i stället för $BUILD_NUMBER)"
+    BUILD_NUMBER=$((LATEST + 1))
+  else
+    echo "  Bygget får nummer $BUILD_NUMBER (senaste i TestFlight: ${LATEST:-okänt})"
+  fi
+fi
+
 echo "▶ Förbereder projektet"
 npm ci
 npx cap sync ios
