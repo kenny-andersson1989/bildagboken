@@ -6467,7 +6467,7 @@ async function importAutoTrips() {
         from: pFrom?.name || null, to: pTo?.name || null, purpose: null, kind, driver: uid(),
         suggestKind: kind ? null : kindFromPlaces(pFrom, pTo) || kindFromHours(r.start), reviewedAt: kind ? Date.now() : null,
         suggestFrom: kind ? null : kindFromPlaces(pFrom, pTo) ? "places" : kindFromHours(r.start) ? "hours" : null,
-        path: typeof r.path === "string" && r.path.length < 60000 ? r.path : null, btName: r.car || null,
+        path: typeof r.path === "string" && r.path.length < 150000 ? r.path : null, btName: r.car || null,
         startedAt: r.start, endedAt: r.end, createdBy: uid(), createdAt: Date.now(),
       });
       await setDoc(doc(col("trips"), id), data);
