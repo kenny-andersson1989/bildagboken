@@ -2139,11 +2139,14 @@ body.car-locked .fab { display: none; }
 .lv-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-top: -4px; padding-bottom: 2px; }
 .lv-chips::-webkit-scrollbar { display: none; }
 .lv-chips .chip-btn { flex: none; white-space: nowrap; }
-.lv-btns { display: flex; flex-wrap: wrap; gap: 8px; }
-.lv-btns button { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lv-btns [data-act="trip-nav"] { flex-basis: 100%; }
 .lv-head { display: grid; gap: 2px; }
 .lv-head .k { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #2f9e5b; }
 .lv-head .k.old, .lv-head.paused .k { color: #E77026; }
 .lv-head .s { color: var(--ink-2); font-size: 14px; }
 .lv-head.paused .lv-dot { animation: none; background: #E77026; }
+/* Pausa i spelaren längst ner: två streck, eller en triangel när resan är pausad. */
+.tripbar .tb-pause { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--ground) 35%, transparent); background: transparent; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.tripbar .tb-pause span { width: 12px; height: 14px; border-left: 4px solid var(--ground); border-right: 4px solid var(--ground); box-sizing: border-box; }
+.tripbar .tb-pause.on span { width: 0; height: 0; border-style: solid; border-width: 7px 0 7px 12px; border-color: transparent transparent transparent var(--ground); margin-left: 3px; }
+.tripbar .tb-pause.on { background: color-mix(in srgb, var(--ground) 14%, transparent); }
+.lv-map #lv-map { position: absolute; inset: 0; }
