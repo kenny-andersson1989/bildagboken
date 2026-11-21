@@ -5865,14 +5865,13 @@ function liveTripCard(o, old) {
     .filter((x) => x.name && !seen.has(x.name) && seen.add(x.name)).slice(0, 8);
   return `<form class="lv-card" data-form="live-trip" data-keep data-id="${esc(o.id)}" novalidate>
       <div class="lv-head${o.pausedAt ? " paused" : ""}"><span class="k${old ? " old" : ""}"><span class="lv-dot"></span>${o.pausedAt ? "Pausad" : old ? "Glömde du avsluta?" : "Pågående resa"}</span><span class="s">${esc(from)}</span></div>
-      ${o.startLoc || o.toLoc?.lat != null ? `<div class="bk-map trip-map lv-map" id="lv-map"></div>` : ""}
+      ${o.startLoc || o.toLoc?.lat != null ? `<div class="bk-map trip-map lv-map"><div id="lv-map"></div>${o.to ? `<button class="bk-map-open" type="button" data-act="trip-nav" aria-label="${esc(`Vägbeskrivning till ${o.to}`)}"><span>${icon("pin", 14)} Vägbeskrivning</span></button>` : ""}</div>` : ""}
       <div class="seg" role="group" aria-label="Tjänst eller privat">${["tjanst", "privat"].map((k) => `<button type="button" data-act="live-kind" data-kind="${k}" aria-pressed="${(o.kind || "tjanst") === k}">${k === "tjanst" ? "Tjänst" : "Privat"}</button>`).join("")}</div>
-      ${field("Vart", `<input id="lv-to" name="to" value="${esc(o.to || "")}" placeholder="Sök plats eller adress" autocomplete="off" enterkeyhint="done"><span class="suggest" id="lv-to-suggest" role="listbox" hidden></span>`)}
+      ${field("Till", `<input id="lv-to" name="to" value="${esc(o.to || "")}" placeholder="Sök plats eller adress" autocomplete="off" enterkeyhint="done"><span class="suggest" id="lv-to-suggest" role="listbox" hidden></span>`)}
       ${chips.length ? `<div class="lv-chips">${chips.map((x) => `<button type="button" class="chip-btn" data-act="live-to-pick" data-name="${esc(x.name)}" data-loc="${esc(x.loc ? JSON.stringify(x.loc) : "")}" aria-pressed="${o.to === x.name}">${esc(x.name)}</button>`).join("")}</div>` : ""}
       ${field("Ärende", `<input id="lv-purpose" name="purpose" value="${esc(o.purpose || "")}" placeholder="Till exempel kundmöte" autocomplete="off" enterkeyhint="done">`)}
       ${members.length > 1 ? field("Förare", `<select id="lv-driver" name="driver">${members.map((u) => `<option value="${esc(u)}"${(o.driver || o.createdBy) === u ? " selected" : ""}>${esc(u === uid() ? "Du" : memberName(u))}</option>`).join("")}</select>`) : ""}
-      <p class="hint">Sparas direkt. Avsluta resan med knappen längst ner.</p>
-      <div class="lv-btns"><button class="btn-soft" type="button" data-act="trip-pause">${o.pausedAt ? "Fortsätt" : "Pausa"}</button>${o.to ? `<button class="btn-soft" type="button" data-act="trip-nav">${icon("pin", 16)} ${esc(`Vägbeskrivning till ${o.to}`)}</button>` : ""}</div>
+      <p class="hint">Sparas direkt. Pausa och avsluta resan i rutan längst ner.</p>
     </form>`;
 }
 // Sparar en ändring på den pågående resan, utan att rita om sidan medan man skriver.
@@ -6361,12 +6360,13 @@ function renderTripBar() {
   const old = Date.now() - tsMs(o.startedAt) >= 4 * 36e5;
   const html = `<button class="tb-main" type="button" ${tripsVisible() ? `data-go="resor"` : `data-act="start-trip"`} aria-label="Pågående resa. Tryck för att se resan.">
       <span class="tb-ic">${icon("car", 22)}<span class="tb-dot"></span></span>
-      <span class="tb-txt"><span class="tb-k${old ? " old" : ""}">${old ? "Glömde du avsluta?" : "Resa pågår"}</span><span class="tb-t" data-trip-bar>${esc(tripBarText(o))}</span>${o.to ? `<span class="tb-s">${esc(`Mot ${o.to}`)}</span>` : ""}</span>
+      <span class="tb-txt"><span class="tb-k${old || o.pausedAt ? " old" : ""}">${o.pausedAt ? "Pausad" : old ? "Glömde du avsluta?" : "Resa pågår"}</span><span class="tb-t" data-trip-bar>${esc(tripBarText(o))}</span>${o.to ? `<span class="tb-s">${esc(`Mot ${o.to}`)}</span>` : ""}</span>
     </button>
+    <button class="tb-pause${o.pausedAt ? " on" : ""}" type="button" data-act="trip-pause" aria-label="${o.pausedAt ? "Fortsätt resan" : "Pausa resan"}"><span></span></button>
     <button class="tb-stop" type="button" data-act="start-trip"><span class="tb-sq"></span>Avsluta</button>`;
   if (!bar) { document.body.insertAdjacentHTML("beforeend", `<div class="tripbar" id="tripbar">${html}</div>`); bar = document.getElementById("tripbar"); }
-  else if (bar.dataset.key !== `${o.id}|${o.to}|${old}`) bar.innerHTML = html;
-  bar.dataset.key = `${o.id}|${o.to}|${old}`;
+  else if (bar.dataset.key !== `${o.id}|${o.to}|${old}|${!!o.pausedAt}`) bar.innerHTML = html;
+  bar.dataset.key = `${o.id}|${o.to}|${old}|${!!o.pausedAt}`;
   if (EN && typeof trTree === "function") trTree(bar);
 }
 
@@ -6420,7 +6420,7 @@ function tripForm(t = {}, mode = "new") {
       ${mode === "end" ? `<div id="tr-route" hidden></div><input type="hidden" name="endPos" id="tr-endPos">` : ""}
       ${mode === "start" ? `<input type="hidden" name="startPos" id="tr-startPos">` : ""}
       ${field("Från", `<span class="geo-row"><input name="from" id="tr-from" value="${esc(t.from ?? (mode === "new" && !t.id ? prev?.to || "" : ""))}" placeholder="Ort, adress eller företag" autocomplete="off"><button class="geo-btn" type="button" data-act="trip-here" aria-label="Använd min plats" title="Använd min plats">${icon("pin", 20)}</button></span><span class="suggest" id="tr-from-suggest" role="listbox" hidden></span><input type="hidden" name="fromLoc" id="tr-fromLoc" value="${t.fromLoc ? esc(JSON.stringify(t.fromLoc)) : ""}">`)}
-      ${field("Vart", `<input name="to" id="tr-to" value="${esc(t.to || "")}" placeholder="Ort, adress eller företag" autocomplete="off"><span class="suggest" id="tr-to-suggest" role="listbox" hidden></span><input type="hidden" name="toLoc" id="tr-toLoc" value="${t.toLoc ? esc(JSON.stringify(t.toLoc)) : ""}">`)}
+      ${field("Till", `<input name="to" id="tr-to" value="${esc(t.to || "")}" placeholder="Ort, adress eller företag" autocomplete="off"><span class="suggest" id="tr-to-suggest" role="listbox" hidden></span><input type="hidden" name="toLoc" id="tr-toLoc" value="${t.toLoc ? esc(JSON.stringify(t.toLoc)) : ""}">`)}
       ${field("Ärende", `<input name="purpose" id="tr-purpose" value="${esc(t.purpose || "")}" list="tr-purpose-list" autocomplete="off">${list("tr-purpose-list", count("purpose"))}`)}
       <div class="row2">
         ${field("Typ av resa", `<select name="kind" id="tr-kind">${Object.entries(TRIP_KINDS).map(([k, l]) => `<option value="${k}"${kind === k ? " selected" : ""}>${l}</option>`).join("")}</select>`)}
@@ -6861,7 +6861,7 @@ function exportTrips() {
     const t = typeof v === "number" ? String(v).replace(".", ",") : String(v);
     return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
   };
-  const head = ["Datum", "Bil", "Reg.nr", "Mätare start (km)", "Mätare slut (km)", "Sträcka (km)", "Från", "Vart", "Ärende", "Typ", "Förare", "Milersättning (kr)", "Ändrad i efterhand", "Mätt med", "Starttid", "Sluttid"];
+  const head = ["Datum", "Bil", "Reg.nr", "Mätare start (km)", "Mätare slut (km)", "Sträcka (km)", "Från", "Till", "Ärende", "Typ", "Förare", "Milersättning (kr)", "Ändrad i efterhand", "Mätt med", "Starttid", "Sluttid"];
   const rows = list.map((t) => {
     const mil = tripMil(t);
     return [t.date, carName(c), c.plate, kmOf(t.odoStart), kmOf(t.odoEnd), mil != null ? kmOf(mil) : null, t.from, t.to, t.purpose, TRIP_KINDS[t.kind], memberName(t.driver), t.kind === "tjanst" && mil != null ? Math.round(mil * MIL_RATE) : null, t.edits?.length ? t.edits.map(editLine).join("; ") : "",
