@@ -3496,8 +3496,9 @@ function docsCard(c) {
   return `<div class="card book-card">
     <h2>Servicebok</h2>
     <p class="muted" style="margin:-4px 0 12px">${esc(`All service, alla däck och besiktningar som är loggade, ${posts}. Bra att ge en köpare eller verkstad.`)}</p>
-    <div class="book-btns"><button class="btn-soft" type="button" ${pdfAct}>${icon("print", 16)} PDF</button><button class="btn-soft" type="button" data-act="${c.shareToken ? "share-menu" : "share-link"}">${icon("share", 16)} ${c.shareToken ? "Länk delad" : "Dela länk"}</button></div>
-    ${c.shareToken ? `<p class="hint" style="margin:8px 0 0">Den delade länken uppdateras av sig själv.</p>` : ""}
+    <div class="book-btns"><button class="btn-soft" type="button" ${pdfAct}>${icon("print", 16)} PDF</button>${c.shareToken ? `<button class="btn-soft danger" type="button" data-act="share-stop">${icon("close", 16)} Sluta dela</button>` : `<button class="btn-soft" type="button" data-act="share-link">${icon("share", 16)} Dela länk</button>`}</div>
+    ${c.shareToken ? `<div class="book-link"><span class="book-url">${esc(shareUrl(c.shareToken).replace(/^https?:\/\//, ""))}</span><button class="btn-soft" type="button" data-act="share-copy" aria-label="Kopiera länken">${icon("doc", 16)} Kopiera</button></div>
+    <p class="hint" style="margin:6px 0 0">Den som har länken kan läsa serviceboken, utan appen. Den uppdateras av sig själv.</p>` : ""}
     ${docs.length ? `<p class="label" style="margin:16px 0 4px">Dokument</p><div class="rows">${docs.map((d) => `<button class="dl as-btn" type="button" data-act="open-doc" data-id="${esc(d.id)}"><span class="dl-ic">${icon("doc", 20)}</span>
       <span><span class="dl-t">${esc(d.title)}</span><span class="dl-s">${esc(d.validTo ? `Gäller till ${fmtDateShort(d.validTo)}` : `Sparat ${fmtDateShort(d.date)} av ${whoName(d.by).replace(/^Du$/, "dig")}`)}</span></span>${docPill(d)}</button>`).join("")}</div>` : ""}
     ${photos}

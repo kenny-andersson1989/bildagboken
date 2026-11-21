@@ -2152,3 +2152,7 @@ body.car-locked .fab { display: none; }
 /* Kortet Servicebok: knapparna PDF och Dela länk. */
 .book-card > .book-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .book-card > .book-btns .btn-soft { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.book-link { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 6px 6px 6px 12px; border-radius: 14px; background: var(--input); border: 1px solid var(--line); }
+.book-link .book-url { flex: 1; min-width: 0; font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: all; -webkit-user-select: all; }
+.book-link .btn-soft { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; }
+.btn-soft.danger { color: var(--danger); }

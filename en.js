@@ -483,6 +483,7 @@ export const EN = {
   "Skapa säljpaket": "Create sales pack",
   "Delad länk": "Shared link",
   "Vilken PDF?": "Which PDF?",
+  "Den som har länken kan läsa serviceboken, utan appen. Den uppdateras av sig själv.": "Anyone with the link can read the service book, without the app. It updates by itself.",
   "All service, alla däck och besiktningar": "All service, tyres and inspections",
   "Serviceboken plus vad bilen har kostat och kvittona. Inför en försäljning.": "The service book plus what the car has cost and the receipts. For a sale.",
   "Den delade länken uppdateras av sig själv.": "The shared link updates by itself.",
