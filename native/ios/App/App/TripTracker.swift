@@ -226,7 +226,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     }
     private func watchParked(_ loc: CLLocation) {
         guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
-        let region = CLCircularRegion(center: loc.coordinate, radius: 150, identifier: parkedRegion)
+        let region = CLCircularRegion(center: loc.coordinate, radius: 100, identifier: parkedRegion)
         region.notifyOnExit = true
         region.notifyOnEntry = false
         manager.startMonitoring(for: region)
