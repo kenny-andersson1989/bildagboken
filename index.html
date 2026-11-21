@@ -30,14 +30,6 @@
     document.documentElement.dataset.theme = th[dk ? 1 : 0];
     if (/^garage/.test(c)) document.documentElement.dataset.garage = "1";
   } catch (e) {}
-  // Efter ett språkbyte: visa inget innehåll förrän sidan är ritad på det nya språket (se lang-in i style.css).
-  try {
-    if (sessionStorage.getItem("bildagboken.langSwitch")) {
-      sessionStorage.removeItem("bildagboken.langSwitch");
-      document.documentElement.classList.add("lang-in");
-      setTimeout(function () { document.documentElement.classList.remove("lang-in"); }, 3000);
-    }
-  } catch (e) {}
 </script>
 </head>
 <body>

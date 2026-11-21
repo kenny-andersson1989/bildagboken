@@ -2301,7 +2301,3 @@ form[data-form="car-new"] > .req-note { display: none; }
   .toast-msg:not([hidden]) { animation: drop-top .25s ease-out; }
   @keyframes drop-top { from { transform: translate(-50%, -14px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
 }
-
-/* Språkbyte: innehållet tonas ut och in igen medan bakgrunden ligger kvar, i stället för att hela appen blinkar. */
-#app, #nav { transition: opacity .18s ease; }
-html.lang-out #app, html.lang-out #nav, html.lang-in #app, html.lang-in #nav { opacity: 0; }
