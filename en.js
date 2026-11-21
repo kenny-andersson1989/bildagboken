@@ -482,6 +482,10 @@ export const EN = {
   "Kvitton och bilder från posterna": "Receipts and photos from the entries",
   "Skapa säljpaket": "Create sales pack",
   "Delad länk": "Shared link",
+  "Vilken PDF?": "Which PDF?",
+  "All service, alla däck och besiktningar": "All service, tyres and inspections",
+  "Serviceboken plus vad bilen har kostat och kvittona. Inför en försäljning.": "The service book plus what the car has cost and the receipts. For a sale.",
+  "Den delade länken uppdateras av sig själv.": "The shared link updates by itself.",
   "Den som har länken kan läsa serviceboken i webbläsaren, utan appen. Hen ser inget annat och kan inte ändra något. Serviceboken uppdateras av sig själv när ni loggar något nytt.": "Anyone with the link can read the service book in a browser, without the app. They see nothing else and can't change anything. The service book updates by itself when you log something new.",
   "Länken är kopierad. Skicka den till köparen.": "The link is copied. Send it to the buyer.",
   "Mät mönsterdjupet": "Measure the tread depth",
@@ -1936,6 +1940,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 km eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^All service, alla däck och besiktningar som är loggade, (\d+) (post|poster)\. Bra att ge en köpare eller verkstad\.$/, (m, n) => `All service, tyres and inspections that are logged, ${n} ${n === "1" ? "entry" : "entries"}. Good to give to a buyer or a garage.`],
   [/^All service, däck och besiktningar · (\d+) (post|poster)$/, (m, n) => `All service, tyres and inspections · ${n} ${n === "1" ? "entry" : "entries"}`],
   [/^(\d+) (post|poster) med service, däck och besiktningar$/, (m, n) => `${n} ${n === "1" ? "entry" : "entries"} with service, tyres and inspections`],
   [/^(\d+) kvitton och bilder från posterna$/, "$1 receipts and photos from the entries"],
