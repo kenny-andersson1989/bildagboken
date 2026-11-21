@@ -6386,6 +6386,15 @@ setInterval(async () => {
     document.querySelectorAll("[data-auto-bar]").forEach((el) => { el.textContent = EN ? tr(t) : t; });
   }
 }, 15000);
+// Telefonens startnyckel för rutan på låsskärmen (iOS 17.2+) sparas hos servern, så att servern kan starta
+// rutan när en automatisk resa börjar i bakgrunden. Bara när något har ändrats.
+function saveLiveDevice(st) {
+  if (!st?.liveKey || !st.liveToken || !/^[a-f0-9]{32}$/.test(st.liveKey) || !S.user) return;
+  const sig = `${uid()}|${st.liveToken}|${EN ? "en" : "sv"}`;
+  if (pref.get("liveDev." + st.liveKey) === sig) return;
+  setDoc(doc(db, "liveDevices", st.liveKey), { uid: uid(), token: st.liveToken, lang: EN ? "en" : "sv", updatedAt: Date.now() }, { merge: true })
+    .then(() => pref.set("liveDev." + st.liveKey, sig)).catch(() => {});
+}
 // Tryck på en notis om en resa: visa Resor → Översikt, där resan väntar under Att göra.
 function openTripsFromNotice(st) {
   if (!st?.openTrips) return;
@@ -6398,6 +6407,7 @@ async function refreshAutoStatus() {
   if (!autoAvailable()) return;
   try { S.autoStatus = await tracker().status(); } catch { S.autoStatus = null; return; }
   openTripsFromNotice(S.autoStatus);
+  saveLiveDevice(S.autoStatus);
   sendPlacesToPhone();
   const before = toReview().length;
   await importAutoTrips();

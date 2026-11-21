@@ -193,7 +193,12 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         let current = Activity<TripActivityAttributes>.activities
         if current.contains(where: { $0.attributes.tripId == "auto" && $0.activityState == .active }) { return }
         if current.contains(where: { $0.attributes.tripId != "auto" && $0.activityState == .active }) { return }
-        if UIApplication.shared.applicationState != .active { log("Live Activity startar när appen öppnas"); return }
+        if UIApplication.shared.applicationState != .active {
+            // I bakgrunden: be servern starta rutan (iOS 17.2+). Går det inte kommer notisen, och rutan
+            // startar när man trycker på den.
+            requestServerStart()
+            return
+        }
         let attrs = TripActivityAttributes(tripId: "auto", start: startTime ?? Date(), car: carName ?? "", lang: en ? "en" : "sv")
         let st = TripActivityAttributes.ContentState(from: "", to: "", kind: "", km: (meters / 100).rounded() / 10, paused: false, since: nil, elapsed: 0)
         do {
@@ -203,6 +208,50 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
             log("Live Activity kunde inte startas: \(error.localizedDescription)")
         }
     }
+    // MARK: - Starta rutan via servern (push-to-start)
+    // Telefonens egen slumpade nyckel (bara den känner till den) och startnyckeln från Apple.
+    var liveKey: String {
+        if let k = defaults.string(forKey: "live.key"), k.count == 32 { return k }
+        let k = (0..<16).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
+        defaults.set(k, forKey: "live.key")
+        return k
+    }
+    var liveToken: String? { defaults.string(forKey: "live.startToken") }
+    // Följer startnyckeln från Apple. Anropas när appen startar.
+    func watchStartToken() {
+        guard #available(iOS 17.2, *) else { return }
+        Task {
+            if let d = Activity<TripActivityAttributes>.pushToStartToken { self.saveStartToken(d) }
+            for await d in Activity<TripActivityAttributes>.pushToStartTokenUpdates { self.saveStartToken(d) }
+        }
+    }
+    private func saveStartToken(_ d: Data) {
+        let hex = d.map { String(format: "%02x", $0) }.joined()
+        if defaults.string(forKey: "live.startToken") != hex { defaults.set(hex, forKey: "live.startToken") }
+    }
+    private var serverStartTried = false
+    private func requestServerStart() {
+        guard !serverStartTried else { return }
+        serverStartTried = true
+        guard #available(iOS 17.2, *), liveToken != nil,
+              let url = URL(string: "https://europe-west1-bildagboken-3f931.cloudfunctions.net/liveStart") else {
+            notifyStarted(); return
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 15
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["key": liveKey, "car": carName ?? ""])
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
+            let ok = (resp as? HTTPURLResponse)?.statusCode == 200
+                && ((try? JSONSerialization.jsonObject(with: data ?? Data())) as? [String: Any])?["ok"] as? Bool == true
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if ok { self.log("Live Activity startad via servern") } else { self.log("Servern kunde inte starta Live Activity, notis skickad"); self.notifyStarted() }
+            }
+        }.resume()
+    }
+
     // Appen kommer fram medan en automatisk resa pågår: nu tillåter iOS att rutan på låsskärmen startas.
     func appDidBecomeActive() {
         guard enabled, driving else { return }
@@ -296,6 +345,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     }
 
     private func resetTrip() {
+        serverStartTried = false
         driving = false
         pre = []
         quickStop = false
@@ -390,7 +440,6 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
                 checkCar(force: true)
                 log("Resa startad")
                 startAutoActivity()
-                notifyStarted()
             } else if now.timeIntervalSince(watchStarted) > (carConnected ? 900 : giveUpAfter) {
                 log("Ingen bilresa, GPS av")
                 stopWatching()
@@ -630,6 +679,8 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
             r["meters"] = meters.rounded()
         }
         r["watching"] = watching
+        r["liveKey"] = liveKey
+        if let t = liveToken { r["liveToken"] = t }
         // Har man tryckt på en notis om en resa: säg det en gång till webbappen.
         if defaults.bool(forKey: "autoTrips.openTrips") { r["openTrips"] = true; defaults.removeObject(forKey: "autoTrips.openTrips") }
         if let id = manualId ?? defaults.string(forKey: "autoTrips.manualId") {

@@ -40,6 +40,16 @@ service cloud.firestore {
       allow delete: if signedIn() && memberOf(resource.data.householdId);
     }
 
+    // Telefoner där servern kan starta rutan på låsskärmen (Live Activity) när en automatisk resa börjar.
+    // Nyckeln är ett slumpat id som bara telefonen känner till. Bara servern läser.
+    match /liveDevices/{key} {
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'token', 'lang', 'updatedAt']);
+      allow update: if signedIn() && resource.data.uid == request.auth.uid && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'token', 'lang', 'updatedAt', 'lastStart']);
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
     // Felrapporter från appen: alla inloggade kan skicka en kort rapport, bara ägaren kan läsa dem.
     match /errors/{id} {
       allow create: if signedIn()
