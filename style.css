@@ -2219,3 +2219,6 @@ body.car-locked .fab { display: none; }
 .tow-lic-l { font: 600 13px var(--f-body); color: var(--ink-2); display: inline-flex; align-items: center; letter-spacing: 0; text-transform: none; }
 .tow-pick { align-items: center; }
 .tow-pick .tow-edit { margin-left: auto; flex: none; padding: 0 2px; }
+.tow-lic-row { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; }
+.tow-lic-row .label { margin: 0; flex: none; }
+.tow-lic-row .seg { flex: 1; }
