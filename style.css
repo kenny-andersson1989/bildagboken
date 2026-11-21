@@ -2250,3 +2250,11 @@ body.car-locked .fab { display: none; }
 .tc-ic.unknown { background: var(--track); color: var(--ink-3); }
 .tow-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .tow-facts .link { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 0; }
+
+/* Svep åt vänster för att ta bort: raden glider undan och en rundad röd knapp växer fram till höger. */
+.del-wrap { position: relative; overflow: hidden; }
+.del-wrap > .del-row { position: relative; z-index: 1; touch-action: pan-y; will-change: transform; }
+.del-act { position: absolute; z-index: 0; top: 6px; bottom: 6px; right: 0; width: 0; border: 0; border-radius: 16px; background: #e0453a; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font: 600 12.5px var(--f-body); overflow: hidden; white-space: nowrap; cursor: pointer; padding: 0; }
+.del-act span { opacity: .95; }
+.del-wrap.armed .del-act { background: #d23a30; }
+.entry, .dl.as-btn { touch-action: pan-y; }
