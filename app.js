@@ -5,7 +5,7 @@ import {
   linkWithPopup, linkWithRedirect, onAuthStateChanged, signOut, reauthenticateWithPopup, deleteUser,
   signInWithCredential, linkWithCredential, reauthenticateWithCredential,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, EmailAuthProvider, updateProfile,
-  sendEmailVerification, reload
+  sendEmailVerification, reload, applyActionCode, verifyPasswordResetCode, confirmPasswordReset
 } from "./vendor/firebase/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
@@ -8834,6 +8834,7 @@ const ACTIONS = {
   },
   "ob-step"(el) { S.obStep = el.dataset.step || ""; renderOnboarding(); },
   "email-login"(el) { emailSheet(el?.dataset?.mode || "login"); },
+  "auth-action-done"() { finishAuthAction(); },
   async "verify-check"() {
     const u = auth.currentUser;
     if (!u) return renderLogin();
@@ -10168,6 +10169,73 @@ document.addEventListener("visibilitychange", () => {
 });
 // Ett konto med e-post och lösenord som inte har tryckt på länken i bekräftelsemejlet än.
 const needsVerify = (u) => !!u && !u.emailVerified && u.providerData.length > 0 && u.providerData.every((x) => x.providerId === "password");
+// Länkarna i mejlen från inloggningen (bekräfta e-post, välj nytt lösenord) öppnar appen i stället för Firebase-sidan.
+// Kräver att adressen https://bildagboken.com/ är inställd i Firebase: Authentication → Templates → Customize action URL.
+const authAction = (() => {
+  const q = new URLSearchParams(location.search);
+  return q.get("mode") && q.get("oobCode") ? { mode: q.get("mode"), code: q.get("oobCode") } : null;
+})();
+function authActionScreen(title, text, { ok = true, form = "" } = {}) {
+  setScreen("login", `
+    <section class="login-a verify auth-done">
+      <h1 class="la-brand"><img class="logo-l" src="icons/logo.svg?v=6" alt="Bildagboken" width="936" height="200"><img class="logo-d" src="icons/logo-dark.svg?v=6" alt="" aria-hidden="true" width="936" height="200"></h1>
+      ${ok === true ? `<span class="auth-done-mark" aria-hidden="true">${icon("check", 30)}</span>` : ""}
+      <h2 class="la-title">${esc(title)}</h2>
+      ${text ? `<p class="la-sub">${esc(text)}</p>` : ""}
+      ${form || `<div class="la-btns"><button class="btn primary block" type="button" data-act="auth-action-done">Fortsätt</button></div>`}
+    </section>`);
+}
+async function handleAuthAction({ mode, code }) {
+  if (mode === "resetPassword") {
+    setScreen("login", `<p class="loading">Öppnar länken …</p>`);
+    let email = "";
+    try { email = await verifyPasswordResetCode(auth, code); }
+    catch { return authActionScreen("Länken gäller inte längre", "Den kan redan ha använts eller vara för gammal. Be om ett nytt mejl under Glömt lösenordet.", { ok: false }); }
+    S.resetEmail = email;
+    return authActionScreen("Välj ett nytt lösenord", `För ${email}`, { ok: false, form: `
+      <form class="form la-btns" data-form="new-password" novalidate>
+        ${field("Nytt lösenord", `<span class="pw-row"><input type="password" name="password" id="np-password" autocomplete="new-password" minlength="8"><button class="pw-eye" type="button" data-act="pw-toggle" aria-label="Visa lösenordet" aria-pressed="false">${icon("eye", 20)}</button></span>`, "Minst 8 tecken.")}
+        <p class="err" id="form-err" hidden></p>
+        <button class="btn primary block" type="submit">Spara och logga in</button>
+      </form>` });
+  }
+  setScreen("login", `<p class="loading">${mode === "verifyEmail" ? "Bekräftar din e-post …" : "Öppnar länken …"}</p>`);
+  let failed = null;
+  try { await applyActionCode(auth, code); } catch (e) { failed = e; }
+  const u = auth.currentUser;
+  if (u) { try { await reload(u); if (auth.currentUser?.emailVerified) await auth.currentUser.getIdToken(true); } catch { /* ingen kontakt */ } }
+  // Är man inloggad här (i appen) och adressen nu är bekräftad: fortsätt direkt in i appen.
+  if (mode === "verifyEmail" && auth.currentUser?.emailVerified) {
+    if (!failed || !needsVerify(auth.currentUser)) { finishAuthAction(); return showToast("Din e-post är bekräftad", 3500); }
+  }
+  if (failed) return authActionScreen("Länken gäller inte längre", mode === "verifyEmail" ? "Adressen kan redan vara bekräftad. Gå tillbaka till appen och tryck Jag har bekräftat, eller be om ett nytt mejl." : "Den kan redan ha använts eller vara för gammal.", { ok: false });
+  if (mode === "verifyEmail") return authActionScreen("Din e-post är bekräftad", "Gå tillbaka till appen Bildagboken. Den fortsätter av sig själv.");
+  authActionScreen("Klart", "");
+}
+// Ta bort koden från adressen och fortsätt som vanligt (inloggning eller appen).
+function finishAuthAction() {
+  S.authAction = null;
+  try { history.replaceState(null, "", location.pathname + location.hash); } catch { /* adressen ligger kvar */ }
+  const user = auth.currentUser;
+  S.user = user;
+  if (!user) return renderLogin();
+  if (needsVerify(user)) return renderVerify();
+  loadHousehold();
+}
+async function saveNewPassword(form) {
+  const pw = form.password.value;
+  if (pw.length < 8) return formError("Lösenordet behöver minst 8 tecken.");
+  const btn = form.querySelector("[type=submit]"); btn.disabled = true;
+  try {
+    await confirmPasswordReset(auth, S.authAction.code, pw);
+    await signInWithEmailAndPassword(auth, S.resetEmail, pw);
+    finishAuthAction();
+    showToast("Lösenordet är bytt", 3500);
+  } catch (e) {
+    btn.disabled = false;
+    formError(e?.code === "auth/weak-password" ? "Välj ett lösenord som är svårare att gissa." : e?.code === "auth/expired-action-code" || e?.code === "auth/invalid-action-code" ? "Länken gäller inte längre. Be om ett nytt mejl." : "Det gick inte att spara. Försök igen.");
+  }
+}
 function renderVerify(note = "") {
   const email = auth.currentUser?.email || "";
   setScreen("login", `
@@ -10299,6 +10367,7 @@ async function onSubmit(ev) {
     if (kind === "trip") return saveTrip(form);
     if (kind === "trip-split") return saveSplit(form);
     if (kind === "email-auth") return saveEmailAuth(form);
+    if (kind === "new-password") return await saveNewPassword(form);
     if (kind === "reauth-pw") { const r = pwResolve; pwResolve = null; const pw = String(new FormData(form).get("password") || ""); closeSheet(); return r?.(pw || null); }
     if (kind === "log-filter") {
       const fd = new FormData(form);
@@ -11122,8 +11191,11 @@ if (initial) S.view = initial;
 
 getRedirectResult(auth).catch((e) => renderLogin(authError(e)));
 if (viewToken) renderShared(viewToken);
+// Kom man hit från en länk i ett mejl (bekräfta e-post, nytt lösenord): hantera den när inloggningen är läst.
+if (authAction && !viewToken) { S.authAction = authAction; auth.authStateReady().then(() => handleAuthAction(authAction)); }
 onAuthStateChanged(auth, (user) => {
   if (viewToken) return;
+  if (S.authAction) { S.user = user; return; }
   const changed = (user?.uid || null) !== (S.user?.uid || null);
   S.user = user;
   if (!user) { cleanup(); renderLogin(); return; }

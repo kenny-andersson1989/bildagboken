@@ -1,6 +1,22 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  // Länkar i mejl från inloggningen
+  "Öppnar länken …": "Opening the link …",
+  "Bekräftar din e-post …": "Confirming your email …",
+  "Din e-post är bekräftad": "Your email is confirmed",
+  "Gå tillbaka till appen Bildagboken. Den fortsätter av sig själv.": "Go back to the Bildagboken app. It will continue by itself.",
+  "Adressen kan redan vara bekräftad. Gå tillbaka till appen och tryck Jag har bekräftat, eller be om ett nytt mejl.": "Your address may already be confirmed. Go back to the app and tap I have confirmed, or ask for a new email.",
+  "Den kan redan ha använts eller vara för gammal. Be om ett nytt mejl under Glömt lösenordet.": "It may already have been used or be too old. Ask for a new email under Forgot your password.",
+  "Den kan redan ha använts eller vara för gammal.": "It may already have been used or be too old.",
+  "Välj ett nytt lösenord": "Choose a new password",
+  "Nytt lösenord": "New password",
+  "Spara och logga in": "Save and sign in",
+  "Lösenordet behöver minst 8 tecken.": "The password needs at least 8 characters.",
+  "Välj ett lösenord som är svårare att gissa.": "Choose a password that is harder to guess.",
+  "Länken gäller inte längre. Be om ett nytt mejl.": "The link is no longer valid. Ask for a new email.",
+  "Det gick inte att spara. Försök igen.": "It could not be saved. Please try again.",
+  "Lösenordet är bytt": "Your password has been changed",
   // Delkatalogen (parts.js)
   "Säkringsbox": "Fuse box",
   "Motorstyrenhet": "Engine control unit",
@@ -2033,6 +2049,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 km eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^För (\S+@\S+)$/, "For $1"],
   [/^Vi har skickat ett mejl till (.+)\. Tryck på länken i mejlet, och kom sedan tillbaka hit\.$/, "We have sent an email to $1. Tap the link in the email, then come back here."],
   [/^([\d\s]+) kg totalvikt(?: · tomt ([\d\s]+) kg)? · (bromsat|obromsat)$/, (m, a, b, c) => `${a} kg gross weight${b ? ` · empty ${b} kg` : ""} · ${c === "bromsat" ? "braked" : "unbraked"}`],
   [/^Du behöver (B96|BE)$/, "You need $1"],

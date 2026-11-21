@@ -2301,3 +2301,7 @@ form[data-form="car-new"] > .req-note { display: none; }
   .toast-msg:not([hidden]) { animation: drop-top .25s ease-out; }
   @keyframes drop-top { from { transform: translate(-50%, -14px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
 }
+
+/* Sidan man kommer till från länken i mejlet (e-posten bekräftad, nytt lösenord). */
+.auth-done-mark { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); margin: 8px 0 4px; }
+.auth-done .form { gap: 12px; }

@@ -6,7 +6,8 @@
         "components": [
           { "/": "/", "?": { "join": "*" }, "comment": "Inbjudan till ett hushåll" },
           { "/": "/", "?": { "visa": "*" }, "comment": "Delad servicebok" },
-          { "/": "/", "?": { "ny": "*" }, "comment": "Genväg: logga något direkt" }
+          { "/": "/", "?": { "ny": "*" }, "comment": "Genväg: logga något direkt" },
+          { "/": "/", "?": { "oobCode": "*" }, "comment": "Länk i mejl: bekräfta e-post eller nytt lösenord" }
         ]
       }
     ]
