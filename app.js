@@ -10875,18 +10875,33 @@ function subscribe(hid) {
   }, onListenError));
 }
 
-async function loadHousehold() {
+// E-postkonton: när adressen bekräftas i webbläsaren har appen kvar en gammal token där det står att den inte
+// är bekräftad, och då säger säkerhetsreglerna nej. Hämta en ny token när det behövs.
+async function freshVerifiedToken(force = false) {
+  const u = auth.currentUser;
+  if (!u || !u.providerData.some((x) => x.providerId === "password")) return;
+  try {
+    const t = await u.getIdTokenResult();
+    if (!force && t.claims.email_verified) return;
+    if (!u.emailVerified) await reload(u).catch(() => {});
+    if (auth.currentUser?.emailVerified) await auth.currentUser.getIdToken(true);
+  } catch { /* ingen kontakt just nu */ }
+}
+async function loadHousehold(retried = false) {
   setScreen("loading", `<p class="loading">Hämtar er bildagbok …</p>`);
+  await freshVerifiedToken();
   try {
     const qs = await getDocs(query(collection(db, "households"), where("members", "array-contains", uid())));
     if (qs.empty) return renderOnboarding();
     subscribe(qs.docs[0].id);
   } catch (e) {
     console.error(e);
+    // Nekad: hämta en ny token och försök en gång till.
+    if (e.code === "permission-denied" && retried !== true) { await freshVerifiedToken(true); return loadHousehold(true); }
     setScreen("error", `<div class="card empty"><b>Kunde inte hämta er data</b>${esc(e.code === "unavailable" ? "Telefonen verkar sakna nät. Försök igen om en stund." : e.code || e.message)}<div class="ask" style="justify-content:center"><button class="btn" type="button" data-act="retry">Försök igen</button></div></div>`);
   }
 }
-ACTIONS.retry = loadHousehold;
+ACTIONS.retry = async () => { await freshVerifiedToken(true); loadHousehold(true); };
 
 /* ------------------------------------------------------------------- boot */
 
