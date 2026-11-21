@@ -2390,8 +2390,8 @@ function renderOnboarding(error = "") {
     setScreen("onboarding", `${back}
       <header class="top"><div class="hello"><h1>Starta en ny bildagbok</h1></div></header>
       <form class="card form" data-form="create-house" data-keep>
-        <label class="field"><span>Ditt namn</span><input name="name" id="ob-name" maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
-        <label class="field"><span>Vad heter hushållet?</span><input name="house" id="ob-house" maxlength="40" placeholder="Till exempel Familjen Andersson"><small>Syns för dem du bjuder in. Går att ändra senare.</small></label>
+        <label class="field"><span>Ditt namn</span><input name="name" id="ob-name" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
+        <label class="field"><span>Vad heter hushållet?</span><input name="house" id="ob-house" required maxlength="40" placeholder="Till exempel Familjen Andersson"><small>Syns för dem du bjuder in. Går att ändra senare.</small></label>
         <button class="btn primary block" type="submit">Skapa</button>
         <p class="hint">Sedan kan du bjuda in andra med en kod, till exempel familj eller den du delar bil med.</p>
       </form>
@@ -2405,7 +2405,7 @@ function renderOnboarding(error = "") {
       <form class="card form" data-form="join-house" data-keep>
         <label class="field"><span>Inbjudningskod</span><input name="code" id="ob-code" class="ob-code${error ? " bad" : ""}" maxlength="6" value="${esc(code)}" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="Sex tecken"></label>
         <div id="ob-found" aria-live="polite">${error ? `<p class="err" style="margin:-6px 0 12px">${esc(error)}</p>` : ""}</div>
-        <label class="field"><span>Ditt namn</span><input name="name" id="ob-name2" maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
+        <label class="field"><span>Ditt namn</span><input name="name" id="ob-name2" required maxlength="30" value="${esc(first)}" autocomplete="given-name"></label>
         <button class="btn primary block" type="submit" id="ob-join-btn" disabled>Gå med</button>
         <p class="hint">Koden får du av den som har skapat bildagboken. Den finns under Inställningar → Hushåll.</p>
       </form>${logout}`);
