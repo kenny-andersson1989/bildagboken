@@ -178,6 +178,25 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
         let st = TripActivityAttributes.ContentState(from: "", to: "", kind: "", km: (meters / 100).rounded() / 10, paused: false, since: nil, elapsed: 0)
         _ = try? Activity.request(attributes: attrs, content: ActivityContent(state: st, staleDate: nil), pushType: nil)
     }
+    // Appen kommer fram medan en automatisk resa pågår: nu tillåter iOS att rutan på låsskärmen startas.
+    func appDidBecomeActive() {
+        guard enabled, driving else { return }
+        startAutoActivity()
+    }
+    // En tyst notis när en automatisk resa startar. Tryck på den öppnar appen, och då startar rutan på låsskärmen.
+    private func notifyStarted() {
+        guard manualId == nil else { return }
+        let c = UNMutableNotificationContent()
+        c.title = en ? "Trip started" : "Körning startad"
+        c.body = en ? "Bildagboken is measuring the trip. Tap to follow it on the Lock Screen." : "Bildagboken mäter resan. Tryck för att följa den på låsskärmen."
+        if #available(iOS 15.0, *) { c.interruptionLevel = .passive }
+        c.userInfo = ["autoTripLive": true]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "autotrip-live", content: c, trigger: nil))
+    }
+    private func clearStartedNotice() {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["autotrip-live"])
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["autotrip-live"])
+    }
     private func endAutoActivity() {
         guard #available(iOS 16.2, *) else { return }
         Task { @MainActor in
@@ -323,6 +342,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
                 checkCar(force: true)
                 log("Resa startad")
                 startAutoActivity()
+                notifyStarted()
             } else if now.timeIntervalSince(watchStarted) > (carConnected ? 900 : giveUpAfter) {
                 log("Ingen bilresa, GPS av")
                 stopWatching()
@@ -375,7 +395,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     }
 
     private func finishTrip(end: CLLocation) {
-        defer { resetTrip(); stopWatching(); setParked(end); endAutoActivity() }
+        defer { resetTrip(); stopWatching(); setParked(end); endAutoActivity(); clearStartedNotice() }
         guard let start = startTime, let from = startLoc, meters >= minMeters else {
             log("Kort förflyttning, sparas inte (\(Int(meters)) m)")
             return
