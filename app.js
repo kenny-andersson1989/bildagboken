@@ -3484,36 +3484,22 @@ async function loadPhotoGrid() {
 
 // Posterna som hör till serviceboken: service, eget arbete, däck och besiktningar.
 const bookEntries = (c) => carEntries().filter((e) => e.carId === c.id && (["service", "eget", "dack"].includes(e.type) || (e.type === "kostnad" && e.category === "Besiktning")));
-// Servicebok och dokument i ett kort: serviceboken (PDF, dela med en köpare, säljpaket), sparade dokument
+// Kortet Servicebok: PDF (servicebok eller säljpaket), dela som länk, sparade dokument (bara äldre)
 // och bilderna från loggen.
 function docsCard(c) {
   const docs = [...(c.docs || [])].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const photos = photosCard(c);
-  const book = bookEntries(c);
-  const n = book.length;
-  const pics = Math.min(60, book.reduce((a, e) => a + photosOf(e).length, 0));
+  const n = bookEntries(c).length;
   const posts = n === 1 ? "1 post" : `${n} poster`;
-  // Säljpaketet: allt en köpare vill se, i en PDF. Bara med Plus, annars som uppsäljning.
-  const sale = plusFeat() || plusLock() ? `<div class="sale-box">
-      <div class="sale-head"><span class="dl-ic">${icon("receipt", 20)}</span><span><b>Ska du sälja bilen?</b><span class="dl-s">Serviceboken, vad bilen har kostat och kvittona i en PDF att ge köparen.</span></span>${plusFeat() ? "" : '<span class="plus-badge">Plus</span>'}</div>
-      <ul class="sale-list"><li>${esc(n ? `${posts} med service, däck och besiktningar` : "Service, däck och besiktningar")}</li><li>Kostnader per kategori, senaste året och totalt</li><li>${esc(pics ? `${pics === 1 ? "1 kvitto eller bild" : `${pics} kvitton och bilder`} från posterna` : "Kvitton och bilder från posterna")}</li></ul>
-      <button class="btn-soft" type="button" ${plusFeat() ? 'data-act="sale-pack"' : 'data-act="plus" data-f="salepack"'}>${icon("print", 16)} Skapa säljpaket</button>
-    </div>` : "";
+  // PDF: med Plus (eller som uppsäljning) får man välja mellan serviceboken och säljpaketet.
+  const pdfAct = plusFeat() || plusLock() ? 'data-act="pdf-choice"' : 'data-act="print-book"';
   return `<div class="card book-card">
-    <h2>Servicebok och dokument</h2>
-    <p class="muted" style="margin:-4px 0 12px">Det som visar hur bilen har skötts, och papper ni vill ha nära till hands.</p>
-    <div class="book-row">
-      <span class="dl-ic">${icon("print", 20)}</span>
-      <span class="book-txt"><span class="dl-t">Servicebok</span><span class="dl-s">${esc(`All service, däck och besiktningar · ${posts}`)}</span></span>
-      <span class="book-btns"><button class="btn-soft" type="button" data-act="print-book">PDF</button><button class="btn-soft" type="button" data-act="share-link">${icon("share", 16)} Dela länk</button></span>
-    </div>
-    ${c.shareToken ? `<button class="book-shared" type="button" data-act="share-menu"><span class="pill ok">Länk delad</span> <span>Köpare kan läsa serviceboken. Den uppdateras av sig själv. Tryck för att kopiera eller sluta dela.</span></button>` : ""}
-    ${sale}
-    <p class="label" style="margin:16px 0 4px">Dokument</p>
-    ${docs.length ? `<div class="rows">${docs.map((d) => `<button class="dl as-btn" type="button" data-act="open-doc" data-id="${esc(d.id)}"><span class="dl-ic">${icon("doc", 20)}</span>
-      <span><span class="dl-t">${esc(d.title)}</span><span class="dl-s">${esc(d.validTo ? `Gäller till ${fmtDateShort(d.validTo)}` : `Sparat ${fmtDateShort(d.date)} av ${whoName(d.by).replace(/^Du$/, "dig")}`)}</span></span>${docPill(d)}</button>`).join("")}</div>`
-      : `<p class="muted" style="margin:0">Försäkringsbrev, registreringsbevis, garantier och kvitton ni vill spara. Med ett utgångsdatum får ni en påminnelse.</p>`}
-    <div class="ask"><button class="btn-soft" type="button" data-act="new-doc">${icon("plus", 16)} Lägg till dokument</button></div>
+    <h2>Servicebok</h2>
+    <p class="muted" style="margin:-4px 0 12px">${esc(`All service, alla däck och besiktningar som är loggade, ${posts}. Bra att ge en köpare eller verkstad.`)}</p>
+    <div class="book-btns"><button class="btn-soft" type="button" ${pdfAct}>${icon("print", 16)} PDF</button><button class="btn-soft" type="button" data-act="${c.shareToken ? "share-menu" : "share-link"}">${icon("share", 16)} ${c.shareToken ? "Länk delad" : "Dela länk"}</button></div>
+    ${c.shareToken ? `<p class="hint" style="margin:8px 0 0">Den delade länken uppdateras av sig själv.</p>` : ""}
+    ${docs.length ? `<p class="label" style="margin:16px 0 4px">Dokument</p><div class="rows">${docs.map((d) => `<button class="dl as-btn" type="button" data-act="open-doc" data-id="${esc(d.id)}"><span class="dl-ic">${icon("doc", 20)}</span>
+      <span><span class="dl-t">${esc(d.title)}</span><span class="dl-s">${esc(d.validTo ? `Gäller till ${fmtDateShort(d.validTo)}` : `Sparat ${fmtDateShort(d.date)} av ${whoName(d.by).replace(/^Du$/, "dig")}`)}</span></span>${docPill(d)}</button>`).join("")}</div>` : ""}
     ${photos}
   </div>`;
 }
@@ -4165,7 +4151,7 @@ const CARD_NAMES = { koll: "På gång", todo: "Att göra", recent: "Senaste akti
 // Korten som går att flytta, per vy. Översikt sparas under "cards" (som förut) och Bilen under "cards.bilen".
 const CARD_VIEWS = {
   oversikt: { names: CARD_NAMES, pref: "cards", title: "Översikten" },
-  bilen: { get names() { return { upp: "Uppgifter", maint: "Underhåll", dack: "Däck", media: "Servicebok och dokument", slap: "Släpvagn" }; }, pref: "cards.bilen", title: "Bilen" },
+  bilen: { get names() { return { upp: "Uppgifter", maint: "Underhåll", dack: "Däck", media: "Servicebok", slap: "Släpvagn" }; }, pref: "cards.bilen", title: "Bilen" },
   ekonomi: { names: { month: "Kostnad per månad", year: "Hela året", compare: "Prognos och jämförelse", rec: "Återkommande kostnader", tank: "Tankningar", facts: "Bilåret i siffror" }, pref: "cards.ekonomi", title: "Ekonomi" },
 };
 function cardPrefs(view = "oversikt") {
@@ -9090,6 +9076,14 @@ const ACTIONS = {
     catch (e) { console.error(e); showToast(e.code === "permission-denied" ? "Det gick inte att dela. Säkerhetsreglerna i Firebase behöver uppdateras." : "Det gick inte att dela just nu", 6000); }
     finally { el.disabled = false; }
   },
+  // PDF: serviceboken eller säljpaketet (med kostnaderna och kvittona).
+  "pdf-choice"() {
+    const plus = plusFeat();
+    openSheet("Vilken PDF?", `<div class="rows">
+      <button class="dl as-btn" type="button" data-act="print-book"><span class="dl-ic">${icon("print", 20)}</span><span><span class="dl-t">Servicebok</span><span class="dl-s">All service, alla däck och besiktningar</span></span><span class="dl-v">›</span></button>
+      <button class="dl as-btn" type="button" ${plus ? 'data-act="sale-pack"' : 'data-act="plus" data-f="salepack"'}><span class="dl-ic">${icon("receipt", 20)}</span><span><span class="dl-t">Säljpaket</span><span class="dl-s">Serviceboken plus vad bilen har kostat och kvittona. Inför en försäljning.</span></span>${plus ? '<span class="dl-v">›</span>' : '<span class="plus-badge">Plus</span>'}</button>
+    </div>`);
+  },
   // Dela serviceboken som länk: skapar länken och öppnar telefonens dela-meny.
   async "share-link"(el) {
     el.disabled = true;
@@ -9187,10 +9181,10 @@ const ACTIONS = {
       render();
     });
   },
-  "print-book"() { printServiceBook(); },
+  "print-book"() { closeSheet(); printServiceBook(); },
   "share-menu"() { shareMenu(); },
   "tire-sheet"(el) { tireSheet(el.dataset.k); },
-  "sale-pack"(el) { salePack(el); },
+  "sale-pack"(el) { closeSheet(); salePack(); },
   async "copy-vin"() { const v = car()?.vin; if (!v) return; const ok = await copyText(v); showToast(ok ? "Chassinumret är kopierat" : v, ok ? 3000 : 8000); },
   async "copy-shortcut"(el) {
     const ok = await copyText(shortcutUrl(el.dataset.id));

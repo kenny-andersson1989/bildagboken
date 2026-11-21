@@ -2149,20 +2149,6 @@ body.car-locked .fab { display: none; }
 .lv-map #lv-map { position: absolute; inset: 0; }
 @media (max-width: 899px) { body.typing .tripbar { display: none; } }
 
-/* Servicebok och dokument: serviceboken med PDF och Dela länk, och säljpaketet. */
-.book-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.book-row .book-txt { flex: 1 1 160px; min-width: 0; display: flex; flex-direction: column; }
-.book-row .book-btns { display: flex; gap: 8px; flex: none; }
-.book-row .book-btns .btn-soft { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.book-shared { display: flex; align-items: flex-start; gap: 8px; width: 100%; margin-top: 10px; padding: 0; border: 0; background: none; color: var(--ink-2); font: 13px/1.4 var(--f-body); text-align: left; cursor: pointer; }
-.book-shared .pill { flex: none; }
-.sale-box { margin-top: 16px; padding: 14px; border-radius: 16px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); display: grid; gap: 10px; }
-.sale-head { display: flex; align-items: flex-start; gap: 12px; }
-.sale-head > span:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.sale-head .dl-ic { background: var(--accent); color: #fff; }
-.sale-list { list-style: none; margin: 0; padding: 0 0 0 52px; display: grid; gap: 4px; font-size: 14px; color: var(--ink-2); }
-.sale-list li { position: relative; padding-left: 20px; }
-.sale-list li::before { content: "✓"; position: absolute; left: 0; color: var(--accent-text); font-weight: 700; }
-.sale-box .btn-soft { justify-self: start; margin-left: 52px; display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: #fff; }
-.book-row .book-btns { flex-basis: 100%; padding-left: 52px; }
-.book-shared { padding-left: 52px; }
+/* Kortet Servicebok: knapparna PDF och Dela länk. */
+.book-card > .book-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.book-card > .book-btns .btn-soft { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
