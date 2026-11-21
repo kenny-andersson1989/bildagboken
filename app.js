@@ -2678,6 +2678,11 @@ function tireDepthHint(kind, v) {
 }
 // Hjälptexterna uppdateras medan man skriver.
 document.addEventListener("input", (ev) => {
+  if (ev.target.id === "dp-on" || ev.target.id === "dp-off") {
+    const hint = $(`#${ev.target.id}-hint`), kind = ev.target.dataset.kind;
+    if (hint) { hint.textContent = tireDepthHint(kind, ev.target.value); hint.dataset.level = tireDepthLevel(kind, ev.target.value) || ""; if (EN && typeof trTree === "function") trTree(hint.parentElement); }
+    return;
+  }
   const m = ev.target.id?.match(/^cf-([sw])_(year|depth)$/);
   if (!m) return;
   const hint = $(`#cf-${m[1]}_${m[2]}-hint`);
@@ -4402,7 +4407,7 @@ function realOdoEntry(carId) {
 function depthReminder(c) {
   const swap = S.entries.filter((e) => e.carId === c.id && !e.deletedAt && e.type === "dack" && isSwap(e.tireAction))
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
-  if (!swap || pref.get("depthDone." + swap.id)) return [];
+  if (!swap || swap.depthSkip || pref.get("depthDone." + swap.id)) return [];
   const ago = -daysUntil(parseDate(swap.date));
   if (ago < 0 || ago > 28) return [];
   const on = swap.tireAction === "till_vinter" ? "vinterdäcken" : "sommardäcken";
@@ -4413,7 +4418,23 @@ function depthReminder(c) {
   const title = needOn && needOff ? "Mät mönsterdjupet på båda däcksatserna" : `Mät mönsterdjupet på ${needOff ? off : on}`;
   const sub = needOff ? `${off.replace(/^./, (x) => x.toUpperCase())} ligger nu i förråd. Mät dem nu, så vet du i god tid om det behövs nya till ${season}.`
     : `Mät ${on} som sitter på, så blir däckens hälsa rätt.`;
-  return [{ icon: "tire", title, sub, level: "soon", label: "Fyll i", act: "tire-depth", id: swap.id, always: true, days: 0 }];
+  return [{ icon: "tire", title, sub, level: "soon", label: "Fyll i", act: "tire-depth", id: swap.id, always: true, days: 0, dismiss: "depth-done" }];
+}
+// Mät mönsterdjupet efter ett däckbyte: bara de mått som saknas, med besked direkt om vad siffran betyder.
+function depthSheet(id) {
+  const e = S.entries.find((x) => x.id === id);
+  if (!e) return;
+  const onKind = e.tireAction === "till_vinter" ? "vinter" : "sommar", offKind = onKind === "vinter" ? "sommar" : "vinter";
+  const name = (k) => (k === "vinter" ? "Vinterdäcken" : "Sommardäcken");
+  const row = (key, kind, label, val) => `<label class="field"><span>${esc(label)}</span><input id="dp-${key}" data-kind="${kind}" inputmode="decimal" autocomplete="off" placeholder="Till exempel ${kind === "vinter" ? "7" : "5,5"}" value="${val ?? ""}"><small class="tire-hint" id="dp-${key}-hint" data-level="${tireDepthLevel(kind, val) || ""}">${esc(tireDepthHint(kind, val))}</small></label>`;
+  openSheet("Mät mönsterdjupet", `<div class="form">
+      <p class="hint" style="margin-top:0">Mät i mitten av däcket på några ställen runt om och skriv det lägsta värdet, i millimeter. En enkel mönsterdjupsmätare finns på bensinmacken.</p>
+      ${e.depth == null ? row("on", onKind, `${name(onKind)} (sitter på bilen)`, null) : ""}
+      ${e.depthOff == null ? row("off", offKind, `${name(offKind)} (i förrådet)`, null) : ""}
+      <button class="btn" type="button" data-act="depth-save" data-id="${esc(e.id)}">Spara</button>
+      <p class="hint">Måtten sparas på däckbytet och under Bilen → Däck. Där kan du alltid ändra dem eller fylla i fler uppgifter om däcken.</p>
+      <button class="link" type="button" data-act="depth-done" data-id="${esc(e.id)}" style="display:block;margin:4px auto 0">Påminn inte om det här bytet</button>
+    </div>`);
 }
 function odoReminder(c) {
   // Med automatisk körjournal räknas mätaren fram från GPS-sträckorna. En gång i månaden: läs av den riktiga.
@@ -4469,7 +4490,8 @@ function kollListHtml(items) {
       ? `<button class="koll-main" type="button" data-act="${x.act}" data-id="${esc(x.id || "")}"${x.type ? ` data-type="${esc(x.type)}"` : ""}>${inner}</button>`
       : `<div class="koll-main">${inner}</div>`;
     const btns = (x.mapId ? `<button class="koll-btn" type="button" data-act="map-directions" data-id="${esc(x.mapId)}" aria-label="Vägbeskrivning">${icon("pin", 18)}</button>` : "")
-      + (x.phone ? `<a class="koll-btn" href="tel:${esc(x.phone)}" aria-label="Ring">${icon("phone", 18)}</a>` : "");
+      + (x.phone ? `<a class="koll-btn" href="tel:${esc(x.phone)}" aria-label="Ring">${icon("phone", 18)}</a>` : "")
+      + (x.dismiss ? `<button class="koll-btn" type="button" data-act="${x.dismiss}" data-id="${esc(x.id || "")}" aria-label="Ta bort påminnelsen">${icon("close", 16)}</button>` : "");
     return `${head}<div class="koll-row ${x.level || ""}">${tile}${main}${btns}</div>`;
   }).join("");
   return `<div class="koll">${html}</div>`;
@@ -9376,14 +9398,43 @@ const ACTIONS = {
     if (S.view !== "resor") setView("resor"); else render();
   },
   // Fyll i mönsterdjupet på däckbytet. Klar i rutan döljer påminnelsen även utan mått.
-  "tire-depth"(el) {
+  "tire-depth"(el) { depthSheet(el.dataset.id); },
+  "depth-save"(el) {
     const e = S.entries.find((x) => x.id === el.dataset.id);
-    if (!e) return;
-    entryForm("dack", e);
-    $("#sheet form")?.insertAdjacentHTML("beforeend", `<button class="link" type="button" data-act="depth-done" data-id="${esc(e.id)}" style="display:block;margin:12px auto 0">Påminn inte om det här bytet</button>`);
-    setTimeout(() => $("#ef-depthOff")?.closest(".field, label")?.scrollIntoView({ block: "center" }), 250);
+    const c = e && S.cars.find((x) => x.id === e.carId);
+    if (!e || !c) return closeSheet();
+    const onKind = e.tireAction === "till_vinter" ? "vinter" : "sommar", offKind = onKind === "vinter" ? "sommar" : "vinter";
+    const read = (id) => { const x = $(id); if (!x) return undefined; const v = num(x.value); return v != null && v >= 0 && v <= 20 ? v : null; };
+    const on = read("#dp-on"), off = read("#dp-off");
+    const bad = ["#dp-on", "#dp-off"].find((id) => $(id)?.value.trim() && read(id) == null);
+    if (bad) return showToast("Skriv mönsterdjupet i millimeter, till exempel 6,5.");
+    if (on == null && off == null) return showToast("Fyll i minst ett mönsterdjup.");
+    const upd = clean({ depth: on ?? undefined, depthOff: off ?? undefined });
+    Object.assign(e, upd);
+    updateDoc(ref("entries", e.id), { ...upd, updatedAt: serverTimestamp() }).catch(onWriteError);
+    // Samma mått under Bilen → Däck, mätt i dag.
+    const tires = [...(c.tires || [])];
+    const set = (kind, depth) => {
+      if (depth == null) return;
+      const i = tires.findIndex((t) => t.kind === kind);
+      if (i >= 0) tires[i] = { ...tires[i], depth, depthAt: todayStr() }; else tires.push({ kind, depth, depthAt: todayStr() });
+    };
+    set(onKind, on); set(offKind, off);
+    c.tires = tires;
+    updateDoc(ref("cars", c.id), { tires }).catch(onWriteError);
+    closeSheet(); render();
+    const lvls = [[onKind, on], [offKind, off]].filter(([, d]) => d != null).map(([k, d]) => [k, tireDepthLevel(k, d)]);
+    const worst = lvls.find(([, l]) => l === "bad") || lvls.find(([, l]) => l === "warn");
+    showToast(worst ? `Sparat. ${worst[0] === "vinter" ? "Vinterdäcken" : "Sommardäcken"} ${worst[1] === "bad" ? "är under lagkravet och behöver bytas" : "börjar bli slitna"}. Se Bilen → Däck.` : "Sparat. Du ser däckens skick under Bilen → Däck.", 6000);
   },
-  "depth-done"(el) { pref.set("depthDone." + el.dataset.id, "1"); closeSheet(); render(); },
+  // Ta bort påminnelsen om mönsterdjup. Sparas på bytet, så att den försvinner för alla i hushållet.
+  "depth-done"(el) {
+    const e = S.entries.find((x) => x.id === el.dataset.id);
+    pref.set("depthDone." + el.dataset.id, "1");
+    if (e) { e.depthSkip = true; updateDoc(ref("entries", e.id), { depthSkip: true }).catch(onWriteError); }
+    closeSheet(); render();
+    showToast("Påminnelsen är borttagen. Mönsterdjupet kan du fylla i under Bilen → Däck när du vill.", 5000);
+  },
   "trip-tab"(el) { S.tripTab = el.dataset.v || ""; render(); window.scrollTo(0, 0); },
   "trip-filter"(el) { S.tripFilter = el.dataset.v || ""; render(); },
   "trip-set"(el) { openTripSet(el.dataset.k); },
