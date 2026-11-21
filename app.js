@@ -6595,7 +6595,7 @@ function tripForm(t = {}, mode = "new") {
     <form class="form" data-form="trip" data-mode="${mode}"${t.gap ? ` data-gap="1"` : ""} data-start="${odoStart ?? ""}"${t.id ? ` data-id="${esc(t.id)}"` : ""} novalidate>
       ${mode === "end" ? `<p class="muted" style="margin-top:0">${esc(`Startade ${clock(tsMs(t.startedAt))} vid ${fmtKm(t.odoStart)}.`)}</p>` : ""}
       ${mode === "new" && t.id && tripEnds(t) ? `<div class="bk-map trip-map" id="tr-map"><div class="bk-map-inner" id="tr-map-inner"></div>
-        <button class="bk-map-open" type="button" data-act="trip-map-open" data-id="${esc(t.id)}" aria-label="Visa resan i en kartapp"><span>${icon("pin", 14)} Öppna i kartan</span></button></div>
+        <button class="bk-map-open" type="button" data-act="trip-map-big" data-id="${esc(t.id)}" aria-label="Visa resans väg större"><span>${icon("pin", 14)} Visa större</span></button></div>
         <div class="trip-ends"><span><i class="te-a"></i>${esc(t.from || "Start")}${t.startedAt ? ` · ${clock(tsMs(t.startedAt))}` : ""}</span><span><i class="te-b"></i>${esc(t.to || "Mål")}${t.endedAt ? ` · ${clock(tsMs(t.endedAt))}` : ""}</span></div>` : ""}
       ${t.edits?.length ? `<div class="hint" style="margin-top:0"><b>Ändrad i efterhand</b>${t.edits.slice(-5).reverse().map((e) => `<br>${esc(editLine(e))}`).join("")}</div>` : ""}
       ${mode === "end" ? "" : `<div class="row2">
@@ -9107,7 +9107,35 @@ const ACTIONS = {
       <div class="form">${years.map((yr) => `<button class="btn ${yr === (new Date().getMonth() < 3 ? y - 1 : y) ? "primary" : "ghost"} block" type="button" data-act="trip-year-go" data-y="${yr}">${yr}</button>`).join("")}</div>`);
   },
   "trip-year-go"(el) { closeSheet(); exportTripYear(Number(el.dataset.y)); },
+  // Resans karta i helskärm, med den väg som GPS:en mätte. Kartappar kan bara visa snabbaste vägen.
+  "trip-map-big"(el) {
+    const t = S.trips.find((x) => x.id === el.dataset.id), ends = t && tripEnds(t);
+    if (!ends) return;
+    const path = decodePath(t.path);
+    document.getElementById("map-full")?.remove();
+    document.body.insertAdjacentHTML("beforeend", `<div class="map-full" id="map-full" role="dialog" aria-label="Resans väg">
+      <div class="mf-map" id="mf-map"></div>
+      <button class="mf-close icon-btn" type="button" data-act="trip-map-close" aria-label="Stäng">${icon("close", 20)}</button>
+      <div class="mf-bar">
+        <div class="mf-t">${esc([t.from, t.to].filter(Boolean).join(" → ") || "Resan")}</div>
+        <div class="mf-s">${esc([fmtDateShort(t.date), t.startedAt && t.endedAt ? `${clock(tsMs(t.startedAt))}–${clock(tsMs(t.endedAt))}` : "", tripMil(t) != null ? fmtKm(tripMil(t)) : "", path.length >= 2 ? "Vägen enligt GPS" : "Ingen GPS-väg sparad, visar snabbaste vägen"].filter(Boolean).join(" · "))}</div>
+        <button class="link" type="button" data-act="trip-map-open" data-id="${esc(t.id)}">Vägbeskrivning i kartappen</button>
+      </div>
+    </div>`);
+    if (EN && typeof trTree === "function") trTree($("#map-full"));
+    document.body.classList.add("map-full-open");
+    tripMap($("#mf-map"), ...ends, path);
+  },
+  "trip-map-close"() {
+    document.getElementById("map-full")?.remove();
+    document.body.classList.remove("map-full-open");
+    // Den lilla kartan i resan ritas om, eftersom kartan bara finns en i taget.
+    const inner = $("#tr-map-inner"), id = $("#tr-map [data-act=trip-map-big]")?.dataset.id;
+    const t = id && S.trips.find((x) => x.id === id);
+    if (inner && t && tripEnds(t)) tripMap(inner, ...tripEnds(t), decodePath(t.path));
+  },
   "trip-map-open"(el) {
+    if (document.getElementById("map-full")) ACTIONS["trip-map-close"]();
     const t = S.trips.find((x) => x.id === el.dataset.id), ends = t && tripEnds(t);
     if (!ends) return;
     const [a, b] = ends.map((l) => `${l.lat},${l.lon}`);
