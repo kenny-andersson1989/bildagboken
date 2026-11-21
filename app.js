@@ -2115,6 +2115,7 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   const active = app.contains(document.activeElement) && document.activeElement.id ? document.activeElement : null;
   const caret = active && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
   S.screen = key;
+  if (key !== "loading" && document.documentElement.classList.contains("lang-in")) requestAnimationFrame(() => document.documentElement.classList.remove("lang-in"));
   // Vilken vy som visas, så att datorlayouten kan ordna korten olika per vy.
   app.dataset.screen = key;
   app.innerHTML = html;
@@ -10008,7 +10009,10 @@ const ACTIONS = {
     pref.set("langAt", String(Date.now()));
     // Sparas även på kontot, så att språket följer med till andra telefoner och efter en ominstallation.
     if (S.user && S.house) saveMyInfo("lang", { v, at: Date.now() });
-    location.reload();
+    // Tona ut innehållet (bakgrunden ligger kvar), ladda om och tona in på det nya språket, så att det inte blinkar.
+    try { sessionStorage.setItem("bildagboken.langSwitch", "1"); } catch { /* ingen övergång */ }
+    document.documentElement.classList.add("lang-out");
+    setTimeout(() => location.reload(), 180);
   },
   "garage-glenn"(el) { garageEgg(el); },
   "theme-color"(el) { pref.set("themeColor", el.dataset.v); applyTheme(); render(); },
