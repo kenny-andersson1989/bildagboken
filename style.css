@@ -2215,3 +2215,7 @@ body.car-locked .fab { display: none; }
 .tow-lic { margin-left: 6px; padding: 2px 30px 2px 10px; background-position: right 8px center; font: 600 14px var(--f-body); border-radius: 8px; border: 1px solid var(--line); background-color: var(--input); color: var(--ink); width: auto; min-height: 0; height: auto; vertical-align: 1px; }
 .tow-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; font-size: 13.5px; color: var(--ink-2); }
 .tow-foot b { color: var(--ink); font-weight: 600; }
+.tow-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tow-lic-l { font: 600 13px var(--f-body); color: var(--ink-2); display: inline-flex; align-items: center; letter-spacing: 0; text-transform: none; }
+.tow-pick { align-items: center; }
+.tow-pick .tow-edit { margin-left: auto; flex: none; padding: 0 2px; }
