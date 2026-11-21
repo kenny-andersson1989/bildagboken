@@ -470,6 +470,7 @@ export const EN = {
   "Mätare vid start (km)": "Odometer at start (km)",
   "Mätare vid slut (km)": "Odometer at end (km)",
   "Vart": "Where to",
+  "Ändrar du den sparas en mätaravläsning i loggen med dagens datum.": "If you change it, an odometer reading is saved in the log with today's date.",
   "Genom att skapa ett konto godkänner du": "By creating an account you accept the",
   "användarvillkoren": "terms of use",
   "och att dina uppgifter hanteras enligt vår": "and that your data is handled according to our",

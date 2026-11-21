@@ -2742,10 +2742,8 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
           <label class="check"><input type="checkbox" name="notInspected" id="cf-notInspected"> Bilen är ny och har inte besiktats än</label>
           <small id="cf-bes-out">Månaden räcker, den står i besiktningsprotokollet. Då föreslår appen när nästa besiktning senast ska vara gjord.</small>
         </div>`
-      : `<div class="field"><span>Mätarställning</span>
-          <div class="odo-row"><b>${odoOf(c) != null ? `${fmtKm(odoOf(c))}` : "Inte angiven"}</b>
-          <button class="btn-soft" type="button" data-act="odo-from-car">Uppdatera</button></div>
-          <small>Hämtas från loggen. Har någon skrivit fel, ändra eller ta bort den posten i loggen.</small></div>`}`;
+      : `${inp("odoNow", "Mätarställning (km)", odoOf(c) != null ? Math.round(kmOf(odoOf(c))) : "", `inputmode="numeric" autocomplete="off" placeholder="Till exempel 214 800"`)}
+          <small class="odo-hint">Ändrar du den sparas en mätaravläsning i loggen med dagens datum.</small>`}`;
   parts.more = `
     <div class="row2">
       <label class="field"><span>Växellåda</span>${sel("gearbox", [["", "Vet inte"], ["Manuell", "Manuell"], ["Automat", "Automat"]], c.gearbox || "")}</label>
@@ -10537,6 +10535,20 @@ async function saveCarEdit(form, { keepOpen = false } = {}) {
     deleteDoc(ref("photos", c.photoId)).catch(() => {});
     payload.photoId = null;
     Object.assign(payload, { imageChecked: null });
+  }
+  // Mätarställningen: ändras den läggs en mätaravläsning i dag in i loggen (mätarställningen räknas ur loggen).
+  const odoEl = form.elements.namedItem("odoNow");
+  if (odoEl) {
+    const typed = num(odoEl.value), now = odoOf(c);
+    const mil = typed != null ? milOf(typed) : null;
+    if (mil != null && (now == null || Math.abs(mil - now) >= 0.05)) {
+      if (typed < 0 || typed > 2000000) return formError("Mätarställningen ser fel ut. Ange den i km, till exempel 214 800.");
+      if (now != null && mil < now - 0.05) {
+        const ok = await confirmDialog({ title: "Stämmer mätarställningen?", lines: [`${fmtKm(mil)} är lägre än senast kända, ${fmtKm(now)}.`], okLabel: "Ja, spara", warn: "" });
+        if (!ok) return false;
+      }
+      setDoc(doc(col("entries")), { type: "matare", carId: c.id, date: todayStr(), odometer: mil, note: null, createdBy: uid(), createdAt: serverTimestamp() }).catch(onWriteError);
+    }
   }
   updateDoc(ref("cars", c.id), payload).catch(onWriteError);
   if (keepOpen) return true;
