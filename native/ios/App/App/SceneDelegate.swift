@@ -160,4 +160,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
         SceneDelegateProxy.shared.scene(scene, continue: userActivity)
     }
+
+    // Appen syns på skärmen (öppnad, eller via en notis): starta rutan för en automatisk resa som pågår.
+    // Med scener anropas inte AppDelegate.applicationDidBecomeActive, så det görs här.
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        TripTracker.shared.appDidBecomeActive()
+    }
 }
