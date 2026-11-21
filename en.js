@@ -2032,6 +2032,7 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 km eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^Vi har skickat ett mejl till (.+)\. Tryck på länken i mejlet, och kom sedan tillbaka hit\.$/, "We have sent an email to $1. Tap the link in the email, then come back here."],
   [/^([\d\s]+) kg totalvikt(?: · tomt ([\d\s]+) kg)? · (bromsat|obromsat)$/, (m, a, b, c) => `${a} kg gross weight${b ? ` · empty ${b} kg` : ""} · ${c === "bromsat" ? "braked" : "unbraked"}`],
   [/^Du behöver (B96|BE)$/, "You need $1"],
   [/^Högst ([\d\s]+) kg med last$/, "At most $1 kg with load"],
