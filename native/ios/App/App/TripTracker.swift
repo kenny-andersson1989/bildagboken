@@ -34,7 +34,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     private let parkedKey = "autoTrips.parked"  // där senaste resan slutade: lat, lon, time
     private let parkedRegion = "bildagboken.parked"
     private let logKey = "autoTrips.log"        // senaste händelserna, för felsökning i appen
-    private var path: [CLLocationCoordinate2D] = []  // vägen under resan, en punkt ungefär var 75:e meter
+    private var path: [CLLocationCoordinate2D] = []  // vägen under resan: en punkt i varje sväng, och minst var 100:e meter
     private var carName: String?                // bilens Bluetooth eller CarPlay under resan
     private var carConnected = false            // genvägen "Bilen är ansluten" har körts
     private var lastRouteCheck = Date.distantPast
@@ -372,9 +372,7 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
             let d = loc.distance(from: prev)
             // Små hopp när bilen står still är GPS-brus och räknas inte.
             if d >= 10 || speed > 1.5 { meters += d; lastLoc = loc }
-            if let last = path.last, CLLocation(latitude: last.latitude, longitude: last.longitude).distance(from: loc) >= 75, path.count < 3000 {
-                path.append(loc.coordinate)
-            }
+            addPathPoint(loc)
         } else {
             lastLoc = loc
         }
@@ -395,6 +393,22 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
     }
 
     // Vägen som en kort textsträng (samma format som Google använder för linjer på kartor).
+    // Vägen på kartan: en punkt när bilen svänger (riktningen ändras mer än 12°) och minst var 100:e meter,
+    // så att kurvor och rondeller följer vägen. Bara säkra positioner (inom 30 m) används.
+    private func bearing(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
+        let la1 = a.latitude * .pi / 180, la2 = b.latitude * .pi / 180, dl = (b.longitude - a.longitude) * .pi / 180
+        return atan2(sin(dl) * cos(la2), cos(la1) * sin(la2) - sin(la1) * cos(la2) * cos(dl)) * 180 / .pi
+    }
+    private func addPathPoint(_ loc: CLLocation) {
+        guard loc.horizontalAccuracy <= 30, path.count < 8000, let last = path.last else { return }
+        let d = CLLocation(latitude: last.latitude, longitude: last.longitude).distance(from: loc)
+        if d >= 100 { path.append(loc.coordinate); return }
+        guard d >= 15, path.count >= 2 else { return }
+        var turn = abs(bearing(path[path.count - 2], last) - bearing(last, loc.coordinate))
+        if turn > 180 { turn = 360 - turn }
+        if turn >= 12 { path.append(loc.coordinate) }
+    }
+
     private func encodePath(_ pts: [CLLocationCoordinate2D]) -> String {
         var out = "", pLat = 0, pLon = 0
         func enc(_ v: Int) {
