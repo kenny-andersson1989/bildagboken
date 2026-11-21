@@ -2103,7 +2103,7 @@ const nav = $("#nav");
 function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   // Rita inte om sidan medan någon skriver i ett formulär, men annars ja.
   if (keepForm && S.screen === key) {
-    const busy = [...app.querySelectorAll("form[data-keep]")].some((f) => f.dataset.dirty === "1" || f.contains(document.activeElement));
+    const busy = [...app.querySelectorAll("form[data-keep]")].some((f) => f.dataset.dirty === "1" || (f.contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)));
     if (busy) return;
   }
   // Behåll sidledsscrollen i filter- och bilraderna när sidan ritas om.
@@ -2292,6 +2292,7 @@ function render() {
   document.body.classList.toggle("car-locked", locked);
   const fn = locked ? viewLocked : views[S.view] || viewOverview;
   setScreen("view-" + S.view, fn(), { showNav: true, keepForm: true });
+  drawLiveMap();
   // En öppen inställningsruta för Resor visar det som gäller nu.
   const tsb = document.getElementById("trip-set-body");
   if (tsb && !sheet.hidden) { const html = tripSetBody(tsb.dataset.k); if (tsb.innerHTML !== html) tsb.innerHTML = html; }
@@ -5853,6 +5854,105 @@ function viewTrips() {
   const body = tab === "alla" ? tripsAllHtml(c) : tab === "inst" ? tripsSettingsHtml() : tripsOverviewHtml(c, review, gaps);
   return `${subHeader(`Körjournal · ${carName(c)}`, "Resor")}${tabs}${body}`;
 }
+/* Pågående resa: tid och sträcka överst, en karta, och det man vill fylla i under resan (tjänst eller privat,
+   vart och ärende). Allt sparas direkt på resan, så att det redan står där när man avslutar. */
+function liveTripCard(o, old) {
+  const members = S.house?.members || [];
+  const g = tripSoFarMil(o);
+  const from = [`${o.from ? `Från ${o.from.split(",")[0]}` : "Startade"} ${clock(tsMs(o.startedAt))}`, o.odoStart != null ? fmtKm(o.odoStart) : "", g?.gps ? "mätt med GPS" : ""].filter(Boolean).join(" · ");
+  const seen = new Set();
+  const chips = [...S.places.map((p) => ({ name: p.name, loc: placeLoc(p.name) })), ...carTrips().filter((t) => t.to && t !== o).map((t) => ({ name: t.to, loc: t.toLoc || null }))]
+    .filter((x) => x.name && !seen.has(x.name) && seen.add(x.name)).slice(0, 8);
+  return `<form class="lv-card" data-form="live-trip" data-keep data-id="${esc(o.id)}" novalidate>
+      <div class="rz-live${o.pausedAt ? " paused" : ""}"><span class="k${old ? " old" : ""}"><span class="lv-dot"></span>${o.pausedAt ? "Pausad" : old ? "Glömde du avsluta?" : "Pågående resa"}</span><span class="big" data-trip-bar>${esc(tripBarText(o))}</span>
+        <span class="s">${esc(from)}</span></div>
+      ${o.startLoc || o.toLoc?.lat != null ? `<div class="bk-map trip-map lv-map" id="lv-map"></div>` : ""}
+      <div class="seg" role="group" aria-label="Tjänst eller privat">${["tjanst", "privat"].map((k) => `<button type="button" data-act="live-kind" data-kind="${k}" aria-pressed="${(o.kind || "tjanst") === k}">${k === "tjanst" ? "Tjänst" : "Privat"}</button>`).join("")}</div>
+      ${field("Vart", `<input id="lv-to" name="to" value="${esc(o.to || "")}" placeholder="Sök plats eller adress" autocomplete="off" enterkeyhint="done"><span class="suggest" id="lv-to-suggest" role="listbox" hidden></span>`)}
+      ${chips.length ? `<div class="lv-chips">${chips.map((x) => `<button type="button" class="chip-btn" data-act="live-to-pick" data-name="${esc(x.name)}" data-loc="${esc(x.loc ? JSON.stringify(x.loc) : "")}" aria-pressed="${o.to === x.name}">${esc(x.name)}</button>`).join("")}</div>` : ""}
+      ${field("Ärende", `<input id="lv-purpose" name="purpose" value="${esc(o.purpose || "")}" placeholder="Till exempel kundmöte" autocomplete="off" enterkeyhint="done">`)}
+      ${members.length > 1 ? field("Förare", `<select id="lv-driver" name="driver">${members.map((u) => `<option value="${esc(u)}"${(o.driver || o.createdBy) === u ? " selected" : ""}>${esc(u === uid() ? "Du" : memberName(u))}</option>`).join("")}</select>`) : ""}
+      <p class="hint">Sparas direkt. Avsluta resan med knappen längst ner.</p>
+      <div class="lv-btns"><button class="btn-soft" type="button" data-act="trip-pause">${o.pausedAt ? "Fortsätt" : "Pausa"}</button>${o.to ? `<button class="btn-soft" type="button" data-act="trip-nav">${icon("pin", 16)} ${esc(`Vägbeskrivning till ${o.to}`)}</button>` : ""}</div>
+    </form>`;
+}
+// Sparar en ändring på den pågående resan, utan att rita om sidan medan man skriver.
+function saveLiveTrip(upd) {
+  const o = openTrip();
+  if (!o) return;
+  const changed = Object.keys(upd).some((k) => JSON.stringify(o[k] ?? null) !== JSON.stringify(upd[k] ?? null));
+  if (!changed) return;
+  Object.assign(o, upd);
+  updateDoc(doc(col("trips"), o.id), upd).catch(onWriteError);
+  liveSent = null; updateLiveActivity();
+  const f = document.querySelector('form[data-form="live-trip"]');
+  if (f) delete f.dataset.dirty;
+  // Rita om, utom när man står och skriver i ett fält.
+  const act = document.activeElement;
+  if (f?.contains(act) && /^(INPUT|TEXTAREA)$/.test(act.tagName)) return;
+  if (f?.contains(act)) act.blur();
+  render();
+}
+function saveLiveTo(name, loc) {
+  name = String(name || "").trim();
+  const saved = placeByName(name);
+  saveLiveTrip({ to: name || null, toLoc: name ? (loc || (saved ? placeLoc(saved.name) : null)) : null });
+}
+// Kartan: start (A), var du är nu, och målet (B) när Vart är ifyllt. Samma karta flyttas med när sidan ritas om.
+let liveMap = null, liveMapEl = null, liveMapKey = "";
+async function drawLiveMap() {
+  const box = document.getElementById("lv-map");
+  const o = openTrip();
+  if (!box || !o) return;
+  const to = o.toLoc?.lat != null ? o.toLoc : null;
+  const key = `${o.id}|${to ? `${to.lat},${to.lon}` : ""}`;
+  if (liveMapEl && liveMapKey === key) { if (liveMapEl.parentNode !== box) box.replaceChildren(liveMapEl); return; }
+  try { liveMap?.destroy?.(); } catch { /* redan borta */ }
+  liveMap = null; liveMapKey = key;
+  const inner = liveMapEl = document.createElement("div");
+  inner.className = "bk-map-inner";
+  box.replaceChildren(inner);
+  const a = o.startLoc?.lat != null ? o.startLoc : null;
+  const here = await tripPosition();
+  if (liveMapEl !== inner) return;
+  const pts = [a, here, to].filter(Boolean);
+  if (!pts.length) return;
+  try {
+    const mk = await loadMapKit();
+    if (liveMapEl !== inner) return;
+    const dark = DARK_THEMES.includes(document.documentElement.dataset.theme) || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+    const map = liveMap = new mk.Map(inner, {
+      isScrollEnabled: false, isZoomEnabled: false, isRotationEnabled: false,
+      showsMapTypeControl: false, showsZoomControl: false, showsUserLocationControl: false,
+      showsCompass: mk.FeatureVisibility?.Hidden, showsScale: mk.FeatureVisibility?.Hidden,
+      colorScheme: dark ? mk.Map?.ColorSchemes?.Dark : mk.Map?.ColorSchemes?.Light,
+    });
+    const pad = new mk.Padding(40, 30, 40, 30);
+    const items = [];
+    if (a) items.push(new mk.MarkerAnnotation(new mk.Coordinate(a.lat, a.lon), { title: "Start", glyphText: "A", color: "#2f9e5b" }));
+    if (to) items.push(new mk.MarkerAnnotation(new mk.Coordinate(to.lat, to.lon), { title: o.to || "Mål", glyphText: "B", color: "#E77026" }));
+    if (here && mk.CircleOverlay) items.push(new mk.CircleOverlay(new mk.Coordinate(here.lat, here.lon), 40, { style: new mk.Style({ fillColor: "#1a73e8", fillOpacity: 0.9, strokeColor: "#fff", lineWidth: 3 }) }));
+    items.forEach((x) => (x instanceof mk.MarkerAnnotation ? map.addAnnotation(x) : map.addOverlay(x)));
+    map.showItems(items, { animate: false, padding: pad });
+    if (pts.length === 1 || (pts.length === 2 && distM(pts[0], pts[1]) < 150)) map.cameraDistance = 1500;
+    // Vägen härifrån till målet, enligt Apple Kartor.
+    const from = here || a;
+    if (to && from && distM(from, to) > 150) new mk.Directions().route({ origin: new mk.Coordinate(from.lat, from.lon), destination: new mk.Coordinate(to.lat, to.lon), transportType: mk.Directions.Transport.Automobile }, (err, data) => {
+      const line = data?.routes?.[0]?.polyline;
+      if (err || !line || liveMap !== map) return;
+      line.style = new mk.Style({ strokeColor: "#E77026", lineWidth: 5, lineCap: "round", lineJoin: "round", strokeOpacity: 0.85, lineDash: [8, 8] });
+      map.addOverlay(line);
+      map.showItems([...items, line], { animate: false, padding: pad });
+    });
+  } catch (err) {
+    console.warn("Apple-kartan kunde inte visas", err);
+    const b = to || here || a, all = pts;
+    const d = 0.004;
+    const [w, e] = [Math.min(...all.map((x) => x.lon)) - d, Math.max(...all.map((x) => x.lon)) + d], [so, n] = [Math.min(...all.map((x) => x.lat)) - d / 2, Math.max(...all.map((x) => x.lat)) + d / 2];
+    inner.innerHTML = `<iframe title="Karta" loading="lazy" referrerpolicy="no-referrer" src="https://www.openstreetmap.org/export/embed.html?bbox=${w},${so},${e},${n}&layer=mapnik&marker=${b.lat},${b.lon}"></iframe>`;
+  }
+}
+
 function tripsOverviewHtml(c, review, gaps) {
   const open = openTrip();
   const list = carTrips(c.id);
@@ -5863,9 +5963,7 @@ function tripsOverviewHtml(c, review, gaps) {
   const old = open && Date.now() - tsMs(open.startedAt) >= 4 * 36e5;
   const reviewSorted = [...review].sort((a, b) => tsMs(b.startedAt) - tsMs(a.startedAt));
   return `<article class="card rz-hero">${open
-      ? `<div class="rz-live${open.pausedAt ? " paused" : ""}"><span class="k${old ? " old" : ""}">${open.pausedAt ? "Pausad" : old ? "Glömde du avsluta?" : "Resa pågår"}</span><span class="big" data-trip-bar>${esc(tripBarText(open))}</span>
-          <span class="s">${esc([open.to ? `Mot ${open.to}` : "", `Startade ${clock(tsMs(open.startedAt))} vid ${fmtKm(open.odoStart)}`].filter(Boolean).join(" · "))}</span>
-          <div class="row"><button class="rz-stop" type="button" data-act="start-trip"><span class="tb-sq"></span> Avsluta</button><button class="rz-ghost" type="button" data-act="trip-pause">${open.pausedAt ? "Fortsätt" : "Pausa"}</button>${open.to ? `<button class="rz-ghost" type="button" data-act="trip-nav">Vägbeskrivning</button>` : ""}</div></div>`
+      ? liveTripCard(open, old)
       : `<button class="rz-start" type="button" data-act="trip-start-now">${icon("gauge", 24)} Starta resa</button><button class="link rz-link" type="button" data-act="new-trip">Logga en resa i efterhand</button>`}</article>
     ${reviewSorted.length || gaps.length ? `<article class="card"><h2>Att göra</h2>
       ${reviewSorted.length ? `<div class="rows">${reviewSorted.map((t) => `<div class="swipe-wrap"><span class="sw-bg sw-work">Tjänst</span><span class="sw-bg sw-priv">Privat</span><div class="dl swipe-row" data-id="${esc(t.id)}"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.from, t.to].filter(Boolean).join(" → ") || "Resa")}</div><div class="dl-s">${esc(`${fmtDateShort(t.date)} ${clock(tsMs(t.startedAt))}–${clock(tsMs(t.endedAt))} · ${fmtKm(tripMil(t))} · GPS`)}</div>
@@ -6253,7 +6351,7 @@ function tripBarText(o) {
   return `${hmm(tripElapsed(o))}${d ? ` · ${d.gps ? "" : "ca "}${fmtKm(d.mil)}` : ""}`;
 }
 function renderTripBar() {
-  const o = S.user && S.hid && S.loaded.entries && tripsOn() && S.view !== "resor" ? openTrip() : null;
+  const o = S.user && S.hid && S.loaded.entries && tripsOn() ? openTrip() : null;
   let bar = document.getElementById("tripbar");
   document.body.classList.toggle("has-tripbar", !!o);
   if (!o) { bar?.remove(); return; }
@@ -7142,6 +7240,7 @@ const PLACE_FIELDS = {
   // Målet för en resa i körjournalen: orter, adresser och företag.
   "tr-to": { input: "tr-to", box: "tr-to-suggest", search: "any" },
   "tr-from": { input: "tr-from", box: "tr-from-suggest", search: "any" },
+  "lv-to": { input: "lv-to", box: "lv-to-suggest", search: "any" },
   "pl-addr": { input: "pl-addr", box: "pl-addr-suggest", search: "any" },
 };
 let placeTimer = null, placeAbort = null;
@@ -8728,6 +8827,16 @@ const ACTIONS = {
       const b = document.getElementById(x.box); if (b) b.hidden = true;
       document.getElementById(x.input)?.setAttribute("aria-expanded", "false");
     });
+    if (el.dataset.kind === "lv-to") {
+      const d = el.dataset, lat = num(d.lat), lon = num(d.lon);
+      const saved = S.places.find((p) => p.id === d.place) || (lat != null && lon != null ? placeAt({ lat, lon }) : null);
+      const name = saved?.name || d.name || d.addr;
+      set("lv-to", name);
+      hideAll();
+      document.activeElement?.blur?.();
+      saveLiveTo(name, saved ? placeLoc(saved.name) : lat != null && lon != null ? clean({ name, addr: d.addr || null, lat, lon, pid: d.pid || null }) : null);
+      return;
+    }
     if (el.dataset.kind === "tr-to" || el.dataset.kind === "tr-from") {
       const d = el.dataset, lat = num(d.lat), lon = num(d.lon);
       // Ligger det man valde vid en sparad plats får det platsens namn.
@@ -9248,6 +9357,17 @@ const ACTIONS = {
     liveSent = null; updateLiveActivity();
     render();
     showToast(upd.pausedAt ? "Resan är pausad. Tiden och sträckan räknas inte förrän du fortsätter." : "Resan fortsätter");
+  },
+  "live-kind"(el) {
+    el.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
+    saveLiveTrip({ kind: el.dataset.kind });
+  },
+  "live-to-pick"(el) {
+    let loc = null;
+    try { loc = el.dataset.loc ? JSON.parse(el.dataset.loc) : null; } catch { /* ingen plats */ }
+    const same = openTrip()?.to === el.dataset.name;
+    const input = $("#lv-to"); if (input) input.value = same ? "" : el.dataset.name;
+    saveLiveTo(same ? "" : el.dataset.name, same ? null : loc);
   },
   "trip-nav"() {
     const t = openTrip();
@@ -10182,6 +10302,14 @@ function onInput(ev) {
 }
 
 function onChange(ev) {
+  if (ev.target.closest?.('form[data-form="live-trip"]')) {
+    const id = ev.target.id;
+    // Vart: väntar lite, så att ett val i förslagslistan hinner gå före det man har skrivit.
+    if (id === "lv-to") { const v = ev.target.value; setTimeout(() => { if (openTrip() && $("#lv-to")?.value === v) saveLiveTo(v, openTrip().to === v.trim() ? openTrip().toLoc : null); }, 250); }
+    if (id === "lv-purpose") saveLiveTrip({ purpose: ev.target.value.trim() || null });
+    if (id === "lv-driver") saveLiveTrip({ driver: ev.target.value });
+    return;
+  }
   if (ev.target.id === "ef-date" && $("#ef-future")) $("#ef-future").hidden = !(ev.target.value > todayStr());
   if (ev.target.id === "bk-time-other") setBookingTime(ev.target.value);
   if (ev.target.id === "bk-allday") {
