@@ -3012,10 +3012,7 @@ function regToCar(f) {
   if (vin && vin.length >= 11) out.vin = vin;
   const ccm = regNumber(regGet(f, "enginesize", "cylindervolym", "enginecapacity"));
   if (ccm && ccm > 300 && ccm < 9000) out.engine = (Math.round(ccm / 100) / 10).toFixed(1);
-  const bes = regDay(regGet(f, "nextinspection", "inspectiondeadline", "besiktigassenast", "besiktassenast", "nextinspectiondate"));
-  if (bes) out.besiktning = bes;
-  const last = regDay(regGet(f, "lastinspection", "lastinspectiondate", "senastbesiktning", "senastgodkandbesiktning"));
-  if (last) out.lastInspection = last;
+  // Besiktningen tas inte från registret: man skriver in den senaste själv, och appen räknar ut nästa.
   const gear = (regGet(f, "transmission", "gearbox", "vaxellada", "gearboxtype") || "").toLowerCase();
   if (gear) out.gearbox = /auto/.test(gear) ? "Automat" : /man/.test(gear) ? "Manuell" : undefined;
   if (!out.gearbox) delete out.gearbox;
@@ -3034,11 +3031,6 @@ function regToCar(f) {
   if (first) out.firstReg = first;
   const co2 = regNumber(regGet(f, "co2", "co2emissions", "koldioxid"));
   if (co2 && co2 > 0 && co2 < 1000) out.co2 = Math.round(co2);
-  // En bil som är yngre än tre år: första besiktningen ska vara gjord inom 36 månader från första registreringen.
-  if (first && !out.besiktning) {
-    const d = parseDate(first), due = new Date(d.getFullYear(), d.getMonth() + 37, 0);
-    if (due >= new Date()) out.besiktning = ymd(due);
-  }
   const tax = regNumber(regGet(f, "annualtax", "tax", "fordonsskatt", "arsskatt", "vehicletax"));
   if (tax && tax > 0 && tax < 100000) out.skattBelopp = Math.round(tax);
   return out;
