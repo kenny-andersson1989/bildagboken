@@ -6487,6 +6487,18 @@ function tickTrip() {
 setInterval(() => { tickTrip(); updateTripEstimate(); }, 20000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { tickTrip(); updateTripEstimate(); } });
 
+// Avsluta: Vart fylls i med var du är nu. En sparad plats (till exempel Hem) går före adressen.
+// Har du redan skrivit något, eller valt mål när resan startade, rörs fältet inte.
+async function fillTripTo(loc) {
+  const input = $("#tr-to");
+  if (!input || !loc || input.value.trim() || input.dataset.touched) return;
+  const saved = placeAt(loc);
+  const name = saved?.name || await reverseAddress(loc.lat, loc.lon).catch(() => "");
+  if (!name || !document.contains(input) || input.value.trim() || input.dataset.touched) return;
+  input.value = name;
+  const h = $("#tr-toLoc");
+  if (h) h.value = JSON.stringify(saved ? placeLoc(saved.name) : { addr: name, lat: loc.lat, lon: loc.lon });
+}
 async function suggestTripDistance(t) {
   const box = $("#tr-route");
   // Mätt med telefonens GPS under resan: det säkraste förslaget.
@@ -6496,6 +6508,7 @@ async function suggestTripDistance(t) {
     box.hidden = false;
     const pos = await freshTripPosition(), el = $("#tr-endPos");
     if (pos && el && document.contains(el)) el.value = tripLocJson(pos);
+    fillTripTo(pos);
     return;
   }
   if (!box) return;
@@ -6503,11 +6516,13 @@ async function suggestTripDistance(t) {
     // Ingen startpunkt: spara ändå var resan slutade.
     const here = await freshTripPosition(), pos = $("#tr-endPos");
     if (here && pos && document.contains(pos)) pos.value = tripLocJson(here);
+    fillTripTo(here);
     return;
   }
   const here = await freshTripPosition();
   const pos = $("#tr-endPos");
   if (here && pos && document.contains(pos)) pos.value = tripLocJson(here);
+  fillTripTo(here);
   const end = here || t.toLoc;
   if (!end || !document.contains(box)) return;
   try {
@@ -10124,6 +10139,7 @@ function onInput(ev) {
   if (ev.target.id === "pl-addr") { const a = $("#pl-lat"), b = $("#pl-lon"); if (a) a.value = ""; if (b) b.value = ""; }
   if (ev.target.id === "tr-kind" && ev.isTrusted) ev.target.dataset.touched = "1";
   if (ev.target.id === "tr-from") { const h = $("#tr-fromLoc"); if (h) h.value = ""; ev.target.dataset.touched = "1"; }
+  if (ev.target.id === "tr-to" && ev.isTrusted) ev.target.dataset.touched = "1";
   if (ev.target.id === "tr-to") { const h = $("#tr-toLoc"); if (h) h.value = ""; if (!ev.target.value.trim()) recentTripTargets(); }
   if (ev.target.id === "bk-addr") {
     // Egen adress: positionen från ett tidigare förslag gäller inte längre.
