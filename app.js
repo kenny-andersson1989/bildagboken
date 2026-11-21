@@ -2761,10 +2761,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
     ${c.photoId ? `<label class="check"><input type="checkbox" name="removePhoto" id="cf-removePhoto"> Ta bort eget foto och använd bild från Wikipedia</label>`
       : `<p class="hint">Utan eget foto hämtas en bild på modellen från Wikipedia.</p>`}`;
   parts.dates = `
-    <div class="row2">
-      ${inp("besiktning", "Sista dag för besiktning", c.besiktning, 'type="date"')}
-      ${inp("besiktningPlats", "Besiktningsstation", c.besiktningPlats, '')}
-    </div>
+    ${inp("besiktning", "Sista dag för besiktning", c.besiktning, 'type="date"')}
     <div class="row2">
       ${inp("forsakringBolag", "Försäkringsbolag", c.forsakringBolag, '')}
       ${inp("forsakringDatum", "Försäkringen förnyas", c.forsakringDatum, 'type="date"')}
@@ -8739,7 +8736,7 @@ function readCarForm(form) {
   if (has("besiktning")) {
     Object.assign(data, {
       besiktning: str("besiktning") || null,
-      besiktningPlats: str("besiktningPlats") || null,
+      ...(has("besiktningPlats") ? { besiktningPlats: str("besiktningPlats") || null } : {}),
       forsakringBolag: str("forsakringBolag") || null,
       forsakringDatum: str("forsakringDatum") || null,
       skattManad: str("skattManad") === "av" ? "av" : str("skattManad") ? Number(str("skattManad")) : null,
