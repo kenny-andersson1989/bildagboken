@@ -2276,3 +2276,13 @@ body.car-locked .fab { display: none; }
 .map-full .mf-t { font: 700 16px var(--f-display); }
 .map-full .mf-s { font-size: 13px; color: var(--ink-2); }
 .map-full .mf-bar .link { justify-self: start; margin-top: 6px; padding: 0; }
+
+/* Ny bil: registreringsnumret först, resten under Fyll i själv. */
+.cf-manual { display: grid; gap: inherit; }
+.cf-manual > summary { cursor: pointer; font: 600 14px var(--f-body); color: var(--accent-text); padding: 6px 0; list-style: none; }
+.cf-manual > summary::-webkit-details-marker { display: none; }
+.cf-manual > summary::after { content: " ▾"; font-size: 11px; }
+.cf-manual[open] > summary::after { content: " ▴"; }
+.cf-manual[open] { display: grid; gap: 14px; }
+.setup-tip { border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft); }
+.setup-tip h2 { display: flex; align-items: center; justify-content: flex-start; gap: 8px; }

@@ -436,7 +436,7 @@ function defaultItems(c) {
 
 const car = () => S.cars.find((c) => c.id === S.carId) || null;
 // Samma namn på bilen överallt, till exempel "Volvo V50 1.8F".
-const carName = (c) => [c?.make, c?.model, c?.engine].filter(Boolean).join(" ") || "Bilen";
+const carName = (c) => [c?.make, c?.model, c?.engine].filter(Boolean).join(" ") || (c?.placeholder ? "Min bil" : "Bilen");
 
 // Mätarställningen bestäms av loggen: den senaste posten (efter datum) som har en mätarställning.
 // Äldre bilar utan sådana poster faller tillbaka på värdet som sparades på bilen.
@@ -2715,6 +2715,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       <div id="cf-reg-status" class="reg-status" aria-live="polite"${isNew ? "" : ` data-plate="${esc(plateKey(c.plate))}"`}${!isNew && regFetchedPlate(c) ? ` data-fetched="${esc(regFetchedPlate(c))}"` : ""}><small>${isNew ? "Skriv registreringsnumret och tryck på Hämta, så fylls bilens uppgifter i." : regFetchedPlate(c) ? "Uppgifterna är redan hämtade. Har du skrivit fel registreringsnummer, rätta det och tryck på Hämta." : "Tryck på Hämta för att fylla i uppgifterna från registret."}</small></div>
       <input type="hidden" name="regJson" id="cf-regJson">
     </div>
+    ${isNew ? `<details class="cf-manual"><summary>Fyll i själv</summary>` : ""}
     <div class="row2">
       ${inp("make", "Märke", c.make, 'required list="dl-make" autocomplete="off"')}
       ${inp("model", "Modell", c.model, 'required list="dl-model" autocomplete="off"')}
@@ -2751,7 +2752,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       : `<div class="field"><span>Mätarställning</span>
           <div class="odo-row"><b>${odoOf(c) != null ? `${fmtKm(odoOf(c))}` : "Inte angiven"}</b>
           <button class="btn-soft" type="button" data-act="odo-from-car">Uppdatera</button></div>
-          <small>Hämtas från loggen. Har någon skrivit fel, ändra eller ta bort den posten i loggen.</small></div>`}`;
+          <small>Hämtas från loggen. Har någon skrivit fel, ändra eller ta bort den posten i loggen.</small></div>`}${isNew ? "</details>" : ""}`;
   parts.more = `
     <div class="row2">
       <label class="field"><span>Växellåda</span>${sel("gearbox", [["", "Vet inte"], ["Manuell", "Manuell"], ["Automat", "Automat"]], c.gearbox || "")}</label>
@@ -3122,6 +3123,8 @@ document.addEventListener("keydown", (ev) => {
 function regFillForm(f) {
   const form = $("#cf-plate")?.form, box = $("#cf-reg-status");
   if (!form || !box) return;
+  // Ny bil: visa fälten som fylldes i, så att man kan kolla dem och skriva mätarställningen.
+  form.querySelector(".cf-manual")?.setAttribute("open", "");
   const d = regToCar(f);
   const set = (name, v) => {
     const el = form.elements.namedItem(name);
@@ -3177,9 +3180,10 @@ async function regRefresh(c) {
 function renderCarSetup() {
   setScreen("car-setup", `
     <header class="top"><div class="hello"><small>Ett sista steg</small><h1>Lägg till er bil</h1></div></header>
-    <form class="card form" data-form="car-new" data-keep>
+    <form class="card form" data-form="car-new" data-keep novalidate>
       ${carFormFields({}, { sections: ["basic"], isNew: true })}
       <button class="btn primary block" type="submit">Spara bilen</button>
+      <button class="link" type="button" data-act="car-later" style="display:block;margin:4px auto 0">Gör det senare</button>
       <p class="hint">Försäkring, skatt och däck lägger du till under Bilen efteråt.</p>
     </form>
     ${trashCard()}
@@ -4075,6 +4079,12 @@ function viewOverview() {
   </article>`);
 
 
+  // En bil utan uppgifter (Gör det senare): ett kort överst som leder till rutan för bilen.
+  if (!c.make) parts.push(`<article class="card setup-tip">
+    <h2>${icon("car", 18)} Fyll i bilens uppgifter</h2>
+    <p class="muted">Med registreringsnumret fylls märke, modell, besiktning och mer i av sig själv. Då blir påminnelserna och underhållet rätt.</p>
+    <div class="ask"><button class="btn primary" type="button" data-act="edit-car" data-section="basic">Fyll i nu</button></div>
+  </article>`);
   // Bilkortet: namn och regnummer, bilden, och under den två rutor: mätarställning och bränsle.
   parts.push(`<article class="card hero">
     <div class="hero-car">
@@ -8801,6 +8811,7 @@ async function copyText(text) {
 
 const ACTIONS = {
   // Inloggning med e-post och lösenord: logga in, skapa konto eller få ett mejl för att byta lösenord.
+  "car-later"() { addPlaceholderCar(); },
   "ob-step"(el) { S.obStep = el.dataset.step || ""; renderOnboarding(); },
   "email-login"(el) { emailSheet(el?.dataset?.mode || "login"); },
   async "verify-check"() {
@@ -10416,7 +10427,7 @@ async function joinHouse(form) {
 async function saveNewCar(form) {
   if (caps() && S.cars.length >= caps().cars) return limitSheet("cars");
   const data = readCarForm(form);
-  if (!data.make || !data.model) return formError("Fyll i märke och modell.") ?? showToast("Fyll i märke och modell.");
+  if (!data.make || !data.model) { form.querySelector(".cf-manual")?.setAttribute("open", ""); return formError("Fyll i märke och modell, eller hämta dem med registreringsnumret.") ?? showToast("Fyll i märke och modell."); }
   const startOdo = data.odometer;
   delete data.odometer;
   // Uppgifterna från registret: sparas på bilen, och det formuläret inte har (besiktning, vikter, växellåda) tas därifrån.
@@ -10450,6 +10461,24 @@ async function saveNewCar(form) {
   closeSheet();
   setView("oversikt");
   showToast(`${data.make} ${data.model} är tillagd`);
+}
+
+// "Gör det senare": en bil utan uppgifter ("Min bil"), så att man kommer in i appen direkt. Ett kort i Översikt
+// påminner om att fylla i den.
+function addPlaceholderCar() {
+  if (caps() && S.cars.length >= caps().cars) return limitSheet("cars");
+  const cRef = doc(col("cars"));
+  const full = {
+    placeholder: true, fuel: "Bensin",
+    items: defaultItems({}), itemsV: 3, specsText: SPEC_TEMPLATE,
+    tiresOn: new Date().getMonth() >= 11 || new Date().getMonth() <= 2 ? "vinter" : "sommar", tires: [],
+    createdAt: serverTimestamp(), createdBy: uid(),
+  };
+  setDoc(cRef, full).catch(onWriteError);
+  if (!S.cars.some((x) => x.id === cRef.id)) S.cars = [...S.cars, { ...full, id: cRef.id, createdAt: Date.now() }];
+  S.carId = cRef.id;
+  pref.set("car", cRef.id);
+  setView("oversikt");
 }
 
 // Komprimerar och sparar ett foto på bilen. Returnerar foto-id, eller null om bilden inte gick att läsa.
