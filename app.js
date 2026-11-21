@@ -2717,8 +2717,8 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
     </div>
     ${isNew ? `<details class="cf-manual"><summary>Fyll i själv</summary>` : ""}
     <div class="row2">
-      ${inp("make", "Märke", c.make, 'required list="dl-make" autocomplete="off"')}
-      ${inp("model", "Modell", c.model, 'required list="dl-model" autocomplete="off"')}
+      ${inp("make", "Märke", c.make, 'list="dl-make" autocomplete="off"')}
+      ${inp("model", "Modell", c.model, 'list="dl-model" autocomplete="off"')}
     </div>
     <datalist id="dl-make">${makeOptions()}</datalist>
     <datalist id="dl-model">${modelOptions(c.make)}</datalist>
@@ -10445,7 +10445,8 @@ async function joinHouse(form) {
 async function saveNewCar(form) {
   if (caps() && S.cars.length >= caps().cars) return limitSheet("cars");
   const data = readCarForm(form);
-  if (!data.make || !data.model) { form.querySelector(".cf-manual")?.setAttribute("open", ""); return formError("Fyll i märke och modell, eller hämta dem med registreringsnumret.") ?? showToast("Fyll i märke och modell."); }
+  // Allt är frivilligt. Utan märke heter bilen "Min bil" tills uppgifterna fylls i.
+  if (!data.make && !data.model) data.placeholder = true;
   const startOdo = data.odometer;
   delete data.odometer;
   // Uppgifterna från registret: sparas på bilen, och det formuläret inte har (besiktning, vikter, växellåda) tas därifrån.
@@ -10478,7 +10479,7 @@ async function saveNewCar(form) {
   pref.set("car", cRef.id);
   closeSheet();
   setView("oversikt");
-  showToast(`${data.make} ${data.model} är tillagd`);
+  showToast(`${carName(data)} är tillagd`);
 }
 
 // "Gör det senare": en bil utan uppgifter ("Min bil"), så att man kommer in i appen direkt. Ett kort i Översikt
@@ -10523,7 +10524,7 @@ async function changeHeroPhoto(file) {
 
 async function saveCarEdit(form, { keepOpen = false } = {}) {
   const data = readCarForm(form);
-  if ("make" in data && (!data.make || !data.model)) return formError("Fyll i märke och modell.");
+
   const c = car();
   const fd = new FormData(form);
   const payload = clean(data);
