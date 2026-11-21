@@ -1037,6 +1037,10 @@ export const EN = {
   "Slå på notiser": "Turn on notifications",
   "Tankar ungefär": "Fills up about",
   "Vägbeskrivning": "Directions",
+  "Pågående resa": "Trip in progress",
+  "Sparas direkt. Avsluta resan med knappen längst ner.": "Saved right away. End the trip with the button at the bottom.",
+  "Till exempel kundmöte": "For example a client meeting",
+  "Sök plats eller adress": "Search for a place or address",
   "Välkommen till": "Welcome to",
   "blev det gjort": "was it done",
   "köpte nya däck": "bought new tyres",
@@ -1902,6 +1906,8 @@ export const EN = {
 
 // Mönster för texter med siffror, som "var 2 000 km eller 1 år" och "för 3 dagar sedan".
 export const EN_RULES = [
+  [/^(?:Från (.+?)|Startade) (\d\d:\d\d)(?: · ([\d\s ,]+) km)?( · mätt med GPS)?$/, (m, f, t, km, g) => `${f ? `From ${f}` : "Started"} ${t}${km ? ` · ${km} km` : ""}${g ? " · measured with GPS" : ""}`],
+  [/^Vägbeskrivning till (.+)$/, "Directions to $1"],
   [/^Vid (.+) km · ([a-zåäö]{3}) (\d{4})$/, (m, a, mo, y) => `At ${a} km · ${({ maj: "May", okt: "Oct" })[mo] || mo[0].toUpperCase() + mo.slice(1)} ${y}`],
   [/^Senast ([a-zåäö]{3}) (\d{4})$/, (m, mo, y) => `By ${({ maj: "May", okt: "Oct" })[mo] || mo[0].toUpperCase() + mo.slice(1)} ${y}`],
   [/^Annat som har gjorts \((\d+)\)$/, "Other work done ($1)"],

@@ -2127,3 +2127,19 @@ body.car-locked .fab { display: none; }
 #tab-resor { position: relative; }
 .tab-plus-badge { position: absolute; top: 2px; left: calc(50% + 6px); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: #fff; font: 800 12px/16px var(--f-body); text-align: center; box-shadow: 0 0 0 2px var(--nav-bg, var(--ground)); pointer-events: none; }
 .net-pill.server-down { background: var(--accent); color: #fff; cursor: pointer; pointer-events: auto; }
+
+/* Pågående resa i Resor: tid överst, karta och fälten under. */
+.lv-card { display: grid; gap: 12px; min-width: 0; }
+.lv-card .field { margin: 0; }
+.lv-card .hint { margin: -4px 0 0; }
+.lv-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #2FBF6B; margin-right: 6px; vertical-align: 1px; animation: lv-pulse 1.6s ease-in-out infinite; }
+.rz-live.paused .lv-dot { animation: none; background: #F0843F; }
+@keyframes lv-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .lv-dot { animation: none; } }
+.lv-map { height: 170px; margin: 0; }
+.lv-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-top: -4px; padding-bottom: 2px; }
+.lv-chips::-webkit-scrollbar { display: none; }
+.lv-chips .chip-btn { flex: none; white-space: nowrap; }
+.lv-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.lv-btns button { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-btns [data-act="trip-nav"] { flex-basis: 100%; }
