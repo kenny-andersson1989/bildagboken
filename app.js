@@ -6061,7 +6061,7 @@ async function drawLiveMap() {
     if (liveMapEl !== inner) return;
     const dark = DARK_THEMES.includes(document.documentElement.dataset.theme) || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
     const map = liveMap = new mk.Map(inner, {
-      isScrollEnabled: false, isZoomEnabled: false, isRotationEnabled: false,
+      isScrollEnabled: true, isZoomEnabled: true, isRotationEnabled: false,
       showsMapTypeControl: false, showsZoomControl: false, showsUserLocationControl: false,
       showsCompass: mk.FeatureVisibility?.Hidden, showsScale: mk.FeatureVisibility?.Hidden,
       colorScheme: dark ? mk.Map?.ColorSchemes?.Dark : mk.Map?.ColorSchemes?.Light,
@@ -7632,7 +7632,7 @@ async function tripMap(inner, a, b, path = []) {
     if (!document.contains(inner)) return;
     const dark = DARK_THEMES.includes(document.documentElement.dataset.theme) || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
     const map = tripMapObj = new mk.Map(inner, {
-      isScrollEnabled: false, isZoomEnabled: false, isRotationEnabled: false,
+      isScrollEnabled: true, isZoomEnabled: true, isRotationEnabled: false,
       showsMapTypeControl: false, showsZoomControl: false, showsUserLocationControl: false,
       showsCompass: mk.FeatureVisibility?.Hidden, showsScale: mk.FeatureVisibility?.Hidden,
       colorScheme: dark ? mk.Map?.ColorSchemes?.Dark : mk.Map?.ColorSchemes?.Light,
