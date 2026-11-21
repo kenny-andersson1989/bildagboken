@@ -3187,7 +3187,6 @@ function renderCarSetup() {
       <p class="hint">Försäkring, skatt och däck lägger du till under Bilen efteråt.</p>
     </form>
     ${trashCard()}
-    ${inviteCard()}
     <button class="link" type="button" data-act="logout" style="align-self:center;margin:6px auto 20px;display:block">Logga ut (${esc(S.user?.email || "")})</button>`, { keepForm: true });
 }
 
