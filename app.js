@@ -6378,6 +6378,7 @@ setInterval(async () => {
   if (!st) return;
   const was = !!S.autoStatus?.driving;
   S.autoStatus = { ...(S.autoStatus || {}), ...st };
+  openTripsFromNotice(st);
   if (!st.driving) { delete S.autoStatus.since; delete S.autoStatus.meters; }
   if (was !== !!st.driving) { if (!st.driving) importAutoTrips().then(render); else render(); return; }
   if (st.driving) {
@@ -6385,11 +6386,23 @@ setInterval(async () => {
     document.querySelectorAll("[data-auto-bar]").forEach((el) => { el.textContent = EN ? tr(t) : t; });
   }
 }, 15000);
+// Tryck på en notis om en resa: visa Resor → Översikt, där resan väntar under Att göra.
+function openTripsFromNotice(st) {
+  if (!st?.openTrips) return;
+  S.tripTab = "";
+  closeSheet();
+  if (S.view !== "resor") setView("resor"); else render();
+  window.scrollTo(0, 0);
+}
 async function refreshAutoStatus() {
   if (!autoAvailable()) return;
   try { S.autoStatus = await tracker().status(); } catch { S.autoStatus = null; return; }
+  openTripsFromNotice(S.autoStatus);
   sendPlacesToPhone();
+  const before = toReview().length;
   await importAutoTrips();
+  // En ny automatisk resa medan man står på en annan flik i Resor: visa Översikt, där den ska gås igenom.
+  if (toReview().length > before && S.view === "resor" && S.tripTab) { S.tripTab = ""; render(); }
 }
 // Hämtar resorna som telefonen har mätt och lägger in dem i körjournalen, en gång var.
 const autoId = (nid) => "a" + String(nid).replace(/[^A-Za-z0-9]/g, "").slice(0, 24);
