@@ -8812,6 +8812,16 @@ async function copyText(text) {
 const ACTIONS = {
   // Inloggning med e-post och lösenord: logga in, skapa konto eller få ett mejl för att byta lösenord.
   "car-later"() { addPlaceholderCar(); },
+  "pw-toggle"(el) {
+    const inp = el.parentElement.querySelector("input");
+    if (!inp) return;
+    const show = inp.type === "password";
+    inp.type = show ? "text" : "password";
+    el.setAttribute("aria-pressed", String(show));
+    el.setAttribute("aria-label", show ? (EN ? "Hide the password" : "Dölj lösenordet") : (EN ? "Show the password" : "Visa lösenordet"));
+    el.innerHTML = icon(show ? "eye-off" : "eye", 20);
+    inp.focus({ preventScroll: true });
+  },
   "ob-step"(el) { S.obStep = el.dataset.step || ""; renderOnboarding(); },
   "email-login"(el) { emailSheet(el?.dataset?.mode || "login"); },
   async "verify-check"() {
@@ -10161,9 +10171,9 @@ function renderVerify(note = "") {
 function emailSheet(mode = "login") {
   const create = mode === "create";
   openSheet(create ? "Skapa konto med e-post" : "Logga in med e-post", `<form class="form" data-form="email-auth" data-mode="${mode}" novalidate>
-    ${create ? field("Ditt namn", `<input name="name" id="em-name" autocomplete="name" required>`, "Syns för dem du delar bilen med.") : ""}
-    ${field("E-post", `<input type="email" name="email" id="em-email" autocomplete="email" inputmode="email" autocapitalize="off" required>`)}
-    ${field("Lösenord", `<input type="password" name="password" id="em-password" autocomplete="${create ? "new-password" : "current-password"}" required minlength="8">`, create ? "Minst 8 tecken." : "")}
+    ${create ? field("Ditt namn", `<input name="name" id="em-name" autocomplete="name">`, "Syns för dem du delar bilen med.") : ""}
+    ${field("E-post", `<input type="email" name="email" id="em-email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false">`)}
+    ${field("Lösenord", `<span class="pw-row"><input type="password" name="password" id="em-password" autocomplete="${create ? "new-password" : "current-password"}" minlength="8"><button class="pw-eye" type="button" data-act="pw-toggle" aria-label="Visa lösenordet" aria-pressed="false">${icon("eye", 20)}</button></span>`, create ? "Minst 8 tecken." : "")}
     <p class="err" id="form-err" hidden></p>
     <button class="btn primary block" type="submit">${create ? "Skapa konto" : "Logga in"}</button>
     ${create
@@ -10171,6 +10181,8 @@ function emailSheet(mode = "login") {
       : `<button class="btn ghost block" type="button" data-act="email-login" data-mode="create">Skapa konto</button>
          <div class="email-links"><button class="link" type="button" data-act="email-reset">Glömt lösenordet?</button></div>`}
   </form>`);
+  // Markören direkt i första fältet, så att tangentbordet kommer upp utan ett extra tryck.
+  $(create ? "#em-name" : "#em-email")?.focus({ preventScroll: true });
 }
 function emailError(e) {
   const map = {
