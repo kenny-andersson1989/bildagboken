@@ -470,6 +470,8 @@ export const EN = {
   "Mätare vid start (km)": "Odometer at start (km)",
   "Mätare vid slut (km)": "Odometer at end (km)",
   "Vart": "Where to",
+  "Visa lösenordet": "Show the password",
+  "Dölj lösenordet": "Hide the password",
   "Gör det senare": "Do it later",
   "Fyll i själv": "Fill in yourself",
   "Min bil": "My car",

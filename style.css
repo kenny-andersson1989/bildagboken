@@ -2286,3 +2286,8 @@ body.car-locked .fab { display: none; }
 .cf-manual[open] { display: grid; gap: 14px; }
 .setup-tip { border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft); }
 .setup-tip h2 { display: flex; align-items: center; justify-content: flex-start; gap: 8px; }
+/* Lösenord med knappen Visa. */
+.pw-row { position: relative; display: block; }
+.pw-row input { width: 100%; padding-right: 48px; }
+.pw-eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border: 0; background: none; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; border-radius: 10px; }
+.pw-eye[aria-pressed="true"] { color: var(--accent-text); }
