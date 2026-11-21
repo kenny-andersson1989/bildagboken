@@ -10176,6 +10176,7 @@ function emailSheet(mode = "login") {
     ${field("Lösenord", `<span class="pw-row"><input type="password" name="password" id="em-password" autocomplete="${create ? "new-password" : "current-password"}" minlength="8"><button class="pw-eye" type="button" data-act="pw-toggle" aria-label="Visa lösenordet" aria-pressed="false">${icon("eye", 20)}</button></span>`, create ? "Minst 8 tecken." : "")}
     <p class="err" id="form-err" hidden></p>
     <button class="btn primary block" type="submit">${create ? "Skapa konto" : "Logga in"}</button>
+    ${create ? `<p class="hint em-legal">Genom att skapa ett konto godkänner du <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" rel="noopener">användarvillkoren</a> och att dina uppgifter hanteras enligt vår <a href="${LANG === "en" ? "privacy.html" : "integritet.html"}" target="_blank" rel="noopener">integritetspolicy</a>.</p>` : ""}
     ${create
       ? `<p class="hint" style="text-align:center">Har du redan ett konto? <button class="link" type="button" data-act="email-login" data-mode="login">Logga in</button></p>`
       : `<button class="btn ghost block" type="button" data-act="email-login" data-mode="create">Skapa konto</button>
