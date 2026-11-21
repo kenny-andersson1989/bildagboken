@@ -2248,3 +2248,5 @@ body.car-locked .fab { display: none; }
 .tc-ic.warn { background: color-mix(in srgb, #c98410 20%, transparent); color: #c98410; }
 .tc-ic.bad { background: color-mix(in srgb, #d2493e 18%, transparent); color: #d2493e; }
 .tc-ic.unknown { background: var(--track); color: var(--ink-3); }
+.tow-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.tow-facts .link { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 0; }

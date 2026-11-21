@@ -2919,9 +2919,9 @@ function trailerCard(c) {
   }
   return `<div class="card tow-card"><h2>Släpvagn</h2>
     ${licSel}
-    <div class="tow-sec"><span class="label">Släp</span><button class="link" type="button" data-act="trailer-edit" data-id="${esc(x.id)}">Ändra</button></div>
+    <div class="tow-sec"><span class="label">Släp</span></div>
     <div class="tow-pick">${list.map((y) => `<button type="button" class="chip-btn" data-act="trailer-pick" data-id="${esc(y.id)}" aria-pressed="${y.id === x.id}">${esc(trailerName(y, list))}</button>`).join("")}<button type="button" class="chip-btn tow-new" data-act="trailer-edit">${icon("plus", 14)} Nytt</button></div>
-    <p class="tow-facts">${esc([`${fmt(num(x.total))} kg totalvikt`, num(x.curb) != null ? `tomt ${fmt(num(x.curb))} kg` : "", x.braked ? "bromsat" : "obromsat"].filter(Boolean).join(" · "))}</p>
+    <p class="tow-facts"><span>${esc([`${fmt(num(x.total))} kg totalvikt`, num(x.curb) != null ? `tomt ${fmt(num(x.curb))} kg` : "", x.braked ? "bromsat" : "obromsat"].filter(Boolean).join(" · "))}</span><button class="link" type="button" data-act="trailer-edit" data-id="${esc(x.id)}">${icon("pen", 13)} Ändra</button></p>
     <div class="tow-verdict ${r.level}">
       <div class="tv-top"><span class="tv-ic">${icon(ic[r.level], 16)}</span><span class="tv-k">${esc(r.k)}</span></div>
       ${r.load != null ? `<span class="tv-num">${esc(fmt(r.load))}<small>kg last</small></span>` : ""}${r.title ? `<span class="tv-title">${esc(r.title)}</span>` : ""}
