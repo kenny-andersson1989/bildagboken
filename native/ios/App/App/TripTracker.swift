@@ -481,6 +481,11 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
 
     private func handleResponse(_ response: UNNotificationResponse) -> Bool {
         let info = response.notification.request.content.userInfo
+        // Tryck på själva notisen (Resa klar eller Körning startad): appen öppnar Resor → Översikt.
+        if response.actionIdentifier == UNNotificationDefaultActionIdentifier, info["autoTripId"] != nil || info["autoTripLive"] != nil {
+            defaults.set(true, forKey: "autoTrips.openTrips")
+        }
+        if info["autoTripLive"] != nil { return true }
         guard response.notification.request.content.categoryIdentifier == TripTracker.category,
               let id = info["autoTripId"] as? String else { return false }
         if response.actionIdentifier == "kind.tjanst" { setKind(id, "tjanst") }
@@ -562,6 +567,8 @@ final class TripTracker: NSObject, CLLocationManagerDelegate, UNUserNotification
             r["meters"] = meters.rounded()
         }
         r["watching"] = watching
+        // Har man tryckt på en notis om en resa: säg det en gång till webbappen.
+        if defaults.bool(forKey: "autoTrips.openTrips") { r["openTrips"] = true; defaults.removeObject(forKey: "autoTrips.openTrips") }
         if let id = manualId ?? defaults.string(forKey: "autoTrips.manualId") { r["manualId"] = id; r["manualMeters"] = manualMeters.rounded() }
         r["log"] = defaults.array(forKey: logKey) as? [[String: Any]] ?? []
         if let name = currentCarRoute() { r["carNow"] = name }
