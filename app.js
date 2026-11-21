@@ -3482,23 +3482,33 @@ async function loadPhotoGrid() {
   render();
 }
 
+// Posterna som hör till serviceboken: service, eget arbete, däck och besiktningar.
+const bookEntries = (c) => carEntries().filter((e) => e.carId === c.id && (["service", "eget", "dack"].includes(e.type) || (e.type === "kostnad" && e.category === "Besiktning")));
 // Servicebok och dokument i ett kort: serviceboken (PDF, dela med en köpare, säljpaket), sparade dokument
 // och bilderna från loggen.
 function docsCard(c) {
   const docs = [...(c.docs || [])].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const photos = photosCard(c);
-  const n = carEntries().filter((e) => ["service", "eget", "dack"].includes(e.type) || (e.type === "kostnad" && e.category === "Besiktning")).length;
-  const row = (act, ic, t, sub, extra = "") => `<button class="dl as-btn" type="button" ${act}><span class="dl-ic">${icon(ic, 20)}</span><span><span class="dl-t">${t}</span><span class="dl-s">${esc(sub)}</span></span>${extra || '<span class="dl-v">›</span>'}</button>`;
+  const book = bookEntries(c);
+  const n = book.length;
+  const pics = Math.min(60, book.reduce((a, e) => a + photosOf(e).length, 0));
+  const posts = n === 1 ? "1 post" : `${n} poster`;
+  // Säljpaketet: allt en köpare vill se, i en PDF. Bara med Plus, annars som uppsäljning.
+  const sale = plusFeat() || plusLock() ? `<div class="sale-box">
+      <div class="sale-head"><span class="dl-ic">${icon("receipt", 20)}</span><span><b>Ska du sälja bilen?</b><span class="dl-s">Serviceboken, vad bilen har kostat och kvittona i en PDF att ge köparen.</span></span>${plusFeat() ? "" : '<span class="plus-badge">Plus</span>'}</div>
+      <ul class="sale-list"><li>${esc(n ? `${posts} med service, däck och besiktningar` : "Service, däck och besiktningar")}</li><li>Kostnader per kategori, senaste året och totalt</li><li>${esc(pics ? `${pics === 1 ? "1 kvitto eller bild" : `${pics} kvitton och bilder`} från posterna` : "Kvitton och bilder från posterna")}</li></ul>
+      <button class="btn-soft" type="button" ${plusFeat() ? 'data-act="sale-pack"' : 'data-act="plus" data-f="salepack"'}>${icon("print", 16)} Skapa säljpaket</button>
+    </div>` : "";
   return `<div class="card book-card">
     <h2>Servicebok och dokument</h2>
-    <div class="rows">
-      ${row('data-act="print-book"', "print", "Servicebok", `${n === 1 ? "1 post" : `${n} poster`} · dela eller spara som PDF`)}
-      ${c.shareToken
-        ? row('data-act="share-menu"', "next", "Delad med en köpare", "Länken är aktiv · tryck för att kopiera, uppdatera eller sluta dela", '<span class="pill ok">Delad</span>')
-        : row('data-act="share-book"', "next", "Dela med en köpare", "En länk där köparen kan läsa serviceboken")}
-      ${plusFeat() ? row('data-act="sale-pack"', "receipt", "Säljpaket", "Serviceboken med kvitton och kostnader, som PDF")
-        : plusLock() ? row('data-act="plus" data-f="salepack"', "receipt", "Säljpaket", "Serviceboken med kvitton och kostnader, som PDF", '<span class="plus-badge">Plus</span>') : ""}
+    <p class="muted" style="margin:-4px 0 12px">Det som visar hur bilen har skötts, och papper ni vill ha nära till hands.</p>
+    <div class="book-row">
+      <span class="dl-ic">${icon("print", 20)}</span>
+      <span class="book-txt"><span class="dl-t">Servicebok</span><span class="dl-s">${esc(`All service, däck och besiktningar · ${posts}`)}</span></span>
+      <span class="book-btns"><button class="btn-soft" type="button" data-act="print-book">PDF</button><button class="btn-soft" type="button" data-act="share-link">${icon("share", 16)} Dela länk</button></span>
     </div>
+    ${c.shareToken ? `<button class="book-shared" type="button" data-act="share-menu"><span class="pill ok">Länk delad</span> <span>Köpare kan läsa serviceboken. Den uppdateras av sig själv. Tryck för att kopiera eller sluta dela.</span></button>` : ""}
+    ${sale}
     <p class="label" style="margin:16px 0 4px">Dokument</p>
     ${docs.length ? `<div class="rows">${docs.map((d) => `<button class="dl as-btn" type="button" data-act="open-doc" data-id="${esc(d.id)}"><span class="dl-ic">${icon("doc", 20)}</span>
       <span><span class="dl-t">${esc(d.title)}</span><span class="dl-s">${esc(d.validTo ? `Gäller till ${fmtDateShort(d.validTo)}` : `Sparat ${fmtDateShort(d.date)} av ${whoName(d.by).replace(/^Du$/, "dig")}`)}</span></span>${docPill(d)}</button>`).join("")}</div>`
@@ -3640,15 +3650,32 @@ async function shareServiceBook() {
   render();
   return token;
 }
+// En delad servicebok hålls uppdaterad: när loggen ändras skrivs den om (bara om något har ändrats).
+let shareSyncTimer = null;
+function syncSharedBooks() {
+  clearTimeout(shareSyncTimer);
+  shareSyncTimer = setTimeout(() => {
+    // Bara den valda bilen: serviceboken byggs av den bilens poster.
+    for (const c of S.cars.filter((x) => x.shareToken && !x.deletedAt && x.id === S.carId)) {
+      let data;
+      try { data = serviceBookToStore(serviceBookData(c, { share: true })); } catch { continue; }
+      const str = JSON.stringify(data);
+      let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+      const key = "shareHash." + c.shareToken;
+      if (pref.get(key) === String(h)) continue;
+      setDoc(doc(db, "shares", c.shareToken), { householdId: S.hid, carId: c.id, createdBy: uid(), updatedAt: Date.now(), data })
+        .then(() => pref.set(key, String(h))).catch(() => {});
+    }
+  }, 4000);
+}
 const shareUrl = (token) => `${location.origin}${location.pathname}?visa=${token}`;
 function shareMenu() {
   const c = car();
   if (!c?.shareToken) return;
-  openSheet("Delad med en köpare", `<p class="muted">Den som har länken kan läsa serviceboken, men inte se resten av appen eller ändra något. Tryck Uppdatera efter nya poster.</p>
+  openSheet("Delad länk", `<p class="muted">Den som har länken kan läsa serviceboken i webbläsaren, utan appen. Hen ser inget annat och kan inte ändra något. Serviceboken uppdateras av sig själv när ni loggar något nytt.</p>
     <p class="share-url" style="margin:12px 0">${esc(shareUrl(c.shareToken).replace(/^https?:\/\//, ""))}</p>
     <div class="form">
       <button class="btn primary block" type="button" data-act="share-copy">Kopiera länken</button>
-      <button class="btn block" type="button" data-act="share-book">Uppdatera serviceboken</button>
       <button class="btn block solid-danger" type="button" data-act="share-stop">Sluta dela</button>
     </div>`);
 }
@@ -9063,6 +9090,21 @@ const ACTIONS = {
     catch (e) { console.error(e); showToast(e.code === "permission-denied" ? "Det gick inte att dela. Säkerhetsreglerna i Firebase behöver uppdateras." : "Det gick inte att dela just nu", 6000); }
     finally { el.disabled = false; }
   },
+  // Dela serviceboken som länk: skapar länken och öppnar telefonens dela-meny.
+  async "share-link"(el) {
+    el.disabled = true;
+    try {
+      const url = shareUrl(await shareServiceBook());
+      const c = car();
+      if (navigator.share) {
+        try { await navigator.share({ title: `${EN ? "Service book" : "Servicebok"} · ${carName(c)}`, text: EN ? `The service book for ${carName(c)}` : `Serviceboken för ${carName(c)}`, url }); return; }
+        catch (e) { if (e.name === "AbortError") return; }
+      }
+      const ok = await copyText(url);
+      showToast(ok ? "Länken är kopierad. Skicka den till köparen." : url, ok ? 4000 : 9000);
+    } catch (e) { console.error(e); showToast("Det gick inte att dela just nu", 6000); }
+    finally { el.disabled = false; }
+  },
   async "share-copy"() { const c = car(); if (!c?.shareToken) return; const ok = await copyText(shareUrl(c.shareToken)); showToast(ok ? "Länken är kopierad" : shareUrl(c.shareToken), ok ? 3500 : 9000); },
   "share-stop"() {
     const c = car();
@@ -10598,6 +10640,7 @@ function subscribe(hid) {
     first = false;
     S.loaded.entries = true;
     render();
+    syncSharedBooks();
   }, onListenError));
 }
 
