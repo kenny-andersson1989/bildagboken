@@ -2855,44 +2855,43 @@ const licenseMax = (t, lic) => (lic === "BE" ? 3500 : t.total ? (lic === "B96" ?
 const trailersOf = (c) => (Array.isArray(c.trailers) ? c.trailers : []);
 const trailerSel = (c) => { const l = trailersOf(c); return l.find((x) => x.id === pref.get("trailer." + c.id)) || l[0] || null; };
 const trailerName = (x, list = []) => x.name || (x.plate ? fmtPlate(x.plate) : list.length > 1 ? `Släp ${list.indexOf(x) + 1}` : "Släpet");
-// Svaret för ett släp: { level: ok/warn/bad, title, sub, checks: [[ok/warn/bad/unknown, rubrik, text]], load, loadNote }.
+// Svaret för ett släp: { level: ok/warn/bad, k (raden överst), title (när det inte blir en lastsiffra), load,
+// checks: [[ok/warn/bad/unknown, rubrik, text]], bar }. Varje uppgift står bara på ett ställe.
 function trailerJudge(t, lic, x) {
   const total = num(x.total), curb = num(x.curb), braked = !!x.braked;
-  const checks = [];
-  const carMax = trailerCarMax(t, braked);
-  const lmax = licenseMax(t, lic);
-  // Körkortet: räknas på släpets totalvikt, inte på hur mycket man lastar.
-  let licOk = null, need = null;
-  if (lmax == null) checks.push(["unknown", `Körkort ${lic}`, "Fyll i bilens totalvikt, så kan appen räkna på körkortet."]);
+  const carMax = trailerCarMax(t, braked), lmax = licenseMax(t, lic);
+  const roadMax = Math.min(total, carMax);
+  const load = curb != null ? Math.max(0, roadMax - curb) : null;
+  // Körkortet: räknas på släpets totalvikt (skylten), inte på lasten.
+  let licOk = null, need = null, licText;
+  if (lmax == null) licText = "Bilens totalvikt saknas, så körkortet går inte att räkna ut.";
   else {
     licOk = total <= lmax;
-    if (lic === "BE") checks.push([licOk ? "ok" : "bad", "Körkort BE", licOk ? `Släpet får väga upp till 3 500 kg med BE. Ditt väger högst ${fmt(total)} kg.` : `Släpet väger ${fmt(total)} kg. Med BE får det väga högst 3 500 kg.`]);
-    else if (total <= 750) checks.push(["ok", `Körkort ${lic}`, "Ett släp på högst 750 kg får du alltid dra med B."]);
-    else checks.push([licOk ? "ok" : "bad", `Körkort ${lic}`, `Bilen ${fmt(t.total)} + släpet ${fmt(total)} = ${fmt(t.total + total)} kg. Gränsen är ${fmt(lic === "B96" ? 4250 : 3500)} kg.${licOk ? "" : " Det räknas på totalvikten på skylten, inte på hur mycket du lastar."}`]);
     if (!licOk) need = lic === "B" && t.b96 != null && total <= t.b96 ? "B96" : total <= 3500 ? "BE" : null;
-    if (need) checks.push(["ok", `Med körkort ${need}`, need === "B96" ? "B96 tillåter 4 250 kg tillsammans." : "BE tillåter släp upp till 3 500 kg."]);
+    licText = lic === "BE" ? `Släpet ${fmt(total)} kg av 3 500 kg.`
+      : total <= 750 ? "Släp upp till 750 kg är alltid okej med B."
+      : `Bil + släp ${fmt(t.total + total)} kg av ${fmt(lic === "B96" ? 4250 : 3500)} kg.${need === "B96" ? " Med B96: 4 250 kg." : ""}`;
   }
-  // Utan bromsar: släpet får aldrig väga mer än 750 kg.
-  if (!braked && total > 750) checks.push(["bad", "Utan bromsar", "Ett släp utan egna bromsar får väga högst 750 kg. Kolla om ditt släp har bromsar."]);
-  // Bilen: släpet med last får inte väga mer än bilen får dra.
-  const roadMax = Math.min(total, carMax);
-  if (total <= carMax) checks.push(["ok", "Bilen orkar", `Bilen får dra ${fmt(carMax)} kg ${braked ? "med" : "utan"} bromsar. Släpet väger högst ${fmt(total)} kg.`]);
-  else if (curb != null && carMax - curb >= 50) checks.push(["warn", `Bilen orkar ${fmt(carMax)} kg`, `Släpet får väga högst ${fmt(carMax)} kg bakom din bil, fast skylten säger ${fmt(total)}. Lasta högst ${fmt(carMax - curb)} kg.`]);
-  else checks.push(["bad", "För tungt för bilen", `Bilen får bara dra ${fmt(carMax)} kg ${braked ? "med" : "utan"} bromsar.`]);
-  const load = curb != null ? Math.max(0, roadMax - curb) : null;
+  const brakeBad = !braked && total > 750;
+  const checks = [
+    [licOk == null ? "unknown" : licOk ? "ok" : "bad", "Körkort", licText, "lic"],
+    [total <= carMax ? "ok" : curb != null && carMax - curb >= 50 ? "warn" : "bad", `Bilen orkar ${fmt(carMax)} kg${braked ? "" : " obromsat"}`, total <= carMax ? `Släpet får väga ${fmt(total)} kg fullt, det går bra.` : `Släpet får väga ${fmt(total)} kg fullt.${licOk === false && need && load ? ` Med ${need}: lasta högst ${fmt(load)} kg.` : ""}`],
+    [brakeBad ? "bad" : "ok", "Bromsar", braked ? "Släpet har egna bromsar." : brakeBad ? "Inga, men släpet väger över 750 kg. Det får det inte göra utan bromsar." : "Inga, och det behövs inte upp till 750 kg."],
+  ];
   const tooHeavy = curb != null ? carMax - curb < 50 : carMax < 100;
-  let level, title, sub;
-  if (!braked && total > 750) { level = "bad"; title = "Kolla bromsarna"; sub = "Ett släp utan bromsar får väga högst 750 kg."; }
-  else if (tooHeavy) { level = "bad"; title = "För tungt för bilen"; sub = `Bilen får bara dra ${fmt(carMax)} kg.`; }
-  else if (licOk === false) { level = "bad"; title = `Inte med körkort ${lic}`; sub = need ? `Släpets totalvikt är för hög för ${lic}. Med ${need} går det${load != null && total > carMax ? `, om du lastar högst ${fmt(load)} kg` : ""}.` : "Släpet är för tungt för alla körkort för personbil."; }
-  else if (total > carMax) { level = "warn"; title = "Ja, men fyll det inte helt"; sub = load != null ? `Bilen orkar inte släpet fullastat. Lasta högst ${fmt(load)} kg.` : `Släpet får väga högst ${fmt(carMax)} kg bakom din bil.`; }
-  else { level = licOk == null ? "warn" : "ok"; title = "Du får dra släpet"; sub = licOk == null ? "Bilen orkar det. Fyll i bilens totalvikt för att räkna på körkortet." : `Även fullastat, med körkort ${lic}.`; }
-  return { level, title, sub, checks, load, loadNote: licOk === false && need ? `med ${need}` : "" };
+  let level, k, title = null;
+  if (brakeBad) { level = "bad"; k = "Nej"; title = "Kolla bromsarna"; }
+  else if (tooHeavy) { level = "bad"; k = "Nej"; title = "För tungt för bilen"; }
+  else if (licOk === false) { level = "bad"; k = `Inte med körkort ${lic}`; title = need ? `Du behöver ${need}` : "För tungt för körkort för personbil"; }
+  else if (total > carMax) { level = "warn"; k = "Du får dra det, men inte fullt"; if (load == null) title = `Högst ${fmt(carMax)} kg med last`; }
+  else if (licOk == null) { level = "warn"; k = "Bilen orkar det"; if (load == null) title = "Även fullt"; }
+  else { level = "ok"; k = "Du får dra det, även fullt"; if (load == null) title = "Även fullastat"; }
+  const bar = curb != null && level !== "bad" ? { curb, load, rest: total - roadMax } : null;
+  return { level, k, title, load: level === "bad" ? null : load, checks, bar };
 }
 function trailerCard(c) {
   const t = trailerInfo(c);
   const lic = licenseOf();
-  const seg = `<div class="seg seg-sm" role="group" aria-label="Ditt körkort">${Object.keys(LICENSES).map((k) => `<button type="button" data-act="license" data-v="${k}" aria-pressed="${k === lic}">${k}</button>`).join("")}</div>`;
   // Bilens vikter saknas: fyll i dem här, eller hämta dem från regnumret.
   if (!t) return `<div class="card tow-card"><h2>Släpvagn</h2>
     <p class="muted">Får du dra ditt släp? Först behövs två uppgifter om bilen. De står i bilens registreringsbevis.</p>
@@ -2905,25 +2904,26 @@ function trailerCard(c) {
       <button class="btn-soft" type="submit">Spara</button>
     </form></div>`;
   const x = trailerSel(c), list = trailersOf(c);
-  const carLine = `<div class="tow-car"><span class="label">Bilen</span><button class="link" type="button" data-act="edit-car" data-section="more">Ändra</button><span class="tow-chips">${[t.total ? [t.total, "totalvikt"] : null, [t.braked, "får dra, bromsat"], [trailerCarMax(t, false), "obromsat"]].filter(Boolean).map(([v, l]) => `<span class="tow-chip"><b>${esc(`${fmt(v)} kg`)}</b>${esc(l)}</span>`).join("")}</span></div>
-    <div class="tow-car"><span class="label">Körkort</span><span></span>${seg}</div>`;
+  const licSel = `<select id="tow-lic" class="tow-lic" aria-label="Ditt körkort">${Object.keys(LICENSES).map((k) => `<option value="${k}"${k === lic ? " selected" : ""}>${k}</option>`).join("")}</select>`;
   if (!x) return `<div class="card tow-card"><h2>Släpvagn</h2>
     <p class="muted">Får du dra släpet? Fyll i vad som står på släpets skylt, så räknar appen ut det.</p>
     <div class="tow-sign"><span class="sign">TOTALVIKT<br>1000 kg<br>TJV 250</span><span>Vikterna står på skylten vid släpets drag, eller i släpets registreringsbevis.</span></div>
-    <div class="ask" style="margin:0 0 14px"><button class="btn-soft" type="button" data-act="trailer-edit">${icon("plus", 16)} Fyll i ditt släp</button></div>
-    ${carLine}</div>`;
+    <div class="ask" style="margin:0"><button class="btn-soft" type="button" data-act="trailer-edit">${icon("plus", 16)} Fyll i ditt släp</button></div></div>`;
   const r = trailerJudge(t, lic, x);
   const mark = { ok: "✓", warn: "!", bad: "✕", unknown: "?" };
+  let bar = "";
+  if (r.bar) {
+    const sum = r.bar.curb + r.bar.load + r.bar.rest, pc = (v) => `${(v / sum) * 100}%`;
+    bar = `<div class="tow-bar" aria-hidden="true"><span class="tb-curb" style="width:${pc(r.bar.curb)}">${esc(fmt(r.bar.curb))}</span><span class="tb-load" style="width:${pc(r.bar.load)}">${esc(`Last ${fmt(r.bar.load)}`)}</span>${r.bar.rest > 0 ? `<span class="tb-rest" style="width:${pc(r.bar.rest)}">${esc(fmt(r.bar.rest))}</span>` : ""}</div>`;
+  }
   return `<div class="card tow-card"><h2>Släpvagn</h2>
-    <div class="tow-trail"><span class="tt-pic">${TRAILER_PICS[num(x.total) > 1300 ? "large" : num(x.total) > 750 ? "medium" : "small"]}</span><span>${esc([trailerName(x, list), `${fmt(num(x.total))} kg totalvikt`, x.braked ? "bromsat" : "obromsat"].join(" · "))}</span><button class="link" type="button" data-act="trailer-edit" data-id="${esc(x.id)}">Ändra</button></div>
-    ${list.length > 1 ? `<div class="tow-pick">${list.map((y) => `<button type="button" class="chip-btn" data-act="trailer-pick" data-id="${esc(y.id)}" aria-pressed="${y.id === x.id}">${esc(trailerName(y, list))}</button>`).join("")}</div>` : ""}
-    <div class="tow-verdict ${r.level}"><div class="tv-big"><span class="tv-dot">${mark[r.level]}</span>${esc(r.title)}</div><p>${esc(r.sub)}</p></div>
-    <ul class="tow-checks">${r.checks.map(([l, h, s]) => `<li><span class="tc-m ${l}">${mark[l]}</span><span>${esc(h)}<small>${esc(s)}</small></span></li>`).join("")}</ul>
-    ${r.load != null && r.level !== "bad" || (r.load != null && r.loadNote) ? `<div class="tow-load"><span>${esc(r.loadNote ? `Du får lasta (${r.loadNote})` : "Du får lasta")}</span><b>${esc(`${fmt(r.load)} kg`)}</b></div>` : ""}
-    ${num(x.curb) == null ? `<p class="hint">Fyll i släpets tjänstevikt (tomt släp), så ser du hur mycket du får lasta.</p>` : ""}
+    <div class="tow-pick">${list.map((y) => `<button type="button" class="chip-btn" data-act="trailer-pick" data-id="${esc(y.id)}" aria-pressed="${y.id === x.id}">${esc(trailerName(y, list))}</button>`).join("")}<button type="button" class="chip-btn tow-new" data-act="trailer-edit">${icon("plus", 14)} Nytt</button></div>
+    <div class="tow-verdict ${r.level}"><span class="tv-k">${esc(r.k)}</span>${r.load != null ? `<span class="tv-num">${esc(fmt(r.load))}<small>kg last</small></span>` : ""}${r.title ? `<span class="tv-title">${esc(r.title)}</span>` : ""}</div>
+    ${bar}
+    <ul class="tow-checks">${r.checks.map(([l, h, txt, kind]) => `<li><span class="tc-m ${l}">${mark[l]}</span><span>${esc(h)}${kind === "lic" ? ` ${licSel}` : ""}<small>${esc(txt)}</small></span></li>`).join("")}</ul>
+    <div class="tow-foot"><span><b>${esc(trailerName(x, list))}</b> ${esc(`· ${fmt(num(x.total))} kg${num(x.curb) != null ? ` · tomt ${fmt(num(x.curb))} kg` : ""} · ${x.braked ? "bromsat" : "obromsat"}`)}</span><button class="link" type="button" data-act="trailer-edit" data-id="${esc(x.id)}">Ändra</button></div>
+    ${num(x.curb) == null ? `<p class="hint">Fyll i släpets tjänstevikt (tomt släp) under Ändra, så ser du hur mycket du får lasta.</p>` : ""}
     <p class="hint">Kolla också kultrycket i bilens instruktionsbok, oftast 50–75 kg.</p>
-    <button class="link" type="button" data-act="trailer-edit" style="margin:2px 0 12px">${icon("plus", 14)} Lägg till ett släp till</button>
-    ${carLine}
   </div>`;
 }
 // Släpets vikter ur registret: totalvikt och tjänstevikt.
@@ -10433,6 +10433,7 @@ function onInput(ev) {
 }
 
 function onChange(ev) {
+  if (ev.target.id === "tow-lic") { pref.set("license", ev.target.value); render(); return; }
   if (ev.target.closest?.('form[data-form="live-trip"]')) {
     const id = ev.target.id;
     // Vart: väntar lite, så att ett val i förslagslistan hinner gå före det man har skrivit.
