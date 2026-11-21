@@ -51,7 +51,7 @@ if (NATIVE && window.Capacitor?.isPluginAvailable?.("App")) {
   }).catch(() => {});
 }
 // Språket: det man själv har valt, annars telefonens språk (svenska om telefonen är på svenska, annars engelska).
-const LANG = (() => {
+let LANG = (() => {
   let saved = null;
   try { saved = localStorage.getItem("bildagboken.lang"); } catch { /* inget sparat */ }
   if (saved === "en" || saved === "sv") return saved;
@@ -127,10 +127,10 @@ const daysUntil = (d) => Math.round((d - today0()) / 864e5);
 const addMonths = (d, m) => { const r = new Date(d); r.setMonth(r.getMonth() + m); return r; };
 const MONTHS = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"];
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "Maj", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"];
-if (EN) {
-  MONTHS.splice(0, 12, "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December");
-  MONTHS_SHORT.splice(0, 12, "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec");
-}
+// Månader och veckodagar på båda språken. langTables() lägger in rätt språk (vid start och när man byter språk).
+const MONTHS_SV = MONTHS.slice(), MONTHS_SHORT_SV = MONTHS_SHORT.slice();
+const MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const MONTHS_SHORT_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtDate = (s) => {
   const d = typeof s === "string" ? parseDate(s) : s;
   if (!d) return "–";
@@ -282,11 +282,18 @@ const TIRE_ACTIVITY = {
 };
 const BOOK_KINDS = { service: "Service", reparation: "Reparation", besiktning: "Besiktning", dack: "Däckbyte", annat: "Annat" };
 const WEEKDAYS = ["söndag", "måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag"];
-if (EN) WEEKDAYS.splice(0, 7, "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday");
+const WEEKDAYS_SV = WEEKDAYS.slice(), WEEKDAYS_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 // Översättning av en text: hela texten om den finns, annars mönster med siffror och sedan kända fraser, längst först.
 const reEsc = (k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const trRe = EN ? new RegExp(`(?<![\\p{L}\\d])(?:${Object.keys(EN).sort((a, b) => b.length - a.length).map(reEsc).join("|")})(?![\\p{L}])`, "gu") : null;
+let trRe = null;
+function langTables() {
+  MONTHS.splice(0, 12, ...(EN ? MONTHS_EN : MONTHS_SV));
+  MONTHS_SHORT.splice(0, 12, ...(EN ? MONTHS_SHORT_EN : MONTHS_SHORT_SV));
+  WEEKDAYS.splice(0, 7, ...(EN ? WEEKDAYS_EN : WEEKDAYS_SV));
+  trRe = EN ? new RegExp(`(?<![\\p{L}\\d])(?:${Object.keys(EN).sort((a, b) => b.length - a.length).map(reEsc).join("|")})(?![\\p{L}])`, "gu") : null;
+}
+langTables();
 function tr(s) {
   if (!EN || !s || !/[A-Za-zÅÄÖåäö]/.test(s)) return s;
   const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(s);
@@ -300,17 +307,19 @@ function tr(s) {
 // Det man själv har skrivit (namn, anteckningar, att göra) översätts inte.
 const NO_TR = "script, style, textarea, [data-notr], .todo-t, .plate, .code, .share-url";
 const TR_ATTRS = ["placeholder", "aria-label", "title", "alt"];
+// Den svenska texten sparas när något översätts, så att man kan byta tillbaka utan att ladda om.
+const SV_TEXT = new WeakMap(), SV_ATTR = new WeakMap();
 function trTree(root) {
   if (!EN || !root) return;
   const one = (n) => {
     if (n.nodeType === 3) {
       if (n.parentElement?.closest(NO_TR)) return;
       const t = tr(n.data);
-      if (t !== n.data) n.data = t;
+      if (t !== n.data) { SV_TEXT.set(n, n.data); n.data = t; }
     } else if (n.nodeType === 1) {
       for (const a of TR_ATTRS) {
         const v = n.getAttribute(a);
-        if (v) { const t = tr(v); if (t !== v) n.setAttribute(a, t); }
+        if (v) { const t = tr(v); if (t !== v) { const o = SV_ATTR.get(n) || {}; o[a] = v; SV_ATTR.set(n, o); n.setAttribute(a, t); } }
       }
     }
   };
@@ -325,14 +334,36 @@ function trTree(root) {
   let x;
   while ((x = w.nextNode())) one(x);
 }
-if (EN) {
-  trTree(document.body);
-  new MutationObserver((list) => {
-    for (const m of list) {
-      if (m.type === "childList") m.addedNodes.forEach(trTree);
-      else trTree(m.target);
+if (EN) trTree(document.body);
+new MutationObserver((list) => {
+  if (!EN) return;
+  for (const m of list) {
+    if (m.type === "childList") m.addedNodes.forEach(trTree);
+    else trTree(m.target);
+  }
+}).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: TR_ATTRS });
+// Byt språk direkt, utan att ladda om: texterna byts, allt annat ligger kvar.
+async function switchLang(v) {
+  if (v === "en" && !EN) {
+    try { ({ EN, EN_RULES } = await import("./en.js")); } catch (e) { console.error("Kunde inte ladda engelska", e); return location.reload(); }
+  } else if (v === "sv") { EN = null; EN_RULES = []; }
+  LANG = v;
+  document.documentElement.lang = v;
+  langTables();
+  if (EN) trTree(document.body);
+  else {
+    // Tillbaka till svenska: lägg tillbaka den sparade svenska texten där något har översatts.
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    let x;
+    while ((x = w.nextNode())) {
+      if (x.nodeType === 3) { const o = SV_TEXT.get(x); if (o != null) { x.data = o; SV_TEXT.delete(x); } }
+      else { const o = SV_ATTR.get(x); if (o) { for (const a in o) x.setAttribute(a, o[a]); SV_ATTR.delete(x); } }
     }
-  }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: TR_ATTRS });
+  }
+  try { auth.languageCode = v; } catch { /* ingen inloggning än */ }
+  const t = pref.get("pushToken");
+  if (t && S.hid) updateDoc(doc(db, "households", S.hid, "tokens", t), { lang: v }).catch(() => {});
+  render();
 }
 const SPEC_TEMPLATE = "Motorolja: \nOljemängd: \nDäckdimension: \nLufttryck fram/bak: \nTorkarblad: \nBatteri: \nGlödlampor: ";
 
@@ -2115,7 +2146,6 @@ function setScreen(key, html, { showNav = false, keepForm = false } = {}) {
   const active = app.contains(document.activeElement) && document.activeElement.id ? document.activeElement : null;
   const caret = active && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
   S.screen = key;
-  if (key !== "loading" && document.documentElement.classList.contains("lang-in")) requestAnimationFrame(() => document.documentElement.classList.remove("lang-in"));
   // Vilken vy som visas, så att datorlayouten kan ordna korten olika per vy.
   app.dataset.screen = key;
   app.innerHTML = html;
@@ -10009,10 +10039,7 @@ const ACTIONS = {
     pref.set("langAt", String(Date.now()));
     // Sparas även på kontot, så att språket följer med till andra telefoner och efter en ominstallation.
     if (S.user && S.house) saveMyInfo("lang", { v, at: Date.now() });
-    // Tona ut innehållet (bakgrunden ligger kvar), ladda om och tona in på det nya språket, så att det inte blinkar.
-    try { sessionStorage.setItem("bildagboken.langSwitch", "1"); } catch { /* ingen övergång */ }
-    document.documentElement.classList.add("lang-out");
-    setTimeout(() => location.reload(), 180);
+    switchLang(v);
   },
   "garage-glenn"(el) { garageEgg(el); },
   "theme-color"(el) { pref.set("themeColor", el.dataset.v); applyTheme(); render(); },
@@ -10863,7 +10890,7 @@ function subscribe(hid) {
   S.unsubs.push(onSnapshot(doc(db, "households", hid), (s) => {
     S.house = s.data({ serverTimestamps: "estimate" });
     S.loaded.house = true;
-    if (syncLang()) return;
+    syncLang();
     applyTheme(); // Glenns Garage kräver Plus
     if (S.justJoined) {
       showToast(typeof S.justJoined === "string" ? `Välkommen till ${S.justJoined}!` : "Välkommen! Nu delar ni bilen.", 4500);
@@ -10934,13 +10961,13 @@ async function freshVerifiedToken(force = false) {
     if (auth.currentUser?.emailVerified) await auth.currentUser.getIdToken(true);
   } catch { /* ingen kontakt just nu */ }
 }
-// Språket följer kontot: det som valdes senast (i telefonen eller på kontot) gäller. Ger true om sidan laddas om.
+// Språket följer kontot: det som valdes senast (i telefonen eller på kontot) gäller. Byter språk direkt om kontot har ett nyare val.
 function syncLang() {
   if (!S.house || !S.user) return false;
   const mine = myInfo().lang, localAt = Number(pref.get("langAt") || 0), local = pref.get("lang");
   if (mine?.v && (mine.at || 0) > localAt && mine.v !== LANG && (mine.v === "sv" || mine.v === "en")) {
     pref.set("lang", mine.v); pref.set("langAt", String(mine.at || Date.now()));
-    location.reload();
+    switchLang(mine.v);
     return true;
   }
   if (local && localAt > (mine?.at || 0) && mine?.v !== local) saveMyInfo("lang", { v: local, at: localAt });
