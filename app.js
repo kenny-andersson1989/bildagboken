@@ -5860,15 +5860,11 @@ function liveTripCard(o, old) {
   const members = S.house?.members || [];
   const g = tripSoFarMil(o);
   const from = [`${o.from ? `Från ${o.from.split(",")[0]}` : "Startade"} ${clock(tsMs(o.startedAt))}`, o.odoStart != null ? fmtKm(o.odoStart) : "", g?.gps ? "mätt med GPS" : ""].filter(Boolean).join(" · ");
-  const seen = new Set();
-  const chips = [...S.places.map((p) => ({ name: p.name, loc: placeLoc(p.name) })), ...carTrips().filter((t) => t.to && t !== o).map((t) => ({ name: t.to, loc: t.toLoc || null }))]
-    .filter((x) => x.name && !seen.has(x.name) && seen.add(x.name)).slice(0, 8);
   return `<form class="lv-card" data-form="live-trip" data-keep data-id="${esc(o.id)}" novalidate>
       <div class="lv-head${o.pausedAt ? " paused" : ""}"><span class="k${old ? " old" : ""}"><span class="lv-dot"></span>${o.pausedAt ? "Pausad" : old ? "Glömde du avsluta?" : "Pågående resa"}</span><span class="s">${esc(from)}</span></div>
       ${o.startLoc || o.toLoc?.lat != null ? `<div class="bk-map trip-map lv-map"><div id="lv-map"></div>${o.to ? `<button class="bk-map-open" type="button" data-act="trip-nav" aria-label="${esc(`Vägbeskrivning till ${o.to}`)}"><span>${icon("pin", 14)} Vägbeskrivning</span></button>` : ""}</div>` : ""}
       <div class="seg" role="group" aria-label="Tjänst eller privat">${["tjanst", "privat"].map((k) => `<button type="button" data-act="live-kind" data-kind="${k}" aria-pressed="${(o.kind || "tjanst") === k}">${k === "tjanst" ? "Tjänst" : "Privat"}</button>`).join("")}</div>
       ${field("Till", `<input id="lv-to" name="to" value="${esc(o.to || "")}" placeholder="Sök plats eller adress" autocomplete="off" enterkeyhint="done"><span class="suggest" id="lv-to-suggest" role="listbox" hidden></span>`)}
-      ${chips.length ? `<div class="lv-chips">${chips.map((x) => `<button type="button" class="chip-btn" data-act="live-to-pick" data-name="${esc(x.name)}" data-loc="${esc(x.loc ? JSON.stringify(x.loc) : "")}" aria-pressed="${o.to === x.name}">${esc(x.name)}</button>`).join("")}</div>` : ""}
       ${field("Ärende", `<input id="lv-purpose" name="purpose" value="${esc(o.purpose || "")}" placeholder="Till exempel kundmöte" autocomplete="off" enterkeyhint="done">`)}
       ${members.length > 1 ? field("Förare", `<select id="lv-driver" name="driver">${members.map((u) => `<option value="${esc(u)}"${(o.driver || o.createdBy) === u ? " selected" : ""}>${esc(u === uid() ? "Du" : memberName(u))}</option>`).join("")}</select>`) : ""}
       <p class="hint">Sparas direkt. Pausa och avsluta resan i rutan längst ner.</p>
@@ -6508,9 +6504,10 @@ function recentTripTargets(field = "tr-to") {
   const box = $(`#${field}-suggest`);
   if (!box) return;
   const seen = new Set(S.places.map((p) => p.name));
-  const recent = field === "tr-to" ? carTrips().filter((t) => t.to && !seen.has(t.to) && seen.add(t.to)).slice(0, 5) : [];
+  const live = field === "lv-to" ? openTrip() : null;
+  const recent = field === "tr-to" || field === "lv-to" ? carTrips().filter((t) => t !== live && t.to && !seen.has(t.to) && seen.add(t.to)).slice(0, 5) : [];
   if (!recent.length && !S.places.length) { box.hidden = true; return; }
-  box.innerHTML = (S.places.length ? `<p class="hint">Sparade platser</p>${savedPlaceBtns(field)}` : "") + (recent.length ? `<p class="hint">Senaste målen</p>` : "") + recent.map((t) => `<button type="button" role="option" data-act="place-pick" data-kind="tr-to" data-name="${esc(t.to)}" data-addr="${esc(t.toLoc?.addr || "")}" data-lat="${t.toLoc?.lat ?? ""}" data-lon="${t.toLoc?.lon ?? ""}" data-pid="${esc(t.toLoc?.pid || "")}"><b>${esc(t.to)}</b>${t.toLoc?.addr && t.toLoc.addr !== t.to ? `<span>${esc(t.toLoc.addr)}</span>` : ""}</button>`).join("");
+  box.innerHTML = (S.places.length ? `<p class="hint">Sparade platser</p>${savedPlaceBtns(field)}` : "") + (recent.length ? `<p class="hint">Senaste målen</p>` : "") + recent.map((t) => `<button type="button" role="option" data-act="place-pick" data-kind="${field}" data-name="${esc(t.to)}" data-addr="${esc(t.toLoc?.addr || "")}" data-lat="${t.toLoc?.lat ?? ""}" data-lon="${t.toLoc?.lon ?? ""}" data-pid="${esc(t.toLoc?.pid || "")}"><b>${esc(t.to)}</b>${t.toLoc?.addr && t.toLoc.addr !== t.to ? `<span>${esc(t.toLoc.addr)}</span>` : ""}</button>`).join("");
   box.hidden = false;
 }
 
@@ -7253,6 +7250,7 @@ function placeSearchSoon(kind) {
   const input = document.getElementById(f.input), box = document.getElementById(f.box);
   const q = input?.value.trim() || "";
   Object.values(PLACE_FIELDS).forEach((x) => { const b = document.getElementById(x.box); if (b && b !== box) b.hidden = true; });
+  if (!q && ["tr-to", "tr-from", "lv-to"].includes(kind)) return recentTripTargets(kind);
   if (q.length < 3) { if (box) box.hidden = true; input?.setAttribute("aria-expanded", "false"); return; }
   placeTimer = setTimeout(() => placeSearch(kind, q), 400);
 }
@@ -9365,13 +9363,6 @@ const ACTIONS = {
     el.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
     saveLiveTrip({ kind: el.dataset.kind });
   },
-  "live-to-pick"(el) {
-    let loc = null;
-    try { loc = el.dataset.loc ? JSON.parse(el.dataset.loc) : null; } catch { /* ingen plats */ }
-    const same = openTrip()?.to === el.dataset.name;
-    const input = $("#lv-to"); if (input) input.value = same ? "" : el.dataset.name;
-    saveLiveTo(same ? "" : el.dataset.name, same ? null : loc);
-  },
   "trip-nav"() {
     const t = openTrip();
     if (t) openMapChooser({ name: t.toLoc?.name || t.to, addr: t.toLoc?.addr, lat: t.toLoc?.lat, lon: t.toLoc?.lon, pid: t.toLoc?.pid, directions: true });
@@ -10600,7 +10591,8 @@ document.addEventListener("click", (ev) => {
   if (a.tagName !== "A") ev.preventDefault();
   fn(a, ev);
 });
-document.addEventListener("focusin", (ev) => { if ((ev.target.id === "tr-to" || ev.target.id === "tr-from") && !ev.target.value.trim()) recentTripTargets(ev.target.id); });
+document.addEventListener("focusin", (ev) => { if (ev.target.id === "lv-to") { recentTripTargets("lv-to"); if (ev.target.value) setTimeout(() => ev.target.select?.(), 0); }
+  else if ((ev.target.id === "tr-to" || ev.target.id === "tr-from") && !ev.target.value.trim()) recentTripTargets(ev.target.id); });
 // Fråga om bilen: Enter skickar frågan, Skift+Enter ger en ny rad.
 document.addEventListener("keydown", (ev) => {
   if (ev.target.id === "chat-in" && ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); if (ev.target.value.trim()) ev.target.form?.requestSubmit(); }
@@ -10729,3 +10721,7 @@ if ("serviceWorker" in navigator && (location.protocol === "https:" || location.
     location.reload();
   });
 }
+
+// Medan man skriver i ett fält på sidan döljs spelaren längst ner, så att den inte täcker förslagslistan ovanför tangentbordet.
+document.addEventListener("focusin", (ev) => { if (app.contains(ev.target) && ev.target.matches("input:not([type=checkbox]):not([type=radio]):not([type=file]), textarea")) document.body.classList.add("typing"); });
+document.addEventListener("focusout", () => setTimeout(() => { if (!app.contains(document.activeElement) || !document.activeElement.matches("input, textarea")) document.body.classList.remove("typing"); }, 50));

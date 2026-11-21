@@ -2136,9 +2136,6 @@ body.car-locked .fab { display: none; }
 @keyframes lv-pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .lv-dot { animation: none; } }
 .lv-map { height: 170px; margin: 0; }
-.lv-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-top: -4px; padding-bottom: 2px; }
-.lv-chips::-webkit-scrollbar { display: none; }
-.lv-chips .chip-btn { flex: none; white-space: nowrap; }
 .lv-head { display: grid; gap: 2px; }
 .lv-head .k { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #2f9e5b; }
 .lv-head .k.old, .lv-head.paused .k { color: #E77026; }
@@ -2150,3 +2147,4 @@ body.car-locked .fab { display: none; }
 .tripbar .tb-pause.on span { width: 0; height: 0; border-style: solid; border-width: 7px 0 7px 12px; border-color: transparent transparent transparent var(--ground); margin-left: 3px; }
 .tripbar .tb-pause.on { background: color-mix(in srgb, var(--ground) 14%, transparent); }
 .lv-map #lv-map { position: absolute; inset: 0; }
+@media (max-width: 899px) { body.typing .tripbar { display: none; } }
