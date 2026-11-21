@@ -2715,7 +2715,6 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       <div id="cf-reg-status" class="reg-status" aria-live="polite"${isNew ? "" : ` data-plate="${esc(plateKey(c.plate))}"`}${!isNew && regFetchedPlate(c) ? ` data-fetched="${esc(regFetchedPlate(c))}"` : ""}><small>${isNew ? "Skriv registreringsnumret och tryck på Hämta, så fylls bilens uppgifter i." : regFetchedPlate(c) ? "Uppgifterna är redan hämtade. Har du skrivit fel registreringsnummer, rätta det och tryck på Hämta." : "Tryck på Hämta för att fylla i uppgifterna från registret."}</small></div>
       <input type="hidden" name="regJson" id="cf-regJson">
     </div>
-    ${isNew ? `<details class="cf-manual"><summary>Fyll i själv</summary>` : ""}
     <div class="row2">
       ${inp("make", "Märke", c.make, 'list="dl-make" autocomplete="off"')}
       ${inp("model", "Modell", c.model, 'list="dl-model" autocomplete="off"')}
@@ -2726,16 +2725,10 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       ${inp("year", "Årsmodell", c.year, 'inputmode="numeric"')}
       ${inp("engine", "Motor", c.engine, '')}
     </div>
-    <label class="field"><span>Drivmedel</span>${sel("fuel", FUELS, c.fuel || "Bensin")}</label>
     <div class="row2">
+      <label class="field"><span>Drivmedel</span>${sel("fuel", FUELS, c.fuel || "Bensin")}</label>
       ${inp("color", "Färg", c.color, '')}
-      ${inp("bodyStyle", "Kaross", c.bodyStyle, 'autocomplete="off"')}
     </div>
-    <div class="row2">
-      ${inp("seats", "Antal säten", c.seats, 'inputmode="numeric" autocomplete="off"')}
-      ${inp("co2", "Koldioxid (g/km)", c.co2, 'inputmode="numeric" autocomplete="off"')}
-    </div>
-    ${inp("firstReg", "I trafik sedan", c.firstReg, 'type="date"')}
     <label class="field"><span>Chassinummer (VIN)</span>
       <span class="geo-row"><input name="vin" id="cf-vin" value="${esc(c.vin || "")}" placeholder="17 tecken, valfritt" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="24">
       <label class="geo-btn" id="cf-vin-scan" aria-label="Läs av chassinumret med kameran" title="Läs av med kameran">${icon("camera", 20)}<input type="file" id="cf-vin-file" accept="image/*" class="vh"></label></span>
@@ -2752,7 +2745,7 @@ function carFormFields(c = {}, { sections = ["basic"], isNew = false } = {}) {
       : `<div class="field"><span>Mätarställning</span>
           <div class="odo-row"><b>${odoOf(c) != null ? `${fmtKm(odoOf(c))}` : "Inte angiven"}</b>
           <button class="btn-soft" type="button" data-act="odo-from-car">Uppdatera</button></div>
-          <small>Hämtas från loggen. Har någon skrivit fel, ändra eller ta bort den posten i loggen.</small></div>`}${isNew ? "</details>" : ""}`;
+          <small>Hämtas från loggen. Har någon skrivit fel, ändra eller ta bort den posten i loggen.</small></div>`}`;
   parts.more = `
     <div class="row2">
       <label class="field"><span>Växellåda</span>${sel("gearbox", [["", "Vet inte"], ["Manuell", "Manuell"], ["Automat", "Automat"]], c.gearbox || "")}</label>
@@ -5095,7 +5088,7 @@ function viewCar() {
     <!--card:upp--><div class="card"><h2>Uppgifter <button class="link" type="button" data-act="edit-car" data-section="basic,more,photo,dates">Ändra</button></h2>
       <dl class="detail-list">
         ${c.vin ? `<div><dt>Chassinummer</dt><dd class="vin-dd"><span data-notr>${esc(c.vin)}</span><button class="link" type="button" data-act="copy-vin">Kopiera</button></dd></div>` : ""}
-        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Kaross", [c.bodyStyle, c.seats ? `${c.seats} säten` : ""].filter(Boolean).join(", ")], ["Växellåda", c.gearbox], ["I trafik sedan", c.firstReg ? fmtDate(c.firstReg) : ""], ["Koldioxid", c.co2 ? `${c.co2} g/km` : ""], ["Tankvolym", c.tankVolume ? `${fmt(c.tankVolume)} liter` : ""], ["Mätarställning", odoOf(c) != null ? `${fmtKm(odoOf(c))}` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkringsbolag", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
+        ${[["Registreringsnummer", c.plate], ["Motor", c.engine], ["Färg", c.color], ["Växellåda", c.gearbox], ["Tankvolym", c.tankVolume ? `${fmt(c.tankVolume)} liter` : ""], ["Mätarställning", odoOf(c) != null ? `${fmtKm(odoOf(c))}` : ""], ["Sista dag för besiktning", [c.besiktning ? fmtDate(c.besiktning) : "", c.besiktningPlats].filter(Boolean).join(", ")], ["Försäkringsbolag", [c.forsakringBolag, c.forsakringDatum ? `förnyas ${fmtDate(c.forsakringDatum)}` : ""].filter(Boolean).join(", ")], ["Skatt", [c.skattBelopp ? `${fmt(c.skattBelopp)} kr/år` : "", taxMonth(c) ? MONTHS[taxMonth(c) - 1] : ""].filter(Boolean).join(", ")]]
           .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v || "–")}</dd></div>`).join("")}
       </dl>
     </div>
@@ -8744,7 +8737,7 @@ function readCarForm(form) {
       make: str("make"), model: str("model"), year: str("year") || null, engine: str("engine") || null,
       fuel: str("fuel"), color: str("color") || null, plate: (plateOk(str("plate")) ? fmtPlate(str("plate")) : str("plate").toUpperCase()) || null,
       vin: cleanVin(str("vin")) || null, vinShare: fd.get("vinShare") === "on" || null,
-      bodyStyle: str("bodyStyle") || null, seats: num(fd.get("seats")), co2: num(fd.get("co2")), firstReg: str("firstReg") || null,
+      
     });
   }
   // Bara för en ny bil: blir bilens första loggpost.
