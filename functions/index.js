@@ -3,6 +3,7 @@
 // 2) När någon loggar något: en notis till de andra i hushållet.
 // 3) En resa i körjournalen som inte har avslutats efter fyra timmar.
 // 4) Läsning med AI av servicefakturor, besiktningsprotokoll och kvitton (Plus).
+// 5) Rutan på låsskärmen (Live Activity) när en automatisk resa börjar: liveStart skickar en push till telefonen.
 // Telefonernas adresser för notiser sparas av appen i households/{hid}/tokens/{token}.
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
@@ -1173,4 +1174,78 @@ exports.adminVoice = onCall({ timeoutSeconds: 30, memory: "256MiB", maxInstances
     return { ok: true };
   }
   throw new HttpsError("invalid-argument", "Okänd åtgärd.");
+});
+
+
+/* ------------------------------------------------------------------------------------------------
+   Live Activity för automatiska resor. iOS tillåter bara att appen själv startar rutan på låsskärmen
+   när appen är öppen. En automatisk resa börjar i bakgrunden, så telefonen ber servern om hjälp:
+   servern skickar en "push-to-start" via Apple (iOS 17.2 och senare), som startar rutan direkt.
+   Telefonen sparar sin startnyckel hos Apple i liveDevices/{nyckel} (se appen), och anropar liveStart
+   med sin egen slumpade nyckel när resan börjar.
+   Hemligheter: APNS_KEY (innehållet i .p8-filen för notiser), APNS_KEY_ID och APNS_TEAM_ID.
+------------------------------------------------------------------------------------------------ */
+const http2 = require("http2");
+const nodeCrypto = require("crypto");
+const APNS_KEY = defineSecret("APNS_KEY");
+const APNS_KEY_ID = defineSecret("APNS_KEY_ID");
+const APNS_TEAM_ID = defineSecret("APNS_TEAM_ID");
+const APNS_TOPIC = "se.bildagboken.app.push-type.liveactivity";
+let apnsJwt = null;
+function apnsToken() {
+  // Apple vill ha en ny nyckel högst en gång per 20 minuter och godtar den i en timme.
+  if (apnsJwt && Date.now() - apnsJwt.at < 40 * 60e3) return apnsJwt.token;
+  const b64 = (x) => Buffer.from(typeof x === "string" ? x : JSON.stringify(x)).toString("base64url");
+  const head = b64({ alg: "ES256", kid: APNS_KEY_ID.value().trim() });
+  const body = b64({ iss: APNS_TEAM_ID.value().trim(), iat: Math.floor(Date.now() / 1000) });
+  const sig = nodeCrypto.sign("sha256", Buffer.from(`${head}.${body}`), { key: APNS_KEY.value(), dsaEncoding: "ieee-p1363" }).toString("base64url");
+  apnsJwt = { token: `${head}.${body}.${sig}`, at: Date.now() };
+  return apnsJwt.token;
+}
+function apnsSend(deviceToken, payload) {
+  return new Promise((resolve) => {
+    const client = http2.connect("https://api.push.apple.com");
+    client.on("error", (e) => resolve({ status: 0, body: String(e.message || e) }));
+    const req = client.request({
+      ":method": "POST", ":path": `/3/device/${deviceToken}`,
+      authorization: `bearer ${apnsToken()}`, "apns-topic": APNS_TOPIC, "apns-push-type": "liveactivity",
+      "apns-priority": "10", "content-type": "application/json",
+    });
+    let status = 0, body = "";
+    req.on("response", (h) => { status = h[":status"]; });
+    req.on("data", (c) => { body += c; });
+    req.on("end", () => { client.close(); resolve({ status, body }); });
+    req.on("error", (e) => { client.close(); resolve({ status: 0, body: String(e.message || e) }); });
+    req.setTimeout(10000, () => { req.close(); });
+    req.end(JSON.stringify(payload));
+  });
+}
+exports.liveStart = onRequest({ secrets: [APNS_KEY, APNS_KEY_ID, APNS_TEAM_ID], invoker: "public", timeoutSeconds: 20, memory: "256MiB", maxInstances: 2 }, async (req, res) => {
+  if (req.method !== "POST") return res.status(405).json({ ok: false });
+  const { key, car } = req.body || {};
+  if (typeof key !== "string" || !/^[a-f0-9]{32}$/.test(key)) return res.status(400).json({ ok: false });
+  const ref = db.doc(`liveDevices/${key}`);
+  const snap = await ref.get();
+  const d = snap.exists ? snap.data() : null;
+  if (!d?.token) return res.status(404).json({ ok: false, reason: "no-token" });
+  // Högst en start i minuten per telefon.
+  if (d.lastStart && Date.now() - d.lastStart < 60e3) return res.json({ ok: true, skipped: true });
+  await ref.update({ lastStart: Date.now() });
+  const en = d.lang === "en";
+  const now = Date.now() / 1000;
+  // ActivityKit läser datum som sekunder sedan 2001-01-01.
+  const payload = {
+    aps: {
+      timestamp: Math.floor(now), event: "start",
+      "content-state": { from: "", to: "", kind: "", km: 0, paused: false, elapsed: 0 },
+      "attributes-type": "TripActivityAttributes",
+      attributes: { tripId: "auto", start: now - 978307200, car: String(car || "").slice(0, 60), lang: en ? "en" : "sv" },
+      alert: { title: en ? "Trip started" : "Körning startad", body: en ? "Bildagboken is measuring the trip." : "Bildagboken mäter resan." },
+    },
+  };
+  const r = await apnsSend(d.token, payload);
+  if (r.status !== 200) logger.warn("liveStart", r.status, r.body);
+  // Ogiltig nyckel hos Apple: ta bort den, telefonen skickar en ny.
+  if (r.status === 410 || /BadDeviceToken|Unregistered/.test(r.body)) await ref.update({ token: admin.firestore.FieldValue.delete() }).catch(() => {});
+  res.json({ ok: r.status === 200, status: r.status });
 });
