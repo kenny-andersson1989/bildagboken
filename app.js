@@ -7636,7 +7636,6 @@ async function tripMap(inner, a, b, path = []) {
       showsMapTypeControl: false, showsZoomControl: false, showsUserLocationControl: false,
       showsCompass: mk.FeatureVisibility?.Hidden, showsScale: mk.FeatureVisibility?.Hidden,
       colorScheme: dark ? mk.Map?.ColorSchemes?.Dark : mk.Map?.ColorSchemes?.Light,
-      padding: new mk.Padding(36, 28, 36, 28),
     });
     const pins = [
       new mk.MarkerAnnotation(new mk.Coordinate(a.lat, a.lon), { title: "Start", glyphText: "A", color: "#2f9e5b" }),
