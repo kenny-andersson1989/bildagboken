@@ -2156,3 +2156,43 @@ body.car-locked .fab { display: none; }
 .book-link .book-url { flex: 1; min-width: 0; font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: all; -webkit-user-select: all; }
 .book-link .btn-soft { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; }
 .btn-soft.danger { color: var(--danger); }
+
+/* Släpvagn: ditt släp, svaret och bilen/körkortet längst ner. */
+.tow-sign { display: flex; gap: 10px; align-items: center; background: var(--input); border: 1px dashed var(--line); border-radius: 14px; padding: 10px 12px; font-size: 13.5px; color: var(--ink-2); margin-bottom: 12px; }
+.tow-sign .sign { width: 58px; height: 42px; border-radius: 6px; background: #d9d2c6; color: #222; font: 700 9px var(--f-body); display: grid; place-items: center; text-align: center; line-height: 1.15; flex: none; }
+.tow-trail { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink-2); margin-bottom: 10px; }
+.tow-trail > span:nth-child(2) { flex: 1; min-width: 0; }
+.tow-trail .tt-pic { width: 56px; flex: none; }
+.tow-trail .tt-pic svg { width: 56px; height: 30px; display: block; }
+.tow-pick { display: flex; gap: 6px; overflow-x: auto; margin: -2px 0 10px; scrollbar-width: none; }
+.tow-pick .chip-btn { flex: none; }
+.tow-verdict { border-radius: 18px; padding: 14px 16px; border: 1px solid; }
+.tow-verdict.ok { background: color-mix(in srgb, #2FBF6B 14%, var(--card, transparent)); border-color: color-mix(in srgb, #2FBF6B 45%, transparent); }
+.tow-verdict.warn { background: color-mix(in srgb, #F0B13F 14%, var(--card, transparent)); border-color: color-mix(in srgb, #F0B13F 45%, transparent); }
+.tow-verdict.bad { background: color-mix(in srgb, #e0564a 14%, var(--card, transparent)); border-color: color-mix(in srgb, #e0564a 45%, transparent); }
+.tow-verdict .tv-big { font: 700 20px var(--f-display); display: flex; gap: 10px; align-items: center; }
+.tow-verdict .tv-dot { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font: 700 16px var(--f-body); flex: none; color: #fff; }
+.tow-verdict.ok .tv-dot { background: #2f9e5b; } .tow-verdict.warn .tv-dot { background: #d18a12; } .tow-verdict.bad .tv-dot { background: #d2493e; }
+.tow-verdict p { margin: 6px 0 0 38px; font-size: 14px; color: var(--ink-2); line-height: 1.4; }
+.tow-checks { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 10px; }
+.tow-checks li { display: grid; grid-template-columns: 20px 1fr; gap: 8px; font-size: 14.5px; line-height: 1.35; font-weight: 600; }
+.tow-checks small { display: block; color: var(--ink-2); font-size: 13px; font-weight: 400; margin-top: 2px; }
+.tc-m { font-weight: 800; text-align: center; }
+.tc-m.ok { color: #2f9e5b; } .tc-m.warn { color: #d18a12; } .tc-m.bad { color: #d2493e; } .tc-m.unknown { color: var(--ink-3); }
+.tow-load { display: flex; justify-content: space-between; align-items: center; margin: 14px 0 8px; background: var(--input); border-radius: 14px; padding: 12px 14px; }
+.tow-load span { font-size: 14px; color: var(--ink-2); }
+.tow-load b { font: 700 24px var(--f-display); }
+.tow-car { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+.tow-car .label { margin: 0; }
+.tow-car .tow-chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.tow-car .seg { grid-column: 1 / -1; }
+.tow-chip { background: var(--input); border: 1px solid var(--line); border-radius: 10px; padding: 5px 8px; font-size: 12px; color: var(--ink-2); line-height: 1.25; }
+.tow-chip b { display: block; color: var(--ink); font-size: 14px; }
+.tow-car + .tow-car { border-top: 0; padding-top: 0; }
+.tow-trail .tt-pic { color: var(--ink-2); }
+.tow-trail .tp-ground { stroke: currentColor; stroke-width: 1.5; opacity: .35; fill: none; }
+.tow-trail .tp-line { stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; fill: none; }
+.tow-trail .tp-body { fill: var(--accent-soft); stroke: currentColor; stroke-width: 2.5; stroke-linejoin: round; }
+.tow-trail .tp-wheel { fill: var(--ink); }
+.tow-trail .tp-brake { fill: currentColor; }
+.tow-trail .tp-hub { fill: var(--ground, #ccc); }
