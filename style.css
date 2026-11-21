@@ -2293,3 +2293,11 @@ body.car-locked .fab { display: none; }
 .pw-eye[aria-pressed="true"] { color: var(--accent-text); }
 .em-legal { text-align: center; margin: 2px 0 0; font-size: 12.5px; } .em-legal a { color: var(--accent-text); }
 form[data-form="car-new"] > .req-note { display: none; }
+
+/* Meddelanden (Sparat, Ångra …) visas högst upp, under klockan och Dynamic Island. */
+.toast-msg, body.has-tripbar .toast-msg { top: calc(env(safe-area-inset-top, 0px) + 10px); bottom: auto; z-index: 70; }
+@media (min-width: 900px) { .toast-msg, body.has-tripbar .toast-msg { top: 20px; bottom: auto; } }
+@media (prefers-reduced-motion: no-preference) {
+  .toast-msg:not([hidden]) { animation: drop-top .25s ease-out; }
+  @keyframes drop-top { from { transform: translate(-50%, -14px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+}
