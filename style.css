@@ -2196,3 +2196,22 @@ body.car-locked .fab { display: none; }
 .tow-trail .tp-wheel { fill: var(--ink); }
 .tow-trail .tp-brake { fill: currentColor; }
 .tow-trail .tp-hub { fill: var(--ground, #ccc); }
+/* Släpvagn v2: svaret och lastsiffran i en ruta, stapel, tre kontroller och släpet längst ner. */
+.tow-pick { margin: 0 0 12px; }
+.tow-pick .tow-new { border-style: dashed; color: var(--accent-text); display: inline-flex; align-items: center; gap: 4px; }
+.tow-verdict { display: grid; gap: 4px; padding: 14px 16px; }
+.tow-verdict .tv-k { font: 700 12px var(--f-body); letter-spacing: .07em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+.tow-verdict .tv-k::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.tow-verdict.ok .tv-k { color: #2f9e5b; } .tow-verdict.warn .tv-k { color: #c98410; } .tow-verdict.bad .tv-k { color: #d2493e; }
+.tow-verdict .tv-num { font: 800 44px/1 var(--f-display); margin-top: 6px; }
+.tow-verdict .tv-num small { font: 700 18px var(--f-display); color: var(--ink-2); margin-left: 6px; }
+.tow-verdict .tv-title { font: 700 20px var(--f-display); margin-top: 4px; }
+.tow-bar { display: flex; height: 32px; margin-top: 12px; border-radius: 10px; overflow: hidden; background: var(--input); font-size: 12px; }
+.tow-bar span { display: grid; place-items: center; min-width: 34px; white-space: nowrap; overflow: hidden; }
+.tow-bar .tb-curb { background: color-mix(in srgb, var(--ink) 28%, var(--input)); color: var(--ink); }
+.tow-bar .tb-load { background: var(--accent); color: #fff; font-weight: 600; }
+.tow-bar .tb-rest { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--ink) 14%, transparent) 0 6px, transparent 6px 12px); color: var(--ink-2); border-left: 2px solid var(--ink); }
+.tow-checks { margin-top: 14px; }
+.tow-lic { margin-left: 6px; padding: 2px 30px 2px 10px; background-position: right 8px center; font: 600 14px var(--f-body); border-radius: 8px; border: 1px solid var(--line); background-color: var(--input); color: var(--ink); width: auto; min-height: 0; height: auto; vertical-align: 1px; }
+.tow-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; font-size: 13.5px; color: var(--ink-2); }
+.tow-foot b { color: var(--ink); font-weight: 600; }
