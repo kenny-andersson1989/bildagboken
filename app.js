@@ -8923,7 +8923,10 @@ const ACTIONS = {
       return showToast(e?.code === "auth/requires-recent-login" ? "Logga ut och logga in igen, och radera sedan kontot direkt efteråt." : `Det gick inte att radera allt (${e.code || e.message}). Försök igen med nät.`, 8000);
     }
     cleanup();
+    // Allt sparat i telefonen rensas, utom språkvalet.
+    const keepLang = pref.get("lang"), keepAt = pref.get("langAt");
     try { localStorage.clear(); } catch { /* inget sparat */ }
+    if (keepLang) { pref.set("lang", keepLang); if (keepAt) pref.set("langAt", keepAt); }
     S.hid = null; S.house = null;
     renderLogin();
     showToast("Ditt konto är raderat.", 5000);
@@ -10023,6 +10026,9 @@ const ACTIONS = {
     const v = el.dataset.v;
     if (v === LANG) return;
     pref.set("lang", v);
+    pref.set("langAt", String(Date.now()));
+    // Sparas även på kontot, så att språket följer med till andra telefoner och efter en ominstallation.
+    if (S.user && S.house) saveMyInfo("lang", { v, at: Date.now() });
     location.reload();
   },
   "garage-glenn"(el) { garageEgg(el); },
@@ -10859,6 +10865,7 @@ function subscribe(hid) {
   S.unsubs.push(onSnapshot(doc(db, "households", hid), (s) => {
     S.house = s.data({ serverTimestamps: "estimate" });
     S.loaded.house = true;
+    if (syncLang()) return;
     applyTheme(); // Glenns Garage kräver Plus
     if (S.justJoined) {
       showToast(typeof S.justJoined === "string" ? `Välkommen till ${S.justJoined}!` : "Välkommen! Nu delar ni bilen.", 4500);
@@ -10928,6 +10935,18 @@ async function freshVerifiedToken(force = false) {
     if (!u.emailVerified) await reload(u).catch(() => {});
     if (auth.currentUser?.emailVerified) await auth.currentUser.getIdToken(true);
   } catch { /* ingen kontakt just nu */ }
+}
+// Språket följer kontot: det som valdes senast (i telefonen eller på kontot) gäller. Ger true om sidan laddas om.
+function syncLang() {
+  if (!S.house || !S.user) return false;
+  const mine = myInfo().lang, localAt = Number(pref.get("langAt") || 0), local = pref.get("lang");
+  if (mine?.v && (mine.at || 0) > localAt && mine.v !== LANG && (mine.v === "sv" || mine.v === "en")) {
+    pref.set("lang", mine.v); pref.set("langAt", String(mine.at || Date.now()));
+    location.reload();
+    return true;
+  }
+  if (local && localAt > (mine?.at || 0) && mine?.v !== local) saveMyInfo("lang", { v: local, at: localAt });
+  return false;
 }
 async function loadHousehold(retried = false) {
   setScreen("loading", `<p class="loading">Hämtar er bildagbok …</p>`);
