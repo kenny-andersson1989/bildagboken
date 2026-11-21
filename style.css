@@ -2258,3 +2258,8 @@ body.car-locked .fab { display: none; }
 .del-act span { opacity: .95; }
 .del-wrap.armed .del-act { background: #d23a30; }
 .entry, .dl.as-btn { touch-action: pan-y; }
+/* Automatisk resa som pågår, överst i Resor. */
+.rz-auto { border-radius: 18px; padding: 14px 16px; background: color-mix(in srgb, #2FBF6B 12%, var(--input)); border: 1px solid color-mix(in srgb, #2FBF6B 40%, transparent); display: grid; gap: 4px; margin-bottom: 4px; }
+.rz-auto .k { font: 700 11.5px var(--f-body); letter-spacing: .07em; text-transform: uppercase; color: #2f9e5b; }
+.rz-auto b { font: 700 26px var(--f-display); font-variant-numeric: tabular-nums; }
+.rz-auto .s { font-size: 13px; color: var(--ink-2); line-height: 1.4; }

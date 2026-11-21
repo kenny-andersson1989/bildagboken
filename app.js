@@ -6105,9 +6105,10 @@ function tripsOverviewHtml(c, review, gaps) {
   const recent = list.filter((t) => !(t.auto && !t.kind) && t !== open).slice(0, 3);
   const old = open && Date.now() - tsMs(open.startedAt) >= 4 * 36e5;
   const reviewSorted = [...review].sort((a, b) => tsMs(b.startedAt) - tsMs(a.startedAt));
-  return `<article class="card rz-hero">${open
+  const al = !open ? autoLive() : null;
+  return `<article class="card rz-hero">${al ? `<div class="rz-auto"><span class="k"><span class="lv-dot"></span>Automatisk resa pågår</span><span class="s">Telefonen mäter resan. Den sparas av sig själv när bilen har stått still i några minuter, och sedan väljer du Tjänst eller Privat.</span></div>` : ""}${open
       ? liveTripCard(open, old)
-      : `<button class="rz-start" type="button" data-act="trip-start-now">${icon("gauge", 24)} Starta resa</button><button class="link rz-link" type="button" data-act="new-trip">Logga en resa i efterhand</button>`}</article>
+      : `${al ? "" : `<button class="rz-start" type="button" data-act="trip-start-now">${icon("gauge", 24)} Starta resa</button>`}<button class="link rz-link" type="button" data-act="new-trip">Logga en resa i efterhand</button>`}</article>
     ${reviewSorted.length || gaps.length ? `<article class="card"><h2>Att göra</h2>
       ${reviewSorted.length ? `<div class="rows">${reviewSorted.map((t) => `<div class="swipe-wrap"><span class="sw-bg sw-work">Tjänst</span><span class="sw-bg sw-priv">Privat</span><div class="dl swipe-row" data-id="${esc(t.id)}"><div class="dl-ic">${icon("car", 20)}</div><div><div class="dl-t">${esc([t.from, t.to].filter(Boolean).join(" → ") || "Resa")}</div><div class="dl-s">${esc(`${fmtDateShort(t.date)} ${clock(tsMs(t.startedAt))}–${clock(tsMs(t.endedAt))} · ${fmtKm(tripMil(t))} · GPS`)}</div>
         ${reviewBtns(t)}</div></div></div>`).join("")}</div>
@@ -6369,6 +6370,21 @@ function tripGuideSheet(choice = S.tripGuideChoice || (S.autoStatus?.enabled ? "
 function autoFix(title, text, btn, mode) {
   return `<div class="auto-fix"><b>${esc(title)}</b><p>${esc(text)}</p><button class="btn primary" type="button" data-act="auto-allow" data-mode="${mode}">${esc(btn)}</button></div>`;
 }
+// Medan appen är öppen: kolla var 15:e sekund om en automatisk resa har startat eller slutat.
+setInterval(async () => {
+  if (document.hidden || !autoAvailable() || !S.loaded.entries) return;
+  let st;
+  try { st = await tracker().status(); } catch { return; }
+  if (!st) return;
+  const was = !!S.autoStatus?.driving;
+  S.autoStatus = { ...(S.autoStatus || {}), ...st };
+  if (!st.driving) { delete S.autoStatus.since; delete S.autoStatus.meters; }
+  if (was !== !!st.driving) { if (!st.driving) importAutoTrips().then(render); else render(); return; }
+  if (st.driving) {
+    const t = autoLiveText(S.autoStatus);
+    document.querySelectorAll("[data-auto-bar]").forEach((el) => { el.textContent = EN ? tr(t) : t; });
+  }
+}, 15000);
 async function refreshAutoStatus() {
   if (!autoAvailable()) return;
   try { S.autoStatus = await tracker().status(); } catch { S.autoStatus = null; return; }
@@ -6493,10 +6509,29 @@ function tripBarText(o) {
   const d = tripSoFarMil(o);
   return `${hmm(tripElapsed(o))}${d ? ` · ${d.gps ? "" : "ca "}${fmtKm(d.mil)}` : ""}`;
 }
+// En automatisk resa som telefonen mäter just nu (iPhone-appen), när man inte har startat en egen.
+const autoLive = () => (autoAvailable() && S.autoStatus?.driving && S.autoStatus.since ? S.autoStatus : null);
+function autoLiveText(a) {
+  const min = Math.max(0, Math.floor((Date.now() - a.since) / 60000));
+  return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")} · ${fmtKm(num(a.meters || 0) / 10000)}`;
+}
 function renderTripBar() {
   const o = S.user && S.hid && S.loaded.entries && tripsOn() ? openTrip() : null;
+  const a = !o && S.user && S.hid ? autoLive() : null;
   let bar = document.getElementById("tripbar");
-  document.body.classList.toggle("has-tripbar", !!o);
+  document.body.classList.toggle("has-tripbar", !!(o || a));
+  if (a) {
+    const html = `<button class="tb-main" type="button" data-go="resor" aria-label="Automatisk resa pågår. Tryck för att se Resor.">
+      <span class="tb-ic">${icon("car", 22)}<span class="tb-dot"></span></span>
+      <span class="tb-txt"><span class="tb-k">Automatisk resa</span><span class="tb-t" data-auto-bar>${esc(autoLiveText(a))}</span><span class="tb-s">Sparas när bilen har stått still en stund</span></span>
+    </button>`;
+    if (!bar) { document.body.insertAdjacentHTML("beforeend", `<div class="tripbar" id="tripbar">${html}</div>`); bar = document.getElementById("tripbar"); }
+    else if (bar.dataset.key !== "auto") bar.innerHTML = html;
+    else bar.querySelector("[data-auto-bar]").textContent = EN ? tr(autoLiveText(a)) : autoLiveText(a);
+    bar.dataset.key = "auto";
+    if (EN && typeof trTree === "function") trTree(bar);
+    return;
+  }
   if (!o) { bar?.remove(); return; }
   const old = Date.now() - tsMs(o.startedAt) >= 4 * 36e5;
   const html = `<button class="tb-main" type="button" ${tripsVisible() ? `data-go="resor"` : `data-act="start-trip"`} aria-label="Pågående resa. Tryck för att se resan.">
