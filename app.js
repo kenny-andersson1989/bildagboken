@@ -2904,14 +2904,14 @@ function trailerCard(c) {
       <button class="btn-soft" type="submit">Spara</button>
     </form></div>`;
   const x = trailerSel(c), list = trailersOf(c);
-  const licSel = `<div class="tow-lic-row"><span class="label">Körkort</span><div class="seg seg-sm" role="group" aria-label="Ditt körkort">${Object.keys(LICENSES).map((k) => `<button type="button" data-act="license" data-v="${k}" aria-pressed="${k === lic}">${k}</button>`).join("")}</div></div>`;
+  const licSel = `<div class="tow-sec"><span class="label">Körkort</span></div><div class="tow-lic-row"><div class="seg seg-sm" role="group" aria-label="Ditt körkort">${Object.keys(LICENSES).map((k) => `<button type="button" data-act="license" data-v="${k}" aria-pressed="${k === lic}">${k}</button>`).join("")}</div></div>`;
   if (!x) return `<div class="card tow-card"><h2>Släpvagn</h2>
     ${licSel}
     <p class="muted">Får du dra släpet? Fyll i vad som står på släpets skylt, så räknar appen ut det.</p>
     <div class="tow-sign"><span class="sign">TOTALVIKT<br>1000 kg<br>TJV 250</span><span>Vikterna står på skylten vid släpets drag, eller i släpets registreringsbevis.</span></div>
     <div class="ask" style="margin:0"><button class="btn-soft" type="button" data-act="trailer-edit">${icon("plus", 16)} Fyll i ditt släp</button></div></div>`;
   const r = trailerJudge(t, lic, x);
-  const mark = { ok: "✓", warn: "!", bad: "✕", unknown: "?" };
+  const ic = { ok: "tick", warn: "alert", bad: "close", unknown: "alert" };
   let bar = "";
   if (r.bar) {
     const sum = r.bar.curb + r.bar.load + r.bar.rest, pc = (v) => `${(v / sum) * 100}%`;
@@ -2919,13 +2919,17 @@ function trailerCard(c) {
   }
   return `<div class="card tow-card"><h2>Släpvagn</h2>
     ${licSel}
-    <div class="tow-pick">${list.map((y) => `<button type="button" class="chip-btn" data-act="trailer-pick" data-id="${esc(y.id)}" aria-pressed="${y.id === x.id}">${esc(trailerName(y, list))}</button>`).join("")}<button type="button" class="chip-btn tow-new" data-act="trailer-edit">${icon("plus", 14)} Nytt</button><button class="link tow-edit" type="button" data-act="trailer-edit" data-id="${esc(x.id)}">Ändra</button></div>
-    <div class="tow-verdict ${r.level}"><span class="tv-k">${esc(r.k)}</span>${r.load != null ? `<span class="tv-num">${esc(fmt(r.load))}<small>kg last</small></span>` : ""}${r.title ? `<span class="tv-title">${esc(r.title)}</span>` : ""}</div>
-    ${bar}
-    <ul class="tow-checks">${r.checks.map(([l, h, txt, kind]) => `<li><span class="tc-m ${l}">${mark[l]}</span><span>${esc(kind === "lic" ? `Körkort ${lic}` : h)}<small>${esc(txt)}</small></span></li>`).join("")}</ul>
-    <div class="tow-foot"><span><b>${esc(trailerName(x, list))}</b> ${esc(`· ${fmt(num(x.total))} kg${num(x.curb) != null ? ` · tomt ${fmt(num(x.curb))} kg` : ""} · ${x.braked ? "bromsat" : "obromsat"}`)}</span></div>
+    <div class="tow-sec"><span class="label">Släp</span><button class="link" type="button" data-act="trailer-edit" data-id="${esc(x.id)}">Ändra</button></div>
+    <div class="tow-pick">${list.map((y) => `<button type="button" class="chip-btn" data-act="trailer-pick" data-id="${esc(y.id)}" aria-pressed="${y.id === x.id}">${esc(trailerName(y, list))}</button>`).join("")}<button type="button" class="chip-btn tow-new" data-act="trailer-edit">${icon("plus", 14)} Nytt</button></div>
+    <p class="tow-facts">${esc([`${fmt(num(x.total))} kg totalvikt`, num(x.curb) != null ? `tomt ${fmt(num(x.curb))} kg` : "", x.braked ? "bromsat" : "obromsat"].filter(Boolean).join(" · "))}</p>
+    <div class="tow-verdict ${r.level}">
+      <div class="tv-top"><span class="tv-ic">${icon(ic[r.level], 16)}</span><span class="tv-k">${esc(r.k)}</span></div>
+      ${r.load != null ? `<span class="tv-num">${esc(fmt(r.load))}<small>kg last</small></span>` : ""}${r.title ? `<span class="tv-title">${esc(r.title)}</span>` : ""}
+      ${bar}
+    </div>
+    <div class="tow-checks">${r.checks.map(([l, h, txt, kind]) => `<div class="tow-check"><span class="tc-ic ${l}">${icon(ic[l], 14)}</span><span><b>${esc(kind === "lic" ? `Körkort ${lic}` : h)}</b><small>${esc(txt)}</small></span></div>`).join("")}</div>
     ${num(x.curb) == null ? `<p class="hint">Fyll i släpets tjänstevikt (tomt släp) under Ändra, så ser du hur mycket du får lasta.</p>` : ""}
-    <p class="hint">Kolla också kultrycket i bilens instruktionsbok, oftast 50–75 kg.</p>
+    <p class="hint" style="margin-top:12px">Kolla också kultrycket i bilens instruktionsbok, oftast 50–75 kg.</p>
   </div>`;
 }
 // Släpets vikter ur registret: totalvikt och tjänstevikt.

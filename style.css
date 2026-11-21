@@ -2222,3 +2222,29 @@ body.car-locked .fab { display: none; }
 .tow-lic-row { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; }
 .tow-lic-row .label { margin: 0; flex: none; }
 .tow-lic-row .seg { flex: 1; }
+/* Släpvagn v3: samma rubrikrader som i andra kort, svaret med stapeln i en ruta, kontroller som rader. */
+.tow-card h2 { margin-bottom: 4px; }
+.tow-sec { display: flex; justify-content: space-between; align-items: center; margin: 14px 0 8px; }
+.tow-sec .label { margin: 0; }
+.tow-lic-row { margin: 0; }
+.tow-lic-row .seg { width: 100%; }
+.tow-pick { margin: 0; }
+.tow-facts { margin: 8px 0 0; font-size: 13px; color: var(--ink-3); }
+.tow-verdict { margin-top: 16px; padding: 14px 16px 16px; border-radius: 18px; display: grid; gap: 2px; }
+.tow-verdict .tv-top { display: flex; align-items: center; gap: 10px; }
+.tow-verdict .tv-ic { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; flex: none; }
+.tow-verdict.ok .tv-ic { background: #2f9e5b; } .tow-verdict.warn .tv-ic { background: #c98410; } .tow-verdict.bad .tv-ic { background: #d2493e; }
+.tow-verdict .tv-k::before { display: none; }
+.tow-verdict .tv-num { margin-top: 10px; }
+.tow-verdict .tv-title { margin-top: 8px; }
+.tow-verdict .tow-bar { margin-top: 12px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.tow-checks { display: grid; gap: 0; margin-top: 10px; padding: 0; }
+.tow-check { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; padding: 11px 0; border-top: 1px solid var(--line); }
+.tow-check:first-child { border-top: 0; }
+.tow-check b { font-weight: 600; font-size: 14.5px; }
+.tow-check small { display: block; color: var(--ink-3); font-size: 13px; margin-top: 2px; line-height: 1.35; }
+.tc-ic { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; }
+.tc-ic.ok { background: color-mix(in srgb, #2f9e5b 18%, transparent); color: #2f9e5b; }
+.tc-ic.warn { background: color-mix(in srgb, #c98410 20%, transparent); color: #c98410; }
+.tc-ic.bad { background: color-mix(in srgb, #d2493e 18%, transparent); color: #d2493e; }
+.tc-ic.unknown { background: var(--track); color: var(--ink-3); }
