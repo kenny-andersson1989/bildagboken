@@ -37,6 +37,9 @@ if (NATIVE && window.Capacitor?.isPluginAvailable?.("App")) {
     try {
       const u = new URL(url);
       if (u.hostname !== location.hostname) return;
+      // Bara länkar som ska visa något särskilt. En vanlig länk till bildagboken.com (till exempel Continue efter att
+      // e-posten bekräftats) öppnar bara appen. Att ladda om sidan då kan få den att fastna medan den hämtar data.
+      if (!["join", "visa", "ny", "oobCode"].some((k) => u.searchParams.has(k))) return;
       const to = u.pathname + u.search + u.hash;
       if (to !== location.pathname + location.search + location.hash) location.href = to;
     } catch { /* ingen giltig länk */ }
@@ -11051,9 +11054,13 @@ function syncLang() {
 }
 async function loadHousehold(retried = false) {
   setScreen("loading", `<p class="loading">Hämtar er bildagbok …</p>`);
+  // Fastnar hämtningen (dåligt nät eller en avbruten omladdning): visa en knapp som laddar om appen.
+  const slow = setTimeout(() => {
+    if (S.screen === "loading") setScreen("loading", `<p class="loading">Hämtar er bildagbok …</p><div class="ask" style="justify-content:center;margin-top:16px"><button class="btn" type="button" data-act="reload-app">Det tar lång tid. Försök igen</button></div>`);
+  }, 12000);
   await freshVerifiedToken();
   try {
-    const qs = await getDocs(query(collection(db, "households"), where("members", "array-contains", uid())));
+    const qs = await getDocs(query(collection(db, "households"), where("members", "array-contains", uid()))).finally(() => clearTimeout(slow));
     if (qs.empty) return renderOnboarding();
     subscribe(qs.docs[0].id);
   } catch (e) {
@@ -11063,6 +11070,7 @@ async function loadHousehold(retried = false) {
     setScreen("error", `<div class="card empty"><b>Kunde inte hämta er data</b>${esc(e.code === "unavailable" ? "Telefonen verkar sakna nät. Försök igen om en stund." : e.code || e.message)}<div class="ask" style="justify-content:center"><button class="btn" type="button" data-act="retry">Försök igen</button></div></div>`);
   }
 }
+ACTIONS["reload-app"] = () => location.reload();
 ACTIONS.retry = async () => { await freshVerifiedToken(true); loadHousehold(true); };
 
 /* ------------------------------------------------------------------- boot */

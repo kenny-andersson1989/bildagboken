@@ -1,6 +1,7 @@
 // Engelska texter. Nyckeln är den svenska texten som den står i appen, värdet är den engelska.
 // Längre fraser översätts före kortare, och hela texter före delar av texter.
 export const EN = {
+  "Det tar lång tid. Försök igen": "This is taking a while. Try again",
   // Länkar i mejl från inloggningen
   "Öppnar länken …": "Opening the link …",
   "Bekräftar din e-post …": "Confirming your email …",
