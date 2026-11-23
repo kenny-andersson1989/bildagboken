@@ -294,6 +294,8 @@ exports.lasDokument = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120
   if (!uid) throw new HttpsError("unauthenticated", "Logga in först.");
   if (!verifiedUser(req)) throw new HttpsError("permission-denied", "Bekräfta din e-post först.");
   const { hid, image, mediaType = "image/jpeg", formType = "" } = req.data || {};
+  // Bilens underhållspunkter från appen: korta namn, högst 60 stycken.
+  const items = Array.isArray(req.data?.items) ? req.data.items.filter((x) => typeof x === "string").map((x) => x.replace(/[\n\r]/g, " ").slice(0, 60)).slice(0, 60) : [];
   if (typeof hid !== "string" || typeof image !== "string" || image.length > 8e6) throw new HttpsError("invalid-argument", "Bilden saknas eller är för stor.");
   if (!/^image\/(jpeg|png|webp)$/.test(mediaType)) throw new HttpsError("invalid-argument", "Fel bildformat.");
   const houseRef = db.doc(`households/${hid}`);
@@ -323,7 +325,7 @@ exports.lasDokument = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120
     system: "Du läser av svenska dokument om bilar: servicefakturor, verkstadskvitton, besiktningsprotokoll och tankkvitton. Läs hela dokumentet, rad för rad, innan du svarar. Fyll bara i det som står i dokumentet. Gissa inte; använd null eller en tom lista när något saknas eller inte går att läsa. Företagets namn står oftast överst; bilens märke, modell och registreringsnummer är uppgifter om bilen, inte ett ställe. Svara på svenska.",
     messages: [{ role: "user", content: [
       { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
-      { type: "text", text: `Läs av dokumentet.${formType ? ` Användaren fyller i ett formulär för: ${formType}.` : ""} Dagens datum är ${todayStr()}.` },
+      { type: "text", text: `Läs av dokumentet.${formType ? ` Användaren fyller i ett formulär för: ${formType}.` : ""} Dagens datum är ${todayStr()}.${items.length ? `\n\nBilens underhållspunkter i appen:\n${items.map((x) => `- ${x}`).join("\n")}\n\nNär en del eller åtgärd på dokumentet motsvarar en av punkterna, använd punktens namn exakt som det står (till exempel Oljebyte eller Motorolja → Motorolja och oljefilter, Pollenfilter → Kupéfilter om det är punktens namn). Flera rader som hör till samma punkt blir en rad. Delar som inte finns bland punkterna får ett vanligt svenskt namn.` : ""}` },
     ] }],
     });
   } catch (e) {
