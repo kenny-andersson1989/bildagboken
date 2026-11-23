@@ -3982,7 +3982,9 @@ async function aiReadDocument(file) {
     // Dokument har liten text: skicka en skarpare bild än för vanliga foton (servern tar emot upp till 8 MB).
     const data = await compressImage(file, { size: 2200, limit: 3500000 });
     if (!data) throw new Error("bild");
-    const payload = { hid: S.hid, image: data.split(",")[1], mediaType: "image/jpeg", formType: cat === "Besiktning" ? "besiktning" : TYPE[type]?.label || type };
+    const payload = { hid: S.hid, image: data.split(",")[1], mediaType: "image/jpeg", formType: cat === "Besiktning" ? "besiktning" : TYPE[type]?.label || type,
+      // Bilens underhållspunkter, så att AI:n använder samma namn och delarna kopplas till rätt punkt.
+      items: (car()?.items || []).map((i) => String(i.name || "").slice(0, 60)).filter(Boolean).slice(0, 60) };
     if (window.__aiMock) res = await window.__aiMock(payload);
     else {
       const { getFunctions, httpsCallable } = await import("./vendor/firebase/firebase-functions.js");
@@ -4015,7 +4017,8 @@ async function aiReadDocument(file) {
     const items = car()?.items || [];
     for (const w of d.work.slice(0, 12)) {
       const n = normWord(w.name);
-      const item = items.find((i) => { const m = normWord(i.name); return m === n || m.includes(n) || n.includes(m); });
+      // Samma namn först (AI:n får bilens punkter), annars ett namn som finns inuti det andra.
+      const item = items.find((i) => normWord(i.name) === n) || items.find((i) => { const m = normWord(i.name); return m.includes(n) || n.includes(m); });
       ACTIONS["w-add"]({ dataset: { item: item?.id || "", name: item?.name || w.name } });
       const key = item ? `item:${item.id}` : normWord(w.name);
       const sel = $(`#work-rows .work-row[data-key="${CSS.escape(key)}"] .w-action`);
