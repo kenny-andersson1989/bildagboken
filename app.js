@@ -3898,15 +3898,26 @@ function parseReceipt(text) {
   const lines = String(text || "").split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const money = (s) => {
     const out = [];
-    for (const m of s.matchAll(/(\d{1,3}(?:[ . ]\d{3})*|\d+)[,.](\d{2})(?!\d)/g)) out.push(Number(m[1].replace(/[ . ]/g, "") + "." + m[2]));
+    for (const m of s.matchAll(/(\d{1,3}(?:[ . ]\d{3})*|\d+)[,.](\d{2})(?!\d)/g)) out.push(Number(m[1].replace(/[ . ]/g, "") + "." + m[2]));
     return out;
   };
+  const skip = /moms|vat|netto|exkl|rabatt|växel|pris\/l|kr\/l|per\s*liter|à-?pris|a-pris/i;
+  // Först summan: "Att betala", "Totalt" eller "Summa". Står beloppet på nästa rad (högerställt) tas det därifrån.
   let amount = null;
-  const key = /(att\s*betala|totalt|total|summa|belopp|betalt|kortbetalning|debiterat|sek\b|kr\b)/i;
-  for (const l of lines) {
-    if (!key.test(l) || /moms|vat|netto|exkl|rabatt|växel|pris\/l|kr\/l|per\s*liter/i.test(l)) continue;
-    const vals = money(l);
-    if (vals.length) { const v = Math.max(...vals); if (amount == null || (/att\s*betala|totalt|total|summa/i.test(l) && v >= amount)) amount = v; }
+  const strong = /(att\s*betala|totalt|total|summa|betalt|debiterat|kortbetalning)/i;
+  lines.forEach((l, i) => {
+    if (!strong.test(l) || skip.test(l)) return;
+    let vals = money(l);
+    if (!vals.length && lines[i + 1] && !skip.test(lines[i + 1])) vals = money(lines[i + 1]);
+    if (vals.length) amount = Math.max(amount || 0, ...vals);
+  });
+  // Annars en rad med kr eller SEK, och sist det största beloppet på kvittot.
+  if (amount == null) {
+    for (const l of lines) {
+      if (!/(belopp|sek\b|kr\b)/i.test(l) || skip.test(l)) continue;
+      const vals = money(l);
+      if (vals.length) amount = Math.max(amount || 0, ...vals);
+    }
   }
   if (amount == null) {
     const all = lines.filter((l) => !/moms|vat|kr\/l|pris\/l/i.test(l)).flatMap(money).filter((v) => v > 0 && v < 100000);
@@ -3918,11 +3929,19 @@ function parseReceipt(text) {
   if (m) date = `${m[1]}-${m[2]}-${m[3]}`;
   else if ((m = t.match(/\b(0[1-9]|[12]\d|3[01])[-./](0[1-9]|1[0-2])[-./](20\d{2}|\d{2})\b/))) date = `${m[3].length === 2 ? "20" + m[3] : m[3]}-${m[2]}-${m[1]}`;
   else if ((m = t.match(/\b(\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/)) && Number(m[1]) >= 20) date = `20${m[1]}-${m[2]}-${m[3]}`;
+  // Stället: ett känt företag. Rader om bilen (Bil, Fabrikat, regnummer) hoppas över, så att Volvo i "Bil Volvo V70" inte blir stället.
+  const carLine = /\b(bil|fabrikat|fordon|modell|årsmodell|registrerings\w*|reg\.?\s*nr|regnr|mätarställning|kund)\b|\b[A-ZÅÄÖ]{3}\s?\d{2}[A-ZÅÄÖ\d]\b/i;
+  const notCity = /^(Utfört|Datum|Faktura|Fakturanr|Kund|Kvitto|Order|Arbetsorder|Summa|Totalt|Moms|Betala|Station|Kontrollbesiktning|Besiktning|Service|Verkstad|Telefon|Tel)$/i;
   let place = null;
   for (const b of BRANDS) {
     const re = new RegExp(b.replace(/[-]/g, "[- ]?").replace(/ /g, "\\s*"), "i");
-    const hit = lines.find((l) => re.test(l));
-    if (hit) { place = b; const city = (hit.replace(re, "").match(/[A-ZÅÄÖ][a-zåäö]{3,}/) || [])[0]; if (city) place += " " + city; break; }
+    const hit = lines.find((l) => re.test(l) && !carLine.test(l));
+    if (hit) { place = b; const city = (hit.replace(re, "").match(/[A-ZÅÄÖ][a-zåäö]{3,}/g) || []).find((w) => !notCity.test(w) && !/(verkstad|service|center|däck|bilar)$/i.test(w)); if (city) place += " " + city; break; }
+  }
+  // Inget känt företag: ta företagsnamnet högst upp om det ser ut som ett (AB, verkstad, besiktning …).
+  if (!place) {
+    const firm = lines.slice(0, 4).find((l) => /\b(AB|HB|bilverkstad|verkstad|besiktning|bilservice|bilcenter|motor|däck)\b/i.test(l) && !carLine.test(l));
+    if (firm) place = firm.replace(/\s+(faktura|kvitto|besiktningsprotokoll|protokoll|orderbekräftelse)\b.*$/i, "").replace(/\s+(AB|HB)\b.*$/, " $1").trim().slice(0, 50) || null;
   }
   return { amount, date, place };
 }
