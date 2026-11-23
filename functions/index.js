@@ -269,10 +269,10 @@ const DOC_SCHEMA = {
     date: { type: ["string", "null"], description: "Datum på dokumentet, YYYY-MM-DD" },
     amount: { type: ["number", "null"], description: "Totalt att betala i kronor inklusive moms" },
     odometerMil: { type: ["number", "null"], description: "Mätarställning i svenska mil (1 mil = 10 km). Står den i km, dela med 10." },
-    place: { type: ["string", "null"], description: "Verkstad, station, besiktningsföretag eller butik" },
+    place: { type: ["string", "null"], description: "Namnet på företaget som utfärdat dokumentet (verkstad, besiktningsföretag, station eller butik), oftast överst i sidhuvudet. Aldrig bilens märke, modell eller registreringsnummer, och aldrig kundens namn." },
     work: {
       type: "array",
-      description: "Det som gjordes på bilen, en rad per del eller åtgärd, med vanliga svenska namn (till exempel Motorolja och oljefilter, Bromsbelägg fram, Torkarblad)",
+      description: "Varje del och åtgärd på fakturan, en rad per rad i dokumentet, med vanliga svenska namn (till exempel Motorolja, Oljefilter, Luftfilter, Kupéfilter, Bromsbelägg fram, Torkarblad fram). Ta med alla delar och kontroller, även de som kostar 0 kr. Hoppa bara över avgifter (miljöavgift, småmaterial, frakt), rabatter, moms och summor. Tom lista för besiktningsprotokoll.",
       items: {
         type: "object", additionalProperties: false, required: ["name", "action"],
         properties: { name: { type: "string" }, action: { type: "string", enum: ["bytt", "kontrollerat", "lagat", "justerat"] } },
@@ -319,8 +319,8 @@ exports.lasDokument = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120
     res = await client.messages.create({
     model: AI_MODEL,
     max_tokens: 4000,
-    output_config: { effort: "low", format: { type: "json_schema", schema: DOC_SCHEMA } },
-    system: "Du läser av svenska dokument om bilar: servicefakturor, verkstadskvitton, besiktningsprotokoll och tankkvitton. Fyll bara i det som står i dokumentet. Gissa inte; använd null eller en tom lista när något saknas eller inte går att läsa. Svara på svenska.",
+    output_config: { effort: "medium", format: { type: "json_schema", schema: DOC_SCHEMA } },
+    system: "Du läser av svenska dokument om bilar: servicefakturor, verkstadskvitton, besiktningsprotokoll och tankkvitton. Läs hela dokumentet, rad för rad, innan du svarar. Fyll bara i det som står i dokumentet. Gissa inte; använd null eller en tom lista när något saknas eller inte går att läsa. Företagets namn står oftast överst; bilens märke, modell och registreringsnummer är uppgifter om bilen, inte ett ställe. Svara på svenska.",
     messages: [{ role: "user", content: [
       { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
       { type: "text", text: `Läs av dokumentet.${formType ? ` Användaren fyller i ett formulär för: ${formType}.` : ""} Dagens datum är ${todayStr()}.` },

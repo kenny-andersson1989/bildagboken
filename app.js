@@ -3979,7 +3979,8 @@ async function aiReadDocument(file) {
   if (label()) label().textContent = "AI läser dokumentet …";
   let res;
   try {
-    const data = await compressImage(file);
+    // Dokument har liten text: skicka en skarpare bild än för vanliga foton (servern tar emot upp till 8 MB).
+    const data = await compressImage(file, { size: 2200, limit: 3500000 });
     if (!data) throw new Error("bild");
     const payload = { hid: S.hid, image: data.split(",")[1], mediaType: "image/jpeg", formType: cat === "Besiktning" ? "besiktning" : TYPE[type]?.label || type };
     if (window.__aiMock) res = await window.__aiMock(payload);
@@ -4002,7 +4003,10 @@ async function aiReadDocument(file) {
   if (d.amount != null && set("ef-amount", String(d.amount).replace(".", ","))) filled.push(`${fmtKr(d.amount)} kr`);
   if (d.date && d.date <= todayStr() && set("ef-date", d.date)) filled.push(fmtDateShort(d.date));
   if (d.odometerMil != null && set("ef-odometer", String(kmOf(d.odometerMil)))) filled.push(`${fmtKm(d.odometerMil)}`);
-  if (d.place) {
+  // Bilens namn eller registreringsnummer är inte ett ställe (AI:n kan ta fel på dem i sidhuvudet).
+  const c0 = car() || {};
+  const notCar = (t) => { const n = normWord(t), r = normWord(c0.reg || ""); return !(r && n.replace(/\s/g, "").includes(r.replace(/\s/g, ""))) && !/\b[a-zåäö]{3}\s?\d{2}[a-zåäö\d]\b/i.test(t) && !(c0.make && c0.model && n.includes(normWord(c0.make)) && n.includes(normWord(c0.model))); };
+  if (d.place && notCar(d.place)) {
     const id = ["ef-workshop", "ef-station", "ef-place"].find((x) => document.getElementById(x));
     if (id && set(id, d.place)) filled.push(d.place);
   }
@@ -8068,11 +8072,11 @@ function renderPhotoThumbs() {
   if (missing.length) Promise.all(missing.map((pid) => getDoc(ref("photos", pid)).then((s) => { if (s.exists()) gridPhotos.set(pid, s.data().data); }).catch(() => {}))).then(() => { if ($("#ef-photos")) renderPhotoThumbs(); });
 }
 
-async function compressImage(file) {
+async function compressImage(file, { size = 1400, limit = 850000 } = {}) {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
-    let max = 1400, q = 0.72, out = "";
+    let max = size, q = 0.72, out = "";
     for (let tries = 0; tries < 6; tries++) {
       const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
       const cv = document.createElement("canvas");
@@ -8080,7 +8084,7 @@ async function compressImage(file) {
       cv.height = Math.round(img.naturalHeight * scale);
       cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
       out = cv.toDataURL("image/jpeg", q);
-      if (out.length < 850000) return out;
+      if (out.length < limit) return out;
       max *= 0.8; q -= 0.08;
     }
     return out.length < 1000000 ? out : null;
